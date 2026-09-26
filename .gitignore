@@ -1,0 +1,37 @@
+# Internal engineering surfaces: never publish
+_internal/
+.scratch/
+
+# Project and customer artifacts
+output/
+outputs/
+dist/
+build/
+coverage/
+*.tmp
+
+# Local review host runtime state
+review_host.json
+review_host.log
+wake-log.jsonl
+
+# Secrets and local configuration
+.env
+.env.*
+*.pem
+*.key
+*.token
+
+# Runtime and caches
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+*.log
+.DS_Store
+
+# Generated client files
+*.pptx
+*.keynote
