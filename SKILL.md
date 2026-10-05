@@ -113,6 +113,9 @@ Skill 交出自己的审阅页面与资产目录；宿主负责显示、serve �
 | `scripts/validate-surface.mjs` | 唯一校验器：结构 + 路径包含性 + 桥的哈希一致性 |
 | `assets/review-bridge.js` | 桥。**由宿主注入**（页面只留 `{{REVIEW_BRIDGE}}` 注入点），所以不存在副本漂移 |
 | `scripts/serve-review.mjs` | 没有插件时的宿主（serve + write + wake + 版本令牌） |
+| `assets/dsh-tokens.css` | **所有审阅页共用的设计令牌**（DSH 的，vendored）。页面跑在不透明源 iframe 里继承不到宿主变量，所以只能内联；**一处定义，谁都不许再存第二份** |
+| `scripts/vendor_dsh_tokens.py` | 重抄那份表：读**本机已装的 DSH 版本**（`Info.plist`），从发行版里抽 —— 别用 `npm view ... version`，那个包的 `latest` 卡在最老一版，会静默抄错 |
+| `scripts/inline_review_tokens.py` | 把表内联进某个页面（模板留 `/*__DSH_TOKENS__*/`）。写盘前验括号配对与表是否真在里面 —— 这两类错误**都不报错**，只是页面悄悄没上样式 |
 | `scripts/review-host.mjs` | **宿主的生命周期，唯一实现**（Node CLI）：`write` / `validate` / `state` / `alive` / `start` / `stop` / `open`（＋ `pid` / `report` / `match` / `constants`）。入参是一个 surface 路径，**不带任何 Skill 的业务**。**为什么是 Node**：缝的四块里三块本来就是 Node，而 **Node 是所有人的底线** —— 校验器、无插件宿主都是 Node CLI，连 Python 技能也要找 node 才能用它们；放 Python 就把纯 `.mjs` 的调用方（bypage）关在门外，而它们不能再写一份 Node 生命周期（那正是要消灭的两份副本漂移） |
 | `scripts/lib/review_host.py` | **只是传输层**：spawn 上面那个 CLI + 解析 JSON + 映射名字。**判据一条都没有**（僵尸、身份、越界、日志解析全在 CLI 侧）；留在这一侧的只有 `node_binary()`（怎么启动 CLI）—— **开浏览器也在 CLI 里**（`launchBrowser()` / `--no-open`），一件事只有一套行为。给 ppt-hell / video-craft 用，让它们不必自己拼命令行 |
 | `evals/test_review_host.mjs` | **Node 侧的牙**：僵尸语义、按内容判身份（两个项目的宿主互不认）、注入形态、启动自证跨行 JSON、越界出声（21 条） |
