@@ -51,6 +51,11 @@
       "minLength": 1,
       "description": "相对 surface 文件的反馈文件路径。**省略 = 这个面不落反馈文件**（结果只经 wake 回模型）。形状由 Skill 定义，宿主不解释。"
     },
+    "draft": {
+      "type": "string",
+      "minLength": 1,
+      "description": "相对 surface 文件的**草稿**文件路径。宿主把桥的 `draft` 调用原样落盘到这里。它和 `feedback` 是两回事：`feedback` 是**决定**（人点了提交），`draft` 是**还没提交的草稿** —— 页面拿它做\"刷新不丢\"，模型不当它是收件。省略 = 这个面不做草稿。"
+    },
     "wake": {
       "type": "object",
       "additionalProperties": false,

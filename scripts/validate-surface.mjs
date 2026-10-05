@@ -166,6 +166,22 @@ if (doc !== null) {
         }
       }
     }
+
+    // 3b) 草稿文件：同一条约束。它和 feedback 是两个文件、两件事（决定 vs 未提交的草稿），
+    // 但落点规则一模一样 —— 都在 project_root 内，宿主才允许写。
+    if (!isBlank(doc.draft)) {
+      const draftAbs = resolve(surfaceDir, doc.draft);
+      checked.draft = draftAbs;
+      if (rootReal !== null) {
+        const ancestorReal = realAncestor(dirname(draftAbs));
+        if (ancestorReal === null || !inTree(ancestorReal, rootReal)) {
+          err('draft_outside_project', `draft 的位置落在 project_root 之外：${draftAbs}`);
+        }
+      }
+      if (!isBlank(doc.feedback) && resolve(surfaceDir, doc.feedback) === draftAbs) {
+        err('draft_same_as_feedback', 'draft 和 feedback 是同一个文件：草稿会顶掉决定，模型会把没提交的东西当收件');
+      }
+    }
   }
 }
 

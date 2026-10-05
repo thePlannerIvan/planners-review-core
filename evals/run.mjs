@@ -16,7 +16,10 @@ const HOST = join(ROOT, 'scripts', 'serve-review.mjs');
 const BRIDGE = join(ROOT, 'assets', 'review-bridge.js');
 
 let failed = 0;
-const ok = (m) => console.log(`  ✓ ${m}`);
+// 数出来的，不是手写的：手写的那串分节计数（"宿主 29 条"）每次加断言都会过期，
+// 而它会让人以为自己看到的是全部。
+let passed = 0;
+const ok = (m) => { passed++; console.log(`  ✓ ${m}`); };
 const bad = (m) => { failed++; console.log(`  ✗ ${m}`); };
 
 const sandbox = mkdtempSync(join(tmpdir(), 'reviewcore-'));
@@ -39,6 +42,10 @@ const surface = (mutate = (d) => d, name = 'surface.json') => {
     dir: '.',
     entry: 'index.html',
     feedback: 'feedback.json',
+    // 草稿：和 feedback 两个文件、两件事。默认面声明它，用来验宿主这条路由。
+    // 刻意**不**声明 capabilities：路由按 `draft` 字段判，capability 只决定页面走不走这条路
+    // —— 下面那句"什么都没声明 → capabilities 为空"因此仍然成立。
+    draft: 'draft.json',
     wake: { mode: 'queue', text: '{unit} 已定，只改这一页。' }
   };
   mutate(doc);
@@ -285,6 +292,17 @@ try {
   if (written.ok && JSON.stringify(saved) === JSON.stringify(payload)) ok('POST write → 原样落盘（与发出去的深度相等，不套信封）');
   else bad(`write 不是原样落盘：落的是 ${JSON.stringify(saved)?.slice(0, 120)}`);
 
+  const unsent = { review_id: 'r1', pages: { 'page-01': { feedback: '还没提交' } } };
+  const drafted = await (await fetch(`${base}/__review/draft`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(unsent)
+  })).json();
+  const draftFile = join(reviewDir, 'draft.json');
+  const draftSaved = existsSync(draftFile) ? JSON.parse(readFileSync(draftFile, 'utf8')) : null;
+  if (drafted.ok && JSON.stringify(draftSaved) === JSON.stringify(unsent)) ok('POST draft → 原样落进 draft 文件（与 feedback 分开两个文件）');
+  else bad(`draft 不是原样落盘：落的是 ${JSON.stringify(draftSaved)?.slice(0, 120)}`);
+  if (draftFile !== feedbackFile) ok('draft 与 feedback 是两个文件（草稿不会顶掉决定）');
+  else bad('draft 和 feedback 落到同一个文件了：草稿会顶掉决定');
+
   const woke = await (await fetch(`${base}/__review/wake`, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ unit: 'page-03' })
   })).json();
@@ -504,6 +522,8 @@ console.log('\n桥的形状');
     [source.includes("'__review/'"), '有 fetch 通道（无插件时）'],
     [source.includes("event.source !== window.parent"), '反向消息比对 source（不透明源的 origin 不可鉴权）'],
     [source.includes("'asset-upload'"), '上传能力按 capabilities 声明走'],
+    [source.split("draft: function").length - 1 === 2 && source.includes("capabilities.indexOf('draft')"),
+     '草稿（draft）两条通道都实现，且按 capabilities 声明走'],
     [source.includes("URL.createObjectURL(blob)"), '资产由子帧自造 blob（父页面代取字节）'],
     [source.includes('readText: function') && source.includes("call('read'"), '有 read/readText（给非图片资产，如 snapshot.json）'],
     [/var capabilitiesReady = fetch\(base \+ '__review\/capabilities'/.test(source) && /return capabilitiesReady\.then/.test(source),
@@ -511,10 +531,10 @@ console.log('\n桥的形状');
     [!/\b(localStorage|sessionStorage)\s*[.[]/.test(source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')), '不碰 localStorage（不透明源下会抛）']
   ];
   const bads = checks.filter(([pass]) => !pass).map(([, label]) => label);
-  if (!bads.length) ok('九条形状断言全过');
+  if (!bads.length) ok(`${checks.length} 条形状断言全过`);
   else bad(`桥的形状不对：${bads.join('、')}`);
 }
 
 rmSync(sandbox, { recursive: true, force: true });
-console.log(failed ? `\n${failed} 条失败` : '\n全部通过（校验器 15 条 + 宿主 29 条 + 第二形状 3 条 + 线协议 5 条 + 轮询 2 条 + 桥 9 条）');
+console.log(failed ? `\n${failed} 条失败` : `\n全部通过（${passed} 条）`);
 process.exit(failed ? 1 : 0);

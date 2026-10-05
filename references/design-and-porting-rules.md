@@ -62,7 +62,8 @@
 ## 一、设计规则（新审阅面怎么写）
 
 ### R1 面只声明那几个字段，宿主永不解释
-required 7：`contract_version` `id` `title` `project_root` `dir` `entry` `wake`；optional 4：`description` `feedback` `watch` `capabilities`。
+required 7：`contract_version` `id` `title` `project_root` `dir` `entry` `wake`；optional 5：`description` `feedback` `draft` `watch` `capabilities`。
+**`feedback` 与 `draft` 是两个文件、两件事**：`feedback` 是**决定**（Skill 按轮次收件），`draft` 是**还没提交的草稿**（页面拿它做「刷新不丢」，Skill 不许当它是收件）。合成一个文件就等于把「我改了东西」和「告诉模型可以动手」绑成一个动作 —— 不提交就只活在内存里，刷新即丢（2026-10-05 真人实测）。
 **宿主不知道"页"是什么、"章"是什么、"版本"是什么。** 往契约里加的每一个业务字段，都是欠给三个实现的债。
 （佐证：video-craft 的逐章 JSONL 与 ppt-hell 的逐页版本，**没有任何一个业务字段**进契约 —— 它们在收件层被翻译。）
 
@@ -205,6 +206,7 @@ required 7：`contract_version` `id` `title` `project_root` `dir` `entry` `wake`
 | **宿主静态分支必须支持 `Range`**（`206` + `Content-Range` + `Accept-Ranges: bytes`；不可满足→`416`） | 第四家带**大媒体**（真素材 1.77 GB），前三家不放媒体所以看不见；无 Range + `no-store` ⇒ **每次加载拖完整个素材**，而这一页的全部工作就是拖着刷时间轴 |
 | **MIME 表要覆盖真用到的扩展名**（当时漏了 `.mov`） | 同一族的小潜伏：给 `application/octet-stream` 通常还能播，但那是撞运气 |
 | **流程指令与"人的话"不许抢同一个字段**：页面只传 `unit`、**绝不覆盖** `text`；人的话走**数据**（提交文件 + 收据） | 桥允许页面整句覆盖唤醒语，可一覆盖就把面里那句"**先收件、再跑门**"的流程指令挤掉了 —— 一个字段两个来源 |
+| **拿"文件清单"当判据时，别用会被转义的输出** | `git ls-files` 对**非 ASCII 路径**做八进制转义 → 12 个中文文件名被报成"缺失" ✗（本项目内容几乎全是中文路径，**这个坑一定会再犯**）→ 用 `git -c core.quotePath=false ls-files` |
 | **原生记录的落点从"surface 文件所在那一层"推，不许从 `dir` 推** | `feedback` 与 `dir` 都相对 surface 文件，但**可以落在不同层** —— B4 是第一个把它们逼出不同答案的（`dir: ".."`，而 `feedback` 在 surface 那层）；第一版 inbox 按 `dir` 解析，把原生记录写到了**上一层** |
 | **默认行为要与命令名一致**：`open` 默认开、`start` 默认不开，各留一个反向开关（`--no-open` / `--open`），并在返回里如实报 `opened` | 两个前端各一套行为（Node 不开、Python 开）——**同一个词在两个入口意思是两回事**，用户和调用方都会被绕进去 |
 | "**找模组**"的适配器**留在各家** | 那是"调用方所处地形"的知识，不是模组的 —— 收进去等于让模组知道"谁在找我" |

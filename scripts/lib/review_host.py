@@ -150,6 +150,8 @@ def surface_paths(surface):
         'project_root': (base/str(doc.get('project_root') or '.')).resolve(),
         'entry': (dir_abs/str(doc['entry'])).resolve(),
         'feedback': (base/str(doc['feedback'])).resolve() if doc.get('feedback') else None,
+        # 草稿：与 feedback 分开的两个文件、两件事（决定 vs 未提交的草稿）。
+        'draft': (base/str(doc['draft'])).resolve() if doc.get('draft') else None,
         'watch': [(base/str(rel)).resolve() for rel in (doc.get('watch') or [])],
         'wake_log': base/WAKE_LOG_NAME,
     }

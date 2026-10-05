@@ -55,7 +55,8 @@ Skill 交出自己的审阅页面与资产目录；宿主负责显示、serve �
 4. 页面里用桥说话：
    ```js
    const review = await ReviewBridge.connect()
-   await review.write(payload)          // 形状由你定，宿主原样落盘
+   await review.write(payload)          // 形状由你定，宿主原样落盘（**这是决定**）
+   await review.draft(payload)          // 同一个纪律、另一个文件（**这是草稿**：不唤醒、不当它是收件）
    await review.wake({ unit: 'page-03' })
    review.assetUrl('shots/page-03.png', { v: 'v2' })   // 页面里所有资产都走它
    await review.upload(file, 'uploads/new.png')         // 仅在 capabilities 声明 asset-upload 时可用
@@ -69,8 +70,8 @@ Skill 交出自己的审阅页面与资产目录；宿主负责显示、serve �
 | 步 | 做什么 | 为什么 |
 |---|---|---|
 | 1 | 指定一个目录放页面与资产；**入口 HTML 里留 `{{REVIEW_BRIDGE}}` 注入点** | 桥由宿主注入 —— 不透明帧里取不到 `/api` 下的 `<script src>`（GOTCHAS 2/4） |
-| 2 | 写 `review-surface.json` | **宿主只懂那几个字段**（required 7 + optional 4），别的它一概不解释 |
-| 3 | 页面改用桥：`await review.asset(rel)` 取图、`review.readText(rel)` 取文本、`review.write(payload)` 落反馈、`review.wake({unit,text})` 唤醒、`review.on('changed')` 接变化戳 | 页面代码只写一份，两种宿主都能跑 |
+| 2 | 写 `review-surface.json` | **宿主只懂那几个字段**（required 7 + optional 5），别的它一概不解释 |
+| 3 | 页面改用桥：`await review.asset(rel)` 取图、`review.readText(rel)` 取文本、`review.write(payload)` 落反馈、**`review.draft(payload)` 落未提交的草稿**、`review.wake({unit,text})` 唤醒、`review.on('changed')` 接变化戳 | 页面代码只写一份，两种宿主都能跑 |
 | 4 | Skill 侧收件：读 `feedback` 文件 → 校验 → 决定它算不算"门" | **形状由你定，宿主不解释** |
 
 ### 一条硬规则：页面不许把「没法核对」说成「成功」

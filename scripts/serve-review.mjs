@@ -45,6 +45,9 @@ const surfaceDir = dirname(surfacePath);
 const ROOT = realpathSync(resolve(surfaceDir, doc.dir));
 const ENTRY = doc.entry;
 const FEEDBACK = doc.feedback ? resolve(surfaceDir, doc.feedback) : null;
+// 草稿：和 feedback 分开两个文件。feedback 是**决定**（人点了提交、模型要收件），
+// draft 是**还没提交的草稿**（页面拿它做「刷新不丢」，模型不当它是收件）。
+const DRAFT = doc.draft ? resolve(surfaceDir, doc.draft) : null;
 const WAKE_LOG = join(surfaceDir, 'wake-log.jsonl');
 const idleMs = Number(flag('--idle-hours', 4)) * 60 * 60 * 1000;
 
@@ -73,7 +76,7 @@ function resolveInRoot(urlPath) {
 
 // watch（相对 surface 文件）：有声明就**只盯那几个文件**，与插件侧同义；没声明才按整棵树摘要。
 /** 宿主**真的**能做什么。广告出去就等于承诺 —— 页面会照着它摆控件。 */
-const HOST_CAPABILITIES = ['asset-upload'];
+const HOST_CAPABILITIES = ['asset-upload', 'draft'];
 /** surface 声明它**要**什么（可省，默认什么都不要）。 */
 const DECLARED_CAPABILITIES = Array.isArray(doc.capabilities) ? doc.capabilities : [];
 
@@ -139,6 +142,15 @@ const server = createServer(async (req, res) => {
         writeFileSync(FEEDBACK, JSON.stringify(payload, null, 2) + '\n', 'utf8');
         console.log(`反馈已写入 ${FEEDBACK}`);
         return json(res, 200, { ok: true, path: FEEDBACK });
+      } catch (error) { return json(res, 400, { ok: false, error: error.message }); }
+    }
+    if (url.startsWith('/__review/draft') && req.method === 'POST') {
+      if (DRAFT === null) return json(res, 409, { ok: false, error: '这个面没有 draft 文件（surface 里没写 draft）' });
+      try {
+        const payload = JSON.parse(await readBody(req));
+        mkdirSync(dirname(DRAFT), { recursive: true });
+        writeFileSync(DRAFT, JSON.stringify(payload, null, 2) + '\n', 'utf8');
+        return json(res, 200, { ok: true, path: DRAFT });
       } catch (error) { return json(res, 400, { ok: false, error: error.message }); }
     }
     if (url.startsWith('/__review/capabilities')) {
