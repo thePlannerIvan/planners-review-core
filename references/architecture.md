@@ -37,6 +37,8 @@ review-bridge.js ──┘
 
 ## 缝：三样东西跨过去
 
+可选内容壳独立于宿主：`scripts/render-content-review.mjs` + `assets/content-review/` 只拥有阅读、编辑、排序与桥接交互；`scripts/content-review-contract.mjs` 只拥有壳的字段检查、深度哈希与审阅上下文。生产方 adapter 拥有原生内容映射、原文保护、回写和批准语义。接口见 `references/content-review.md`；不替换其他专用审阅面。
+
 | 方向 | 东西 |
 |---|---|
 | Skill → 宿主 | surface 文件、页面与资产（在 `dir` 里） |
@@ -55,7 +57,7 @@ review-bridge.js ──┘
 
 - **`keepMounted: true` 是前置条件**：默认 falsy 时 tab 一切走 React 就卸载 → iframe 销毁 → 人写了一半的意见全丢。
 - **HTTP 端点必须挂在 `/api` 围栏下**（`ctx.connection.fetch.register`）。裸 `webServer.register({kind:'prefix'})` 没有 Host/Origin 围栏也没有 cookie 校验 —— 任何你能访问的网页都能让浏览器对 loopback 盲发带副作用的请求。
-- **不透明 iframe 里 `blob:` URL 加载不了**（父页面创建的也不认）→ 资产只能是同源 HTTP 或 `data:`。
+- **父页面创建的 `blob:` URL 不属于不透明 iframe**。资产字节经桥传入后，由 iframe 自己创建 URL；不得直接引用受宿主围栏限制的资产路由。
 - **推送**：宿主 SSE → 插件客户端 → 父页面 `postMessage` 转投。页面只换那一张图，不重载 iframe。
 - **`ctx.emit → ctx.remote.$on` 对第三方插件是关死的**，而且客户端 `$on` 不校验事件名 → 写错了会静默永不触发。别用。
 

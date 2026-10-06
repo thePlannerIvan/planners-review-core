@@ -79,7 +79,7 @@ if (doc !== null) {
   } else if (!isBlank(doc.wake)) {
     err('wake_shape', 'wake 必须是 { mode, text }');
   }
-  const KNOWN_CAPABILITIES = ['asset-upload'];
+  const KNOWN_CAPABILITIES = ['asset-upload', 'draft'];
   if (Array.isArray(doc.capabilities) && doc.capabilities.length) {
     const unknown = doc.capabilities.filter((c) => !KNOWN_CAPABILITIES.includes(c));
     if (unknown.length) {

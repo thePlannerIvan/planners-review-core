@@ -91,7 +91,7 @@
       "items": {
         "type": "string"
       },
-      "description": "开放数组：声明需要宿主提供哪些**通用能力**。未知值宿主忽略不报错（前向兼容）。目前唯一已定义的值：`asset-upload` —— 页面能往 `dir` 里上传/替换资产（宿主必须做包含性校验）。声明的能力会出现在桥的 `review.capabilities` 里；页面据此决定要不要显示上传控件。"
+      "description": "开放数组：声明需要宿主提供哪些通用能力。未知值宿主忽略（前向兼容）。已定义：asset-upload（在 dir 内上传资产）与 draft（写入独立草稿文件，须同时声明 draft 路径）。桥的 capabilities 返回宿主实际支持的交集。"
     }
   }
 }
