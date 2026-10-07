@@ -9,7 +9,7 @@
  *
  * 页面完全不用改：它引用的 review-bridge.js 会自动发现"没有父窗口"，切到 fetch 通道。
  */
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
@@ -139,9 +139,22 @@ const server = createServer(async (req, res) => {
       try {
         const payload = JSON.parse(await readBody(req));
         mkdirSync(dirname(FEEDBACK), { recursive: true });
+        // 接入日志（append-only）：**先记这一行，再写整份状态**。状态那一笔写失败、
+        // 或写完之后被别的进程盖掉时，人的字还在这一行里。Skill 侧读它
+        // （`review_feedback.unrecorded_writes`）。记不上也不拦提交。
+        try {
+          appendFileSync(join(dirname(FEEDBACK), 'wake-log.jsonl'), JSON.stringify({
+            at: new Date().toISOString(), kind: 'write', id: randomUUID(),
+            review_id: String(payload?.review_id ?? ''),
+            submitted_at: String(payload?.provenance?.submitted_at ?? ''),
+            unit: null,
+            overall_feedback: String(payload?.overall_feedback ?? ''),
+            pages: payload?.pages ?? {},
+          }) + '\n', 'utf8');
+        } catch { /* 兜底，不是主路径 */ }
         writeFileSync(FEEDBACK, JSON.stringify(payload, null, 2) + '\n', 'utf8');
         console.log(`反馈已写入 ${FEEDBACK}`);
-        return json(res, 200, { ok: true, path: FEEDBACK });
+        return json(res, 200, { ok: true, path: FEEDBACK, persisted: true });
       } catch (error) { return json(res, 400, { ok: false, error: error.message }); }
     }
     if (url.startsWith('/__review/draft') && req.method === 'POST') {
@@ -182,7 +195,7 @@ const server = createServer(async (req, res) => {
         // 页面可以用整句覆盖（例如"整套提交"要说的不是"只重出这一页"）
         const template = payload.text ? String(payload.text) : String(doc.wake.text);
         const text = template.replace('{unit}', String(payload.unit ?? ''));
-        appendFileSync(WAKE_LOG, JSON.stringify({ at: new Date().toISOString(), unit: payload.unit ?? null, text }) + '\n', 'utf8');
+        appendFileSync(WAKE_LOG, JSON.stringify({ at: new Date().toISOString(), kind: 'wake', unit: payload.unit ?? null, text }) + '\n', 'utf8');
         console.log(`\n>>> 这一页定了（${payload.unit ?? '未指名'}）：${text}\n>>> 没有插件可唤醒，请回到对话说一声「已完成」。\n`);
         return json(res, 200, { ok: true, woke: false, note: '没有插件：请回到对话告诉模型', log: WAKE_LOG });
       } catch (error) { return json(res, 400, { ok: false, error: error.message }); }
