@@ -15,6 +15,7 @@ import { createServer } from 'node:http';
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { commandEnabled, runBrowserCommand } from './lib/review-command.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VALIDATOR = join(HERE, 'validate-surface.mjs');
@@ -43,6 +44,7 @@ if (verdict.status !== 0) {
 const doc = JSON.parse(readFileSync(surfacePath, 'utf8'));
 const surfaceDir = dirname(surfacePath);
 const ROOT = realpathSync(resolve(surfaceDir, doc.dir));
+const COMMAND_SURFACE = { data: doc, projectRoot: realpathSync(resolve(surfaceDir, doc.project_root)), dir: ROOT };
 const ENTRY = doc.entry;
 const FEEDBACK = doc.feedback ? resolve(surfaceDir, doc.feedback) : null;
 // 草稿：和 feedback 分开两个文件。feedback 是**决定**（人点了提交、模型要收件），
@@ -76,7 +78,7 @@ function resolveInRoot(urlPath) {
 
 // watch（相对 surface 文件）：有声明就**只盯那几个文件**，与插件侧同义；没声明才按整棵树摘要。
 /** 宿主**真的**能做什么。广告出去就等于承诺 —— 页面会照着它摆控件。 */
-const HOST_CAPABILITIES = ['asset-upload', 'draft'];
+const HOST_CAPABILITIES = ['asset-upload', 'draft', ...(commandEnabled(doc) ? ['command'] : [])];
 /** surface 声明它**要**什么（可省，默认什么都不要）。 */
 const DECLARED_CAPABILITIES = Array.isArray(doc.capabilities) ? doc.capabilities : [];
 
@@ -132,6 +134,21 @@ const server = createServer(async (req, res) => {
   const url = req.url || '/';
 
   if (url.startsWith('/__review/')) {
+    if (url.split('?')[0] === '/__review/command') {
+      if (req.method !== 'POST') return json(res, 405, { ok: false, code: 'command_method', error: 'Use POST for commands' });
+      const allowedOrigin = `http://127.0.0.1:${server.address().port}`;
+      if (req.headers.host !== `127.0.0.1:${server.address().port}`
+          || (req.headers.origin !== undefined && req.headers.origin !== allowedOrigin)
+          || req.headers['sec-fetch-site'] === 'cross-site') {
+        return json(res, 403, { ok: false, code: 'command_origin', error: 'Cross-origin commands are not allowed' });
+      }
+      if (!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type'] || '')) {
+        return json(res, 415, { ok: false, code: 'command_content_type', error: 'Command requires application/json' });
+      }
+      try {
+        return json(res, 200, await runBrowserCommand(COMMAND_SURFACE, JSON.parse(await readBody(req))));
+      } catch (error) { return json(res, 400, { ok: false, code: 'command_request', error: error.message }); }
+    }
     if (url.startsWith('/__review/version')) return json(res, 200, { token: versionToken() });
     if (url.startsWith('/__review/shutdown')) { json(res, 200, { ok: true }); return setTimeout(() => process.exit(0), 50); }
     if (url.startsWith('/__review/write') && req.method === 'POST') {

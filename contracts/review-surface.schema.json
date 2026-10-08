@@ -69,7 +69,7 @@
             "queue",
             "steer"
           ],
-          "description": "queue = 排到当前回合之后（followup）；steer = 打断当前回合（steer）。都会真消耗一个模型回合。"
+          "description": "唤醒的投递方式，就这两个（DSH 的 prompt({mode}) 分别落到 agent.followup / agent.steer）。**queue** = 进持久队列（`inbox` 的 `next-turn`），当前回合结束后才被当成新回合取走 —— 模型正忙时它就躺在队列里等，页面与 DSH 的「N 条排队消息」都会显示它；不健康/失败的回合路径上实测能躺 64 秒以上。**steer** = 插话（`next-step`），当前回合走到**下一个步骤边界**时取走；会话空闲时同样会立刻起一个回合把它取走。**审阅面用 steer**：人点了「本页要求修改」的语义是"现在就按这个改"，而不是"等你忙完再说"；而且进持久队列会让同一句话同时出现在「已送达」和「排队中」两个地方。mode 是 surface 的声明，不是页面的选择 —— 页面只说 unit 与整句文案。"
         },
         "text": {
           "type": "string",
@@ -86,12 +86,16 @@
       },
       "description": "可选。相对 surface 文件的一组文件：**它们的 mtime/size 一变，宿主就戳一下页面**（推一条 `review/changed`）。宿主**只看元数据、不看内容**，所以它仍然不知道「什么变了」—— 页面收到戳之后自己去读、自己去 diff。（举例：某个面可以让它盯自己的 `snapshot.json`。）"
     },
+    "command_backend": {
+      "enum": ["svg-workbench/1"],
+      "description": "Optional fixed command processor identifier. Used only when capabilities declares command; never an executable path."
+    },
     "capabilities": {
       "type": "array",
       "items": {
         "type": "string"
       },
-      "description": "开放数组：声明需要宿主提供哪些通用能力。未知值宿主忽略（前向兼容）。已定义：asset-upload（在 dir 内上传资产）与 draft（写入独立草稿文件，须同时声明 draft 路径）。桥的 capabilities 返回宿主实际支持的交集。"
+      "description": "开放数组：声明需要宿主提供哪些通用能力。未知值宿主忽略（前向兼容）。已定义：asset-upload（在 dir 内上传资产）、draft（写入独立草稿文件，须同时声明 draft 路径）、command（须声明受支持的 command_backend）。桥的 capabilities 返回宿主实际支持的交集。"
     }
   }
 }

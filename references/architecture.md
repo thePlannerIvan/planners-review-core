@@ -18,7 +18,8 @@ review-bridge.js ──┘
 |---|---|---|---|---|
 | `contracts/review-surface.schema.json` | 契约 | surface 的字段与语义 | 被校验器与宿主读取 | 不表达审阅语义（审什么、能下什么决定、怎么绑版本） |
 | `scripts/validate-surface.mjs` | **唯一校验器** | 结构、路径包含性、桥的哈希一致性 | CLI，输出 JSON，非零即不合规 | 不评价审阅设计 |
-| `assets/review-bridge.js` | 页面与宿主之间唯一的说话方式 | 两种传输（postMessage / fetch）、`write`/`wake`/`upload`/`assetUrl`/`on`/`capabilities` | `window.ReviewBridge.connect()`；**由宿主注入**，页面只留 `{{REVIEW_BRIDGE}}` | 不碰 localStorage、不解释反馈形状、不知道"页"是什么 |
+| `assets/review-bridge.js` | 页面与宿主之间唯一的说话方式 | 两种传输（postMessage / fetch）、文件、资产、命令与唤醒 | `window.ReviewBridge.connect()`；由宿主注入 | 不解释反馈形状或页面版本 |
+| `scripts/lib/review-command.mjs` | 受限后端命令传输 | 固定处理器解析、进程限制、结构化回执 | `runBrowserCommand(surface,payload)`；两种宿主复用 | 不定义 SVG、版本或任务语义，不执行页面提供的程序 |
 | `scripts/serve-review.mjs` | 没有 DSH 时的宿主 | serve `dir`、写 feedback、wake 落日志、版本令牌 | CLI | 不唤醒 Agent（没人可唤）—— 打印提示让人回对话 |
 | `scripts/review-host.mjs` | **宿主的生命周期，唯一实现**（Node CLI） | 写/校验 surface、起/复用宿主、判死活与**身份**、停干净、找 node、解析启动自证、越界出声 | `write` / `validate` / `state` / `alive` / `start` / `stop` / `open` ＋ `pid` / `report` / `match` / `constants`；入参是**一个 surface 路径** | **不认识任何 Skill 的业务**：不解释审的是什么，也不需要在替谁干活；文档内容由各家的 `surface_document()` 建 |
 | `scripts/lib/review_host.py` | **只是传输层**（Python） | spawn `review-host.mjs` + 解析 JSON + 映射名字 | 同名函数给 Python 调用方；只有 `node_binary()` 留在这一侧（怎么启动 CLI）；**开浏览器也归实现侧**（`launchBrowser()` / `--no-open`） | **判据一条都没有** —— 僵尸、身份、越界、日志解析全在 Node 侧（上面那一行） |
@@ -43,9 +44,9 @@ review-bridge.js ──┘
 |---|---|
 | Skill → 宿主 | surface 文件、页面与资产（在 `dir` 里） |
 | 宿主 → 页面 | `init`（nonce / assetBase / surface）、`changed`（哪些单位变了） |
-| 页面 → 宿主 | `write`（形状由 Skill 定）、`wake`（一句话给模型） |
+| 页面 → 宿主 | 文件/草稿写入、受限后端命令、唤醒 |
 
-**宿主只实现三件事**：落文件、递话给模型、给资产 URL。任何第四件事都说明缝设计错了。
+保存与反馈分开。宿主可以转交受限命令，后端负责版本和任务；只有反馈或输出请求需要唤醒模型。接口及能力检查见 [command-transport.md](command-transport.md)。
 
 ## 安全：两条必须守住的线
 
@@ -85,4 +86,4 @@ review-bridge.js ──┘
 
 - **`dir` 只能取"页面与它要读的东西的最近公共祖先"，往往是项目根 → 整个项目根都在 serve 范围里**（第二家 video-craft 实测：含 GB 级素材与 `composition/`）。包含性校验管住了**越界**，没管住**暴露面**。危害有界（宿主绑 `127.0.0.1`、只服务本机、页面是自己人写的），但这是一条真缺口。
   **要补的话**：surface 上加一个"只 serve 这几棵子树"或一个 `hide` 列表。**用户 2026-09-26 明确说暂时先不改** —— 先记在这里，别忘。
-- **追加式存储没有幂等原语**：缝的 `write` 是覆盖写；要"只追加"的产出方得自己在 Skill 侧造游标（第二家用的是"记录内容哈希 + 旁边一个小文件"）。见 SKILL.md 里那一行改造路径。
+- `write` / `draft` 仍是覆盖写；持续编辑或并发追加走命令后端的持久化回执，不通过读回合并覆盖来承诺安全。

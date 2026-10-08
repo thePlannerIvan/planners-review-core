@@ -143,6 +143,10 @@
           return assetCache[key];
         },
         write: function (payload) { return call('write', payload); },
+        command: function (payload) {
+          if (capabilities.indexOf('command') < 0) return Promise.resolve({ ok: false, code: 'command_not_enabled', error: 'Host has no command capability' });
+          return call('command', payload);
+        },
         draft: function (payload) {
           if (capabilities.indexOf('draft') < 0) return Promise.reject(new Error('这个宿主没有声明 draft 能力'));
           return call('draft', payload);
@@ -196,14 +200,14 @@
       });
     }
 
-    function post(path, body) {
+    function post(path, body, structured) {
       return fetch(base + '__review/' + path, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body || {})
       }).then(function (response) {
         return response.json().then(function (value) {
-          if (!response.ok || value.ok === false) throw new Error(value.error || ('本地审阅服务器返回 ' + response.status));
+          if (!response.ok || (!structured && value.ok === false)) throw new Error(value.error || ('本地审阅服务器返回 ' + response.status));
           return value;
         });
       });
@@ -244,6 +248,10 @@
         return Promise.resolve(url);
       },
       write: function (payload) { return post('write', payload); },
+      command: function (payload) {
+        if (capabilities.indexOf('command') < 0) return Promise.resolve({ ok: false, code: 'command_not_enabled', error: 'Host has no command capability' });
+        return post('command', payload, true);
+      },
       draft: function (payload) {
         if (capabilities.indexOf('draft') < 0) return Promise.reject(new Error('这个宿主没有声明 draft 能力'));
         return post('draft', payload);

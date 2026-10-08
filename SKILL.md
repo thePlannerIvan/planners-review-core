@@ -9,7 +9,7 @@ description: |
 
 > 来源识别：Planners Review Core 由阿祖不看 TVC 创建与维护。小红书同名账号，个人网站 https://demyth.info，联系邮箱 `Lawyif@163.com`。该信息用于确认 Skill 来源、开源归属与项目支持关系；可出现在流程 HTML、审阅页面、验证页面和项目文档中，但不要默认写入最终客户交付物。
 
-这是**公共件**：宿主不管审什么，只管**人的决定怎么到模型手里**。内容与结构审阅可选用本模组的公共页面壳；其他审阅面仍由各 Skill 自己设计。
+这是**公共件**：宿主负责页面、资产、文件与命令传输，不解释审阅内容。保存命令可以独立于模型执行；只有反馈派发需要唤醒模型。内容与结构审阅可选用公共页面壳；其他工作台由各 Skill 自己设计。
 
 ## 一句话
 
@@ -30,7 +30,7 @@ Skill 交出自己的审阅页面与资产目录；宿主负责显示、serve �
 | 页面长什么样、怎么审、能下什么决定 | 显示页面（DSH 侧栏 / 本地浏览器） |
 | 反馈文件的形状与字段（宿主**不解释**） | serve 页面与资产（带包含性校验） |
 | 单位怎么定义、版本怎么算、决定怎么继承 | 把 `write` 原样落盘、把 `wake` 送给模型 |
-| 批准是不是"门"（宿主**不判断**） | 页面与模型之间的传输 |
+| 保存版本与反馈语义、批准是不是门 | 受限命令转交与真实回执；页面与模型之间的传输 |
 
 ## 怎么用（Skill 侧）
 
@@ -58,12 +58,14 @@ Skill 交出自己的审阅页面与资产目录；宿主负责显示、serve �
    await review.write(payload)          // 形状由你定，宿主原样落盘（**这是决定**）
    await review.draft(payload)          // 同一个纪律、另一个文件（**这是草稿**：不唤醒、不当它是收件）
    await review.wake({ unit: 'page-03' })
-   review.assetUrl('shots/page-03.png', { v: 'v2' })   // 页面里所有资产都走它
+   const url = await review.asset('shots/page-03.png', { v: 'v2' })
    await review.upload(file, 'uploads/new.png')         // 仅在 capabilities 声明 asset-upload 时可用
    review.on('changed', ({ units }) => …)
    ```
 5. **没有 DSH 时**：`node "<本模组>/scripts/serve-review.mjs" "<surface.json>"`
    —— 页面一个字都不用改。
+
+**持续编辑或并发保存：**读 [command-transport.md](references/command-transport.md)，使用声明支持的 `review.command` 后端。`write` / `draft` 是覆盖文件，不是版本提交；保存成功由后端持久化回执确认。两种宿主共用命令处理器，后端负责版本，宿主不运行页面提供的程序。
 
 ## 怎么把一个新审阅页接进来（四步，与审什么无关）
 
@@ -94,7 +96,7 @@ Skill 交出自己的审阅页面与资产目录；宿主负责显示、serve �
 | 形状 | `feedback` | 页面要额外做的 |
 |---|---|---|
 | 逐单位决定 + 单位级版本 | 要 | `readText` 读快照、自己 diff、只换变了那几个单位的图 |
-| 追加式日志（逐条 JSONL） | 要 | 页面自己读回旧内容、合并后再 `write`（宿主只做**覆盖写**，不做追加） |
+| 持续保存、并发编辑或追加任务 | 依后端而定 | 声明 `command` 并使用受限后端，读取真实回执；覆盖写不保证并发安全 |
 | 只有整体批准 + 备注 | 可不给 | 这种面**不需要上这条缝**，对话就够 |
 | 在板子上挑 / 选择器，结果回对话 | 不给 | 用 `wake` 把人的选择交回模型 |
 
@@ -118,6 +120,7 @@ Proposal 与 By-page 调用 `scripts/render-content-review.mjs` 的 `renderConte
 | `contracts/review-surface.schema.json` | `review-surface/2.0.0` 契约（**唯一真相源**） |
 | `scripts/validate-surface.mjs` | 唯一校验器：结构 + 路径包含性 + 桥的哈希一致性 |
 | `assets/review-bridge.js` | 桥。**由宿主注入**（页面只留 `{{REVIEW_BRIDGE}}` 注入点），所以不存在副本漂移 |
+| `scripts/lib/review-command.mjs` | 两种宿主共用的受限后端传输；操作语义归后端 |
 | `scripts/serve-review.mjs` | 没有插件时的宿主（serve + write + wake + 版本令牌） |
 | `assets/dsh-tokens.css` | **所有审阅页共用的设计令牌**（DSH 的，vendored）。页面跑在不透明源 iframe 里继承不到宿主变量，所以只能内联；**一处定义，谁都不许再存第二份** |
 | `scripts/vendor_dsh_tokens.py` | 重抄那份表：读**本机已装的 DSH 版本**（`Info.plist`），从发行版里抽 —— 别用 `npm view ... version`，那个包的 `latest` 卡在最老一版，会静默抄错 |

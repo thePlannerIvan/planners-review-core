@@ -33,7 +33,8 @@ writeSurface(surface, {
   dir: '..',
   entry: 'review/index.html',
   feedback: 'submissions.json',
-  wake: { mode: 'queue', text: '{unit} 已定。' },
+  // 审阅面用 steer（插话，走到下一个步骤边界就取走）；queue 会排到当前回合之后。
+  wake: { mode: 'steer', text: '{unit} 已定。' },
   watch: ['../timeline/data.json'],
   capabilities: [],
 });

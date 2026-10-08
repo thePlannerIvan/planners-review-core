@@ -79,7 +79,13 @@ if (doc !== null) {
   } else if (!isBlank(doc.wake)) {
     err('wake_shape', 'wake 必须是 { mode, text }');
   }
-  const KNOWN_CAPABILITIES = ['asset-upload', 'draft'];
+  const KNOWN_CAPABILITIES = ['asset-upload', 'draft', 'command'];
+  if (doc.command_backend !== undefined && doc.command_backend !== 'svg-workbench/1') {
+    err('command_backend', 'command_backend must be the allowlisted identifier svg-workbench/1');
+  }
+  if (Array.isArray(doc.capabilities) && doc.capabilities.includes('command') && doc.command_backend === undefined) {
+    warn('command_backend_missing', 'command capability has no command_backend; hosts will not advertise it');
+  }
   if (Array.isArray(doc.capabilities) && doc.capabilities.length) {
     const unknown = doc.capabilities.filter((c) => !KNOWN_CAPABILITIES.includes(c));
     if (unknown.length) {

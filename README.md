@@ -34,6 +34,8 @@
 
 生命周期 CLI（`scripts/review-host.mjs`）是**唯一实现**：`write` / `validate` / `state` / `alive` / `start` / `stop` / `open`（＋ `pid` / `report` / `match` / `constants`）。判据三条，都是实测换来的：**按内容不按端口**判身份、**靠 `watch` 声明的文件**分项目、**绝不端出旧项目**。
 
+可选命令通道：surface 声明 `command_backend: "svg-workbench/1"` 与 `capabilities: ["command"]`，页面调用 `review.command(payload)`。本地宿主与 DSH 插件共享同一个固定后端 runner，保留成功与冲突回执，不依赖模型在线。接入与安全边界见 [Command Transport](references/command-transport.md)。
+
 ## 适合 / 不适合
 
 适合：
