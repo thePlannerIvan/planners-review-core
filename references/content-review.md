@@ -11,9 +11,11 @@
 - `default_decision` 由生产方提供；上一轮要求修改与事实例外为 `null`，必须人明确决定。`prior` 只读，不预填意见。
 - 图片、事实例外和上传权限只由生产方传入，不要求所有任务都有。Markdown 图片走桥，页面内 blob URL 不回写正文。
 
-## 保存与收件
+## 保存与任务
 
-`draft` 和 `feedback` 是不同文件。编辑与拖动只调用 `review.draft`，成功后才显示已保存；确认才 `write` 并 `wake`。没有草稿能力时只读。快照不可读时提交带 `pre_check:false`，由生产方再核对；明确旧版时暂停提交并保留文字。
+默认是 `content-workbench/1`：编辑、拖动、图片上传先进入页面状态；`draft` 保存可恢复草稿；`command({op:'save'})` 在 revision 校验通过后原子回写 canonical 主稿；`command({op:'feedback'})` 只追加带 revision/source_hash/pages 的 pending task。DSH 自动保存和本地显式保存调用同一后端，均以回执为准。冲突时保留草稿，不能覆盖用户或外部修改。
+
+`feedback` 文件和 `review-inbox.mjs` 只属于显式 `--legacy-review true` 的旧项目续接。legacy 模式下，编辑先写 draft，提交后才 `write`，再由生产方运行 inbox；普通 Workbench 不运行 inbox，也不把保存称为批准。
 
 提交保留生产方原生 feedback 字段，另带 `review_changes`：
 
@@ -23,7 +25,7 @@
 
 `edits.pages` 以原始页号为键，允许 `title`、`claim`、按索引修改 `blocks` 的 `title/text` 或可编辑 `sections` 的 Markdown 字符串。`edits.sections` 以稳定章节 ID 为键，允许 `title/lead/transition`；核心判断修改存 `edits.thesis`。顺序必须是原单位完整排列，不借排序增删内容。
 
-builder 调用 `writeReviewContext(dir,context)` 保存源文件指纹及原始单位。草稿按源指纹隔离；有未收件文字时拒绝悄悄换成新版。inbox 调用 `validateChanges`，再由生产方自己的 adapter 检查外部修改、留原稿、回写原生内容、重编号和映射反馈，移除提交附加字段。正文变化是否重新核查、是否还能批准，归生产方决定。
+builder 调用 `writeReviewContext(dir,context)` 保存源文件指纹及原始单位。草稿按源指纹隔离；有未保存文字时拒绝悄悄换成新版。Workbench 后端用 journal + CAS 回写原生内容，记录 revision/history，并在回执中返回 page_mapping 与 `requires_fact_recheck`。正文变化是否重新核查、是否需要用户确认，归生产方决定。legacy inbox 只在显式兼容分支调用 `validateChanges`、adapter 和原生反馈校验。
 
 Markdown 由 vendored Marked 17.0.5（MIT）解析，取自本机 bundled Node runtime 的 `marked/lib/marked.umd.js`，许可证同目录保存；不执行材料中的 HTML 或脚本。页面包含全部依赖，可由不透明 iframe 内联加载。
 

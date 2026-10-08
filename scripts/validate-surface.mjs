@@ -80,8 +80,8 @@ if (doc !== null) {
     err('wake_shape', 'wake 必须是 { mode, text }');
   }
   const KNOWN_CAPABILITIES = ['asset-upload', 'draft', 'command'];
-  if (doc.command_backend !== undefined && doc.command_backend !== 'svg-workbench/1') {
-    err('command_backend', 'command_backend must be the allowlisted identifier svg-workbench/1');
+  if (doc.command_backend !== undefined && !['svg-workbench/1', 'content-workbench/1'].includes(doc.command_backend)) {
+    err('command_backend', 'command_backend must be an allowlisted workbench identifier');
   }
   if (Array.isArray(doc.capabilities) && doc.capabilities.includes('command') && doc.command_backend === undefined) {
     warn('command_backend_missing', 'command capability has no command_backend; hosts will not advertise it');

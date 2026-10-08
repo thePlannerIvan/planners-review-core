@@ -5,19 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>内容审阅</title>
   <style>__DSH_TOKENS__</style>
+  <style>__REVIEW_UI__</style>
   <style>
     body {
-      --bg: var(--dsw-static-neutral-bluish-50);
-      --surface: var(--dsw-static-neutral-bluish-00);
-      --surface-subtle: var(--dsw-static-neutral-bluish-75);
+      --bg: #f7f7f8;
+      --surface: #ffffff;
+      --surface-subtle: #f1f1f3;
       --surface-hover: var(--dsw-alias-interactive-bg-hover);
-      --ink: var(--dsw-alias-label-primary);
-      --ink-2: var(--dsw-alias-label-secondary);
-      --ink-3: var(--dsw-alias-label-tertiary);
+      --ink: #0b0b10;
+      --ink-2: #56565e;
+      --ink-3: #8a8a93;
       --line: var(--dsw-alias-border-l2);
       --line-strong: var(--dsw-alias-border-l4);
-      --blue: var(--dsw-static-deepseek-500);
-      --blue-soft: var(--dsw-static-deepseek-50);
+      --blue: var(--review-accent);
+      --blue-soft: var(--review-accent-soft);
       --green: #22c55e;
       --green-soft: #e6faed;
       --amber: #dd8629;
@@ -27,7 +28,7 @@
       --radius-sm: 6px;
       --radius-md: 8px;
       --shadow-1: 0 2px 4px rgba(15, 17, 21, .05);
-      --font: "PingFang SC", "Noto Sans CJK SC", "Helvetica Neue", sans-serif;
+      --font: Inter, "PingFang SC", "Noto Sans CJK SC", sans-serif;
       --mono: "SF Mono", "Roboto Mono", monospace;
     }
     * { box-sizing: border-box; letter-spacing: 0 !important; }
@@ -41,7 +42,8 @@
     .app { height: 100dvh; overflow: hidden; display: grid; grid-template-rows: 52px minmax(0, 1fr); }
     .topbar { position: relative; z-index: 10; display: flex; align-items: center; gap: 16px; height: 52px; padding: 0 16px; background: rgba(255,255,255,.96); border-bottom: 1px solid var(--line); }
     .brand { display: flex; align-items: center; gap: 9px; min-width: 90px; font-weight: 650; }
-    .brand-mark { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 7px; color: #fff; background: #17191d; font-size: 12px; letter-spacing: -.04em; }
+    .brand-mark { position: relative; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 7px; color: #fff; background: #17191d; font-size: 12px; }
+    .brand-mark::after { content: ''; position: absolute; right: 5px; bottom: 5px; width: 4px; height: 4px; border-radius: 50%; background: var(--review-accent); }
     .brand small { display: none; }
     .mode-tabs { display: flex; align-items: center; gap: 3px; padding: 3px; background: var(--surface-subtle); border-radius: 8px; }
     .mode-tabs button, .filter button { border: 0; background: transparent; border-radius: 6px; padding: 6px 11px; cursor: pointer; color: var(--ink-2); }
@@ -196,8 +198,8 @@
     .candidate-more:hover { color: var(--blue); }
     .asset-note { display: none; }
     .inspector-actions { position: sticky; bottom: 0; padding: 14px 0 0; background: linear-gradient(180deg, rgba(255,255,255,0), #fff 24%); }
-    .primary { width: 100%; border: 0; border-radius: 7px; padding: 10px 12px; color: #fff; background: var(--ink); cursor: pointer; font-weight: 650; }
-    .primary:hover { background: #2e3339; }
+    .primary { width: 100%; border: 1px solid var(--review-accent); border-radius: 7px; padding: 10px 12px; color: #fff; background: var(--review-accent); cursor: pointer; font-weight: 650; }
+    .primary:hover { background: #c33b22; }
     .secondary { width: 100%; margin-top: 7px; border: 1px solid var(--line-strong); border-radius: 7px; padding: 9px 12px; background: var(--surface); cursor: pointer; }
     .secondary:hover { background: var(--surface-hover); }
     .inspector-footnote { display: none; }
@@ -205,6 +207,17 @@
     .editable-ready { overflow-wrap: anywhere; }
     .editing:focus { outline: 1px solid var(--blue); outline-offset: 4px; border-radius: 2px; }
     .empty-content { color: var(--ink-3); padding: 24px 0; }
+    .page-actions { display: flex; justify-content: space-between; gap: 8px; margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--line); }
+    .page-actions button { min-width: 108px; }
+    .storyline-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 14px; }
+    .storyline-actions small { color: var(--ink-3); }
+    .story-card { position: relative; }
+    .story-card .story-remove { position: absolute; top: 12px; right: 12px; }
+    .story-card.is-new { border-color: var(--review-accent-line); background: var(--review-accent-soft); }
+    .attachment-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 12px; }
+    .attachment-item:first-child { border-top: 0; }
+    .attachment-remove { border: 0; padding: 2px 4px; color: var(--ink-3); background: transparent; cursor: pointer; }
+    .attachment-remove:hover { color: var(--red); }
     .rich-copy { overflow-wrap: anywhere; }
     .rich-copy table { width: 100%; border-collapse: collapse; table-layout: fixed; margin: 12px 0; }
     .rich-copy th, .rich-copy td { padding: 10px; border: 1px solid var(--line); vertical-align: top; text-align: left; }
@@ -238,17 +251,44 @@
       .inspector.collapsed { width: 42px; box-shadow: none; }
       .workspace-inner { padding: 14px 20px 32px; }
     }
+    .workbench-uploads { display: grid; grid-template-columns: repeat(auto-fit,minmax(160px,1fr)); gap: 16px; }
+    .workbench-uploads figure { margin: 12px 0; min-width: 0; }
+    .workbench-uploads img { width: 100%; max-height: 280px; object-fit: contain; }
+    .workbench-uploads figcaption { display: flex; align-items: center; justify-content: space-between; gap: 8px; overflow-wrap: anywhere; }
+    .story-card { border: 0; border-radius: 0; padding: 14px 0; box-shadow: none; border-bottom: 1px solid var(--line); }
+    .copy-block { border: 0; border-radius: 0; box-shadow: none; padding: 12px 0; }
+    .inspector-actions .primary { background: var(--review-accent); border-color: var(--review-accent); }
+    .inspector-actions button { min-height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+    .inspector-toggle svg { width: 18px; height: 18px; }
+    #pageTaskButton { margin-top: 8px; width: 100%; }
+    @media(max-width:600px) {
+      .topbar { padding: 0 10px; gap: 8px; }
+      .review-brand > span:last-child { display: none; }
+      .mode-tabs button { padding: 6px 8px; }
+      .layout, .layout.inspector-collapsed { grid-template-columns: 48px minmax(0,1fr) 34px; }
+      .rail-section { padding: 8px 3px; }
+      .rail-title, .page-nav-title { display: none; }
+      .page-nav { grid-template-columns: minmax(0,1fr); padding: 10px 4px; text-align: center; }
+      .page-nav .drag-handle { display: none; }
+      .workspace-inner { padding: 12px 14px 24px; }
+      .inspector.collapsed { width: 34px; }
+      .inspector { max-width: calc(100vw - 48px); }
+      .outline-line { grid-template-columns: 20px 20px minmax(0,1fr) 30px; gap: 5px; }
+      .outline-grip { width: 20px; }
+      .outline-line [contenteditable] { font-size: 14px; }
+      .page-header h2 { font-size: 22px; }
+    }
   </style>
 </head>
 <body>
   <div class="app">
     <header class="topbar">
-      <div class="brand"><span class="brand-mark">阅</span><div>内容审阅</div></div>
+      <div class="review-brand"><span class="review-brand-mark" aria-hidden="true"></span><span>Logics</span></div>
       <nav class="mode-tabs" aria-label="审阅内容切换"><button class="active" data-mode="storyline">故事线</button><button data-mode="bypage">逐页稿</button></nav>
       <div class="top-spacer"></div>
       <div class="watermark">阿祖不看 TVC · demyth.info</div>
       <div class="save-state" role="status"><i class="save-dot" id="saveDot"></i><span id="saveState"></span></div>
-      <button class="header-action" id="reload" aria-label="刷新" title="刷新">⟳</button>
+      <button class="review-icon-button" id="reload" aria-label="刷新" title="刷新"><span data-review-icon="RefreshCw"></span></button>
     </header>
 
     <div class="layout">
@@ -263,18 +303,21 @@
         <div class="workspace-inner">
           <div id="notice" class="notice" role="status" hidden></div>
           <section class="storyline-view view-active" id="storylineView">
+            <div class="storyline-actions"><span></span><button id="addStoryline" class="review-icon-button" aria-label="添加一句" title="添加一句" hidden><span data-review-icon="Plus"></span></button></div>
             <div class="thesis"><div class="thesis-label">核心判断</div><p></p></div>
-            <div class="story-stream" id="storyStream"></div>
+            <ol class="outline-list" id="outlineList" hidden></ol>
+            <details id="chapterDetails"><summary>章节信息</summary><div class="story-stream" id="storyStream"></div></details>
           </section>
 
           <section class="bypage-view" id="bypageView">
             <article class="page-header"><div class="page-header-row"><div><div class="eyebrow">第 <span id="currentPageLabel"></span> 页</div><h2 id="pageTitle"></h2><div class="page-claim" id="pageClaim"></div></div></div></article>
             <div id="pageContent"></div>
+            <div class="page-actions"><button id="pagePrev" class="review-secondary-action"><span data-review-icon="ChevronUp"></span><span>上一页</span></button><button id="pageNext" class="review-secondary-action"><span>下一页</span><span data-review-icon="ChevronDown"></span></button></div>
           </section>
         </div>
       </main>
 
-      <aside class="inspector"><button class="inspector-toggle" id="inspectorToggle" aria-label="收起审阅区" aria-expanded="true" title="收起审阅区">›</button><div class="inspector-inner"><div class="inspector-kicker" id="inspectorKicker">本章审阅</div><h2 class="inspector-title" id="inspectorTitle"></h2><section class="inspector-section"><div id="factNotice" class="fact-notice" hidden></div><div class="decision-row"><button class="decision approve" data-decision="approve">✓ 没问题</button><button class="decision revise" data-decision="revise">需要改</button></div></section><section class="inspector-section"><label class="control-label" for="feedback">意见</label><textarea id="feedback" placeholder=""></textarea><details class="source-panel"><summary>整体意见</summary><textarea id="overallFeedback"></textarea></details><div id="priorOpinion" class="source-panel" hidden></div></section><section class="inspector-section" id="assetSection"><div class="control-label">图片</div><div class="candidate-list" id="candidateList"></div><button class="candidate-more" id="candidateMore">更多图片</button></section><section id="uploadSection" class="inspector-section" hidden><button class="secondary" id="uploadButton">添加图片</button><input id="uploadFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden><div id="attachmentList" class="attachment-list"></div></section><div class="inspector-actions"><button class="primary" id="saveButton">确认</button><button class="secondary" id="draftButton">保存</button></div></div></aside>
+      <aside class="inspector"><button class="inspector-toggle" id="inspectorToggle" aria-label="收起审阅区" aria-expanded="true" title="收起审阅区">›</button><div class="inspector-inner"><div class="inspector-kicker" id="inspectorKicker">本章审阅</div><h2 class="inspector-title" id="inspectorTitle"></h2><section class="inspector-section"><div id="factNotice" class="fact-notice" hidden></div><div class="decision-row"><button class="decision approve" data-decision="approve">✓ 没问题</button><button class="decision revise" data-decision="revise">需要改</button></div></section><section class="inspector-section"><label class="control-label" for="feedback">意见</label><textarea id="feedback" placeholder=""></textarea><details class="source-panel"><summary>整体意见</summary><textarea id="overallFeedback"></textarea></details><div id="priorOpinion" class="source-panel" hidden></div></section><section class="inspector-section" id="assetSection"><div class="control-label">图片</div><div class="candidate-list" id="candidateList"></div><button class="candidate-more" id="candidateMore">更多图片</button></section><section id="uploadSection" class="inspector-section" hidden><button class="secondary" id="uploadButton">添加图片</button><input id="uploadFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden><div id="attachmentList" class="attachment-list"></div></section><div class="inspector-actions"><button class="primary" id="saveButton">保存主稿</button><button class="secondary" id="draftButton">保存草稿</button></div></div></aside>
     </div>
   </div>
 

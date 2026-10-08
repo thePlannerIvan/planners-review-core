@@ -1,0 +1,86 @@
+:root {
+  --dsw-static-deepseek-500: #e24b2b;
+  --dsw-static-deepseek-50: #fff3ef;
+  --dsw-alias-label-primary: #0b0b10;
+  --dsw-alias-label-secondary: #56565e;
+  --dsw-alias-label-tertiary: #8a8a93;
+  --dsw-alias-bg-base: #f7f7f8;
+  --dsw-alias-bg-layer-1: #fff;
+  --dsw-alias-bg-module-platform: #f1f1f3;
+  --dsw-alias-bg-document-preview: #f7f7f8;
+  --review-accent: #e24b2b;
+  --review-accent-soft: #fff3ef;
+  --review-accent-line: #f0b3a4;
+  --review-icon-size: 18px;
+}
+body { font-family: Inter, "PingFang SC", "Noto Sans CJK SC", sans-serif; }
+header .brand-left { min-width: 0; }
+header #project { max-width: 30vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button, input, textarea, select { font-family: inherit; letter-spacing: 0; }
+* { letter-spacing: 0; }
+.review-brand { display: flex; align-items: center; gap: 9px; font-size: 14px; font-weight: 650; }
+.review-brand-mark { width: 28px; height: 28px; flex: 0 0 28px; background: var(--review-brand-image) center/contain no-repeat; }
+.review-save-state { font-size: 12px; color: #686870; }
+button:disabled { cursor: default; opacity: .45; }
+.outline-list { padding: 0; margin: 16px 0 24px; list-style: none; }
+.outline-line { display: grid; grid-template-columns: 28px 26px minmax(0,1fr) 34px; align-items: start; gap: 8px; padding: 12px 0; border-bottom: 1px solid #e5e5e8; }
+.outline-line [contenteditable] { min-height: 26px; font-size: 16px; line-height: 1.65; overflow-wrap: anywhere; }
+.outline-grip { width: 28px; height: 30px; border: 0; background: transparent; color: #8a8a93; cursor: grab; touch-action: none; }
+.outline-line.drop-before { border-top: 2px solid var(--review-accent); }
+.outline-line.drop-after { border-bottom: 2px solid var(--review-accent); }
+.outline-number { color: #8a8a93; line-height: 28px; font-size: 12px; }
+.image-inline-actions { display: inline-flex; gap: 8px; margin-top: 4px; }
+@media(max-width:600px) { .watermark, header small { display: none; } }
+
+/* Shared review-workbench language. Producers keep their own geometry. */
+.review-icon-button,
+.review-secondary-action,
+.review-primary-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  border-radius: 6px;
+  font: inherit;
+  cursor: pointer;
+  transition: background .16s ease, border-color .16s ease, color .16s ease;
+}
+.review-icon-button {
+  width: 34px;
+  padding: 0;
+  border: 1px solid var(--line, var(--dsw-alias-border-l2));
+  background: var(--surface, var(--dsw-alias-bg-layer-1));
+}
+.review-icon-button:hover,
+.review-secondary-action:hover {
+  background: var(--review-accent-soft);
+  border-color: var(--review-accent-line);
+}
+.review-secondary-action {
+  padding: 0 11px;
+  border: 1px solid var(--line-strong, var(--dsw-alias-border-l2));
+  background: var(--surface, var(--dsw-alias-bg-layer-1));
+}
+.review-primary-action {
+  padding: 0 13px;
+  border: 1px solid var(--review-accent);
+  color: #fff;
+  background: var(--review-accent);
+}
+.review-primary-action:hover { background: #c33b22; }
+.review-icon {
+  width: var(--review-icon-size);
+  height: var(--review-icon-size);
+  flex: 0 0 var(--review-icon-size);
+  display: inline-block;
+  font-size: 16px;
+  line-height: 1;
+  text-align: center;
+}
+.review-save-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--review-accent);
+}

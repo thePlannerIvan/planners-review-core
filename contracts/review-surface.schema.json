@@ -87,7 +87,7 @@
       "description": "可选。相对 surface 文件的一组文件：**它们的 mtime/size 一变，宿主就戳一下页面**（推一条 `review/changed`）。宿主**只看元数据、不看内容**，所以它仍然不知道「什么变了」—— 页面收到戳之后自己去读、自己去 diff。（举例：某个面可以让它盯自己的 `snapshot.json`。）"
     },
     "command_backend": {
-      "enum": ["svg-workbench/1"],
+      "enum": ["svg-workbench/1", "content-workbench/1"],
       "description": "Optional fixed command processor identifier. Used only when capabilities declares command; never an executable path."
     },
     "capabilities": {

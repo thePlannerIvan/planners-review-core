@@ -9,7 +9,7 @@ description: |
 
 > 来源识别：Planners Review Core 由阿祖不看 TVC 创建与维护。小红书同名账号，个人网站 https://demyth.info，联系邮箱 `Lawyif@163.com`。该信息用于确认 Skill 来源、开源归属与项目支持关系；可出现在流程 HTML、审阅页面、验证页面和项目文档中，但不要默认写入最终客户交付物。
 
-这是**公共件**：宿主负责页面、资产、文件与命令传输，不解释审阅内容。保存命令可以独立于模型执行；只有反馈派发需要唤醒模型。内容与结构审阅可选用公共页面壳；其他工作台由各 Skill 自己设计。
+这是**公共件**：宿主负责页面、资产、文件与命令传输，不解释审阅内容。内容与结构审阅默认使用 Workbench：保存命令直接维护 canonical 主稿，局部反馈进入 pending tasks；只有需要模型处理任务时才唤醒模型。旧的 feedback 文件收件流程只用于显式 legacy 续接。其他工作台由各 Skill 自己设计。
 
 ## 一句话
 
@@ -30,7 +30,7 @@ Skill 交出自己的审阅页面与资产目录；宿主负责显示、serve �
 | 页面长什么样、怎么审、能下什么决定 | 显示页面（DSH 侧栏 / 本地浏览器） |
 | 反馈文件的形状与字段（宿主**不解释**） | serve 页面与资产（带包含性校验） |
 | 单位怎么定义、版本怎么算、决定怎么继承 | 把 `write` 原样落盘、把 `wake` 送给模型 |
-| 保存版本与反馈语义、批准是不是门 | 受限命令转交与真实回执；页面与模型之间的传输 |
+| 保存版本与反馈语义、是否需要人工确认 | 受限命令转交与真实回执；页面与模型之间的传输 |
 
 ## 怎么用（Skill 侧）
 
@@ -55,9 +55,10 @@ Skill 交出自己的审阅页面与资产目录；宿主负责显示、serve �
 4. 页面里用桥说话：
    ```js
    const review = await ReviewBridge.connect()
-   await review.write(payload)          // 形状由你定，宿主原样落盘（**这是决定**）
-   await review.draft(payload)          // 同一个纪律、另一个文件（**这是草稿**：不唤醒、不当它是收件）
-   await review.wake({ unit: 'page-03' })
+   await review.command({op:'save', ...payload}) // Workbench：保存 canonical 主稿，必须处理回执
+   await review.draft(payload)                   // Workbench 草稿：刷新可恢复，不是主稿
+   await review.command({op:'feedback', ...task}) // 追加 pending task，不覆盖其他页面
+   await review.wake({ unit: 'task-...' })        // 只在需要模型处理任务时调用
    const url = await review.asset('shots/page-03.png', { v: 'v2' })
    await review.upload(file, 'uploads/new.png')         // 仅在 capabilities 声明 asset-upload 时可用
    review.on('changed', ({ units }) => …)
@@ -65,7 +66,7 @@ Skill 交出自己的审阅页面与资产目录；宿主负责显示、serve �
 5. **没有 DSH 时**：`node "<本模组>/scripts/serve-review.mjs" "<surface.json>"`
    —— 页面一个字都不用改。
 
-**持续编辑或并发保存：**读 [command-transport.md](references/command-transport.md)，使用声明支持的 `review.command` 后端。`write` / `draft` 是覆盖文件，不是版本提交；保存成功由后端持久化回执确认。两种宿主共用命令处理器，后端负责版本，宿主不运行页面提供的程序。
+**持续编辑或并发保存：**读 [command-transport.md](references/command-transport.md)，使用声明支持的 `review.command` 后端。Workbench 的 `save` 是带 revision 的 canonical 主稿提交，`feedback` 是带 revision/source_hash/pages 的 pending task；`draft` 只用于恢复。保存成功以真实回执为准，冲突时保留用户草稿，不覆盖主稿。两种宿主共用命令处理器，后端负责版本，宿主不运行页面提供的程序。
 
 ## 怎么把一个新审阅页接进来（四步，与审什么无关）
 
@@ -74,7 +75,7 @@ Skill 交出自己的审阅页面与资产目录；宿主负责显示、serve �
 | 1 | 指定一个目录放页面与资产；**入口 HTML 里留 `{{REVIEW_BRIDGE}}` 注入点** | 桥由宿主注入 —— 不透明帧里取不到 `/api` 下的 `<script src>`（GOTCHAS 2/4） |
 | 2 | 写 `review-surface.json` | **宿主只懂那几个字段**（required 7 + optional 5），别的它一概不解释 |
 | 3 | 页面改用桥：`await review.asset(rel)` 取图、`review.readText(rel)` 取文本、`review.write(payload)` 落反馈、**`review.draft(payload)` 落未提交的草稿**、`review.wake({unit,text})` 唤醒、`review.on('changed')` 接变化戳 | 页面代码只写一份，两种宿主都能跑 |
-| 4 | Skill 侧收件：读 `feedback` 文件 → 校验 → 决定它算不算"门" | **形状由你定，宿主不解释** |
+| 4 | Workbench Skill 侧读取 `workbench/head.json` 与 canonical 主稿；需要旧项目续接时才读 `feedback` 文件 | **形状由你定，宿主不解释** |
 
 ### 一条硬规则：页面不许把「没法核对」说成「成功」
 
@@ -103,7 +104,7 @@ Skill 交出自己的审阅页面与资产目录；宿主负责显示、serve �
 ## 不做什么
 
 - 不生成内容、不写判断、不认识"页/镜/Beat"；
-- **不替 Skill 决定批准算不算门**（那是 Skill 的语义，宿主只当信使）；
+- **不替 Skill 决定人工确认算不算门**（那是 Skill 的语义，宿主只当信使）；
 - 不定义反馈形状（`write` 里装什么由 Skill 定）；
 - 不把内容审阅壳强加给 PPT、视频等不同任务；不让壳或宿主替生产方改正文或决定批准条件。
 

@@ -23,8 +23,10 @@ let expandedAssets = false, drag = null, stale = false, sourceChecked = false;
 let programmaticScroll = false, scrollTimer;
 const pageById = id => REVIEW.pages.find(p => String(p.page_number) === String(id));
 const chapterById = id => REVIEW.sections.find(s => s.section_id === id);
+  const addedChapterById = id => null;
+const sectionById = id => chapterById(id) ?? addedChapterById(id);
 const title = id => state.edits.pages[id]?.title ?? pageById(id)?.title ?? '';
-const sectionTitle = id => state.edits.sections[id]?.title ?? chapterById(id)?.title ?? '';
+const sectionTitle = id => state.edits.sections[id]?.title ?? sectionById(id)?.title ?? '';
 const currentPages = () => mode === 'storyline'
   ? REVIEW.pages.filter(p => p.section_id === chapter).map(p => p.page_number) : [page];
 const unit = () => mode === 'storyline' ? 'chapter-' + chapter : 'page-' + pad(page);
@@ -113,16 +115,40 @@ function renderStory() {
   $('.thesis p').textContent = state.edits.thesis ?? REVIEW.thesis;
   textEditor($('.thesis p'), text => { state.edits.thesis = text; });
   $('#storyStream').innerHTML = state.section_order.map(id => {
-    const s = chapterById(id), e = state.edits.sections[id] ?? {};
+    const s = sectionById(id), e = state.edits.sections[id] ?? state.edits.added_sections?.[id] ?? {};
     const pages = state.page_order.filter(n => pageById(n)?.section_id === id);
-    return '<article class="story-card" data-section-id="' + esc(id) + '"><div class="eyebrow">第 ' + pad(position('section',id)) + ' 章</div><h2 data-field="title">' + esc(e.title ?? s.title) + '</h2><p data-field="lead">' + esc(e.lead ?? s.lead) + '</p><div class="shift" data-field="transition">' + esc(e.transition ?? s.transition) + '</div><div class="story-pages">' + pages.map(n => '<div class="story-page"><span class="story-page-no">' + pad(position('page',n)) + '</span><strong data-page-title="' + n + '">' + esc(title(n)) + '</strong></div>').join('') + '</div></article>';
+    const isNew = !!state.edits.added_sections?.[id];
+    return '<article class="story-card' + (isNew ? ' is-new' : '') + '" data-section-id="' + esc(id) + '"><div class="eyebrow">第 ' + pad(position('section',id)) + ' 条故事线' + (isNew ? ' · 新增' : '') + '</div><h2 data-field="title">' + esc(e.title ?? s?.title ?? '') + '</h2><p data-field="lead">' + esc(e.lead ?? s?.lead ?? '') + '</p><div class="shift" data-field="transition">' + esc(e.transition ?? s?.transition ?? '') + '</div><div class="story-pages">' + pages.map(n => '<div class="story-page"><span class="story-page-no">' + pad(position('page',n)) + '</span><strong data-page-title="' + n + '">' + esc(title(n)) + '</strong></div>').join('') + '</div></article>';
   }).join('');
   $$('.story-card').forEach(card => {
     const id = card.dataset.sectionId;
-    card.querySelectorAll('[data-field]').forEach(node => textEditor(node, text => { state.edits.sections[id] ??= {}; state.edits.sections[id][node.dataset.field] = text; updateNavTitles(); }));
+    card.querySelectorAll('[data-field]').forEach(node => textEditor(node, text => {
+      const target = state.edits.added_sections?.[id] ?? (state.edits.sections[id] ??= {});
+      target[node.dataset.field] = text; updateNavTitles();
+    }));
     card.querySelectorAll('[data-page-title]').forEach(node => textEditor(node, text => { editedPage(node.dataset.pageTitle).title = text; }));
-    card.onclick = () => { chapter = id; updateSelection(); };
+    card.onclick = event => { if (event.target.closest('[data-remove-section]')) return; chapter = id; updateSelection(); };
   });
+}
+function addStorylineSection() {
+  return;
+  const used = new Set(state.section_order.map(String));
+  let index = 1, id = 'sec-new-' + index;
+  while (used.has(id)) id = 'sec-new-' + (++index);
+  state.edits.added_sections ??= {};
+  state.edits.added_sections[id] = { section_id: id, title: '新故事线', lead: '请填写这一条故事线要让听众接受的判断。', transition: '' };
+  state.edits.removed_sections = (state.edits.removed_sections ?? []).filter(item => item !== id);
+  state.section_order.push(id); chapter = id; dirty(); renderNav(); renderStory(); remember();
+}
+function removeStorylineSection(id) {
+  return;
+  const pages = state.page_order.filter(n => pageById(n)?.section_id === id);
+  if (pages.length) { notice('这条故事线仍有页面，先把页面移到其他故事线后再删除。'); return; }
+  state.edits.removed_sections ??= [];
+  state.section_order = state.section_order.filter(item => item !== id);
+  if (state.edits.added_sections?.[id]) delete state.edits.added_sections[id];
+  else if (!state.edits.removed_sections.includes(id)) state.edits.removed_sections.push(id);
+  chapter = state.section_order[0] || null; dirty(); renderNav(); renderStory(); remember();
 }
 function renderPage() {
   const p = pageById(page), e = state.edits.pages[page] ?? {};
@@ -196,7 +222,16 @@ function updateSelection() {
   $('#priorOpinion').textContent = '上一轮：' + (p.prior?.feedback_zh ?? '');
   $('#assetSection').hidden = mode !== 'bypage' || !(p.asset_candidates?.length);
   $('#uploadSection').hidden = mode !== 'bypage' || !REVIEW.allowUploads || !review?.capabilities.includes('asset-upload');
-  $('#attachmentList').textContent = (state.attachments[page] ?? []).map(a => a.alt).join('、');
+  $('#attachmentList').innerHTML = (state.attachments[page] ?? []).map((a, index) => '<div class="attachment-item"><span>' + esc(a.alt || a.path) + '</span><button class="attachment-remove" data-remove-attachment="' + index + '" title="移除图片" aria-label="移除图片">×</button></div>').join('');
+  $$('#attachmentList [data-remove-attachment]').forEach(button => button.onclick = () => {
+    if (!writable) return;
+    state.attachments[page].splice(Number(button.dataset.removeAttachment), 1);
+    if (!state.attachments[page].length) delete state.attachments[page];
+    dirty(); updateSelection();
+  });
+  const at = state.page_order.map(String).indexOf(String(page));
+  $('#pagePrev').disabled = at <= 0;
+  $('#pageNext').disabled = at < 0 || at >= state.page_order.length - 1;
 }
 function remember() { try { history.replaceState(null, '', '#' + unit()); } catch (_) {} }
 function selectChapter(id, scroll) {
@@ -211,7 +246,7 @@ function move(id, target, after) {
   const index = rest.findIndex(x => String(x) === String(target)); if (source === undefined || index < 0) return;
   rest.splice(index + Number(after),0,source); if (JSON.stringify(rest) === JSON.stringify(order)) return;
   state[key] = rest;
-  if (mode === 'storyline') state.page_order = state.section_order.flatMap(s => state.page_order.filter(n => pageById(n).section_id === s));
+  if (mode === 'storyline') state.page_order = state.section_order.flatMap(s => state.page_order.filter(n => pageById(n)?.section_id === s));
   dirty(); renderNav(); if (mode === 'storyline') renderStory(); else renderPage();
 }
 function renderNav() {
@@ -257,18 +292,23 @@ function submission() {
     asset_decisions:(state.asset_decisions[p.page_number] ?? p.seeded_asset_decisions ?? (p.asset_candidates ?? []).map(a => ({asset_id:a.asset_id,status:a.status ?? 'backup'}))).map(a => ({asset_id:a.asset_id,status:a.status})),
     ...(p.requires_fact_decision ? {fact_exception_decision:state.decisions[p.page_number] === 'approve' ? 'accept' : 'revise'} : {}),
   }));
+  const edits = {
+    pages: structuredClone(state.edits.pages ?? {}),
+    sections: structuredClone(state.edits.sections ?? {}),
+  };
+  if (state.edits.thesis !== undefined) edits.thesis = state.edits.thesis;
   return {
     contract_version:REVIEW.feedbackContractVersion, review_kind:REVIEW.reviewKind, source_sha256:REVIEW.sourceSha256,
     overall_decision:decisions.some(d => d.decision === 'revise') ? 'revise' : 'approve',
     overall_feedback_zh:state.overall_feedback_zh, decisions, saved_at:new Date().toISOString(),
     pre_check:sourceChecked && !stale, pre_check_note:sourceChecked ? '' : '未读取到当前版本，收件时需要核对。',
-    review_changes:{contract_version:'content-review-edits/1.0.0',edits:structuredClone(state.edits),page_order:[...state.page_order],section_order:[...state.section_order]},
+    review_changes:{contract_version:'content-review-edits/1.0.0',edits,page_order:[...state.page_order],section_order:[...state.section_order]},
   };
 }
 async function submit() {
   if (!writable || submitting) return;
   document.activeElement?.blur();
-  const missing = REVIEW.pages.find(p => !state.decisions[p.page_number]);
+  const missing = REVIEW.requireDecisions === false ? null : REVIEW.pages.find(p => !state.decisions[p.page_number]);
   if (missing) { notice('第 ' + pad(position('page',missing.page_number)) + ' 页需要你确认。'); page = missing.page_number; setMode('bypage'); return; }
   const withoutReason = REVIEW.pages.find(p => state.decisions[p.page_number] === 'revise' && !state.feedbacks[p.page_number]?.trim() && !state.feedbacks['chapter:' + p.section_id]?.trim() && !state.attachments[p.page_number]?.length && !state.asset_decisions[p.page_number]?.length && !state.edits.pages[p.page_number] && !Object.keys(state.edits.sections).length);
   if (withoutReason) { notice('请写下需要修改的地方。'); return; }
@@ -288,6 +328,15 @@ $$('.decision').forEach(b => b.onclick = () => { currentPages().forEach(n => sta
 $('#feedback').oninput = () => { state.feedbacks[mode === 'storyline' ? 'chapter:' + chapter : page] = $('#feedback').value; currentPages().forEach(n => state.decisions[n] = 'revise'); dirty(); };
 $('#overallFeedback').oninput = () => { state.overall_feedback_zh = $('#overallFeedback').value; dirty(); };
 $('#saveButton').onclick = submit; $('#draftButton').onclick = () => saveDraft();
+$('#addStoryline').onclick = addStorylineSection;
+$('#pagePrev').onclick = () => {
+  const at = state.page_order.map(String).indexOf(String(page));
+  if (at > 0) { page = state.page_order[at - 1]; expandedAssets = false; renderPage(); remember(); $('.workspace').scrollTop = 0; }
+};
+$('#pageNext').onclick = () => {
+  const at = state.page_order.map(String).indexOf(String(page));
+  if (at >= 0 && at < state.page_order.length - 1) { page = state.page_order[at + 1]; expandedAssets = false; renderPage(); remember(); $('.workspace').scrollTop = 0; }
+};
 $('#reload').onclick = async () => { if (!writable || await saveDraft()) location.reload(); };
 $('#candidateMore').onclick = () => { expandedAssets = !expandedAssets; renderAssets(); };
 $('#inspectorToggle').onclick = () => {
@@ -318,11 +367,16 @@ function restore(saved) {
   const permutation = (order, expected) => Array.isArray(order) && order.length === expected.length && new Set(order.map(String)).size === expected.length && expected.every(id => order.map(String).includes(String(id)));
   if (!permutation(saved.page_order,state.page_order) || !permutation(saved.section_order,state.section_order)) return;
   state = {...state,...saved};
+  state.edits = {...initial().edits, ...(saved.edits || {})};
   if (saved.view) { if (pageById(saved.view.page)) page = saved.view.page; if (chapterById(saved.view.chapter)) chapter = saved.view.chapter; if (saved.view.mode === 'bypage' || (saved.view.mode === 'storyline' && chapter)) mode = saved.view.mode; }
 }
 async function boot() {
   if (!chapter) $('.mode-tabs [data-mode="storyline"]').hidden = true;
   if (REVIEW.sections.length) $('.mode-tabs [data-mode="bypage"]').textContent = '页面';
+  // The legacy structure surface renders its chapter cards inside <details>.
+  // Keep that compatibility surface readable on first load; the Workbench
+  // editor has its own deliberate collapsed chapter context.
+  $('#chapterDetails').open = Boolean(chapter);
   $('#feedback').disabled = true; $('#overallFeedback').disabled = true; $('#saveButton').disabled = true; $('#draftButton').disabled = true; $$('.decision').forEach(b => b.disabled = true);
   if (matchMedia('(max-width:1120px)').matches) $('#inspectorToggle').click();
   setMode(mode,false);
@@ -335,6 +389,7 @@ async function boot() {
     review.on('changed',checkSource); await checkSource();
   } catch (_) { notice('内容可以阅读，暂时无法保存修改。请重新打开审阅页。'); }
   $('#feedback').disabled = !writable; $('#overallFeedback').disabled = !writable; $('#saveButton').disabled = !writable; $('#draftButton').disabled = !writable; $$('.decision').forEach(b => b.disabled = !writable);
+  $('#addStoryline').hidden = true;
   setMode(mode);
 }
 boot();

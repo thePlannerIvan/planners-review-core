@@ -15,7 +15,7 @@ const TIMEOUT_MS = 20000;
 const failure = (code, error) => ({ ok: false, code, error });
 
 export function commandEnabled(data) {
-  return data?.command_backend === BACKEND && Array.isArray(data.capabilities) && data.capabilities.includes('command');
+  return [BACKEND, 'content-workbench/1'].includes(data?.command_backend) && Array.isArray(data.capabilities) && data.capabilities.includes('command');
 }
 
 // Only host-owned Skill locations are searched. Neither the surface nor the
@@ -101,6 +101,11 @@ export async function runBrowserCommand(surface, payload) {
     if (!(await stat(root)).isDirectory() || !(await stat(dir)).isDirectory()
         || (dir !== root && !dir.startsWith(root + sep))) throw new Error();
   } catch { return failure('command_project_root', 'Surface project_root/dir must resolve to contained absolute directories'); }
+
+  if (surface.data.command_backend === 'content-workbench/1') {
+    const {runContentCommand} = await import('../content-workbench.mjs');
+    return runContentCommand({...surface, projectRoot: root}, payload);
+  }
 
   const processor = await resolveCommandProcessor();
   if (!processor) return failure('command_backend_missing', 'Cannot find planners-ppt-hell/scripts/workbench_store.py in trusted Skill locations');
