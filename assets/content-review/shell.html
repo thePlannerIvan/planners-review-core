@@ -197,10 +197,11 @@
     .candidate-more { width: 100%; border: 0; background: transparent; color: var(--ink-2); text-align: left; padding: 7px 0 0; cursor: pointer; font-size: 12px; }
     .candidate-more:hover { color: var(--blue); }
     .asset-note { display: none; }
-    .inspector-actions { position: sticky; bottom: 0; padding: 14px 0 0; background: linear-gradient(180deg, rgba(255,255,255,0), #fff 24%); }
+    .feedback-actions { display: grid; gap: 7px; margin-top: 9px; }
+    .inspector-actions { position: sticky; bottom: 0; display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 7px; padding: 14px 0 0; background: linear-gradient(180deg, rgba(255,255,255,0), #fff 24%); }
     .primary { width: 100%; border: 1px solid var(--review-accent); border-radius: 7px; padding: 10px 12px; color: #fff; background: var(--review-accent); cursor: pointer; font-weight: 650; }
     .primary:hover { background: #c33b22; }
-    .secondary { width: 100%; margin-top: 7px; border: 1px solid var(--line-strong); border-radius: 7px; padding: 9px 12px; background: var(--surface); cursor: pointer; }
+    .secondary { width: 100%; border: 1px solid var(--line-strong); border-radius: 7px; padding: 9px 12px; background: var(--surface); cursor: pointer; }
     .secondary:hover { background: var(--surface-hover); }
     .inspector-footnote { display: none; }
     .editable-ready { cursor: text; }
@@ -258,9 +259,9 @@
     .story-card { border: 0; border-radius: 0; padding: 14px 0; box-shadow: none; border-bottom: 1px solid var(--line); }
     .copy-block { border: 0; border-radius: 0; box-shadow: none; padding: 12px 0; }
     .inspector-actions .primary { background: var(--review-accent); border-color: var(--review-accent); }
-    .inspector-actions button { min-height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+    .inspector-actions button { min-height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; margin: 0; }
     .inspector-toggle svg { width: 18px; height: 18px; }
-    #pageTaskButton { margin-top: 8px; width: 100%; }
+    .feedback-actions button { width: 100%; }
     @media(max-width:600px) {
       .topbar { padding: 0 10px; gap: 8px; }
       .review-brand > span:last-child { display: none; }
@@ -317,7 +318,7 @@
         </div>
       </main>
 
-      <aside class="inspector"><button class="inspector-toggle" id="inspectorToggle" aria-label="收起审阅区" aria-expanded="true" title="收起审阅区">›</button><div class="inspector-inner"><div class="inspector-kicker" id="inspectorKicker">本章审阅</div><h2 class="inspector-title" id="inspectorTitle"></h2><section class="inspector-section"><div id="factNotice" class="fact-notice" hidden></div><div class="decision-row"><button class="decision approve" data-decision="approve">✓ 没问题</button><button class="decision revise" data-decision="revise">需要改</button></div></section><section class="inspector-section"><label class="control-label" for="feedback">意见</label><textarea id="feedback" placeholder=""></textarea><details class="source-panel"><summary>整体意见</summary><textarea id="overallFeedback"></textarea></details><div id="priorOpinion" class="source-panel" hidden></div></section><section class="inspector-section" id="assetSection"><div class="control-label">图片</div><div class="candidate-list" id="candidateList"></div><button class="candidate-more" id="candidateMore">更多图片</button></section><section id="uploadSection" class="inspector-section" hidden><button class="secondary" id="uploadButton">添加图片</button><input id="uploadFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden><div id="attachmentList" class="attachment-list"></div></section><div class="inspector-actions"><button class="primary" id="saveButton">保存主稿</button><button class="secondary" id="draftButton">保存草稿</button></div></div></aside>
+      <aside class="inspector"><button class="inspector-toggle" id="inspectorToggle" aria-label="收起审阅区" aria-expanded="true" title="收起审阅区">›</button><div class="inspector-inner"><div class="inspector-kicker" id="inspectorKicker">本章审阅</div><h2 class="inspector-title" id="inspectorTitle"></h2><section class="inspector-section"><div id="factNotice" class="fact-notice" hidden></div><div class="decision-row"><button class="decision approve" data-decision="approve">✓ 没问题</button><button class="decision revise" data-decision="revise">需要改</button></div></section><section class="inspector-section"><label class="control-label" for="feedback">意见</label><textarea id="feedback" placeholder=""></textarea><details class="source-panel"><summary>整体意见</summary><textarea id="overallFeedback"></textarea></details><div id="priorOpinion" class="source-panel" hidden></div><div class="feedback-actions"><button class="secondary" id="pageTaskButton"><span data-review-icon="MessageSquare"></span><span>修改本页</span></button><button class="primary" id="saveButton"><span data-review-icon="MessageSquare"></span><span>提交整套修改任务</span></button></div></section><section class="inspector-section" id="assetSection"><div class="control-label">图片</div><div class="candidate-list" id="candidateList"></div><button class="candidate-more" id="candidateMore">更多图片</button></section><section id="uploadSection" class="inspector-section" hidden><button class="secondary" id="uploadButton">添加图片</button><input id="uploadFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden><div id="attachmentList" class="attachment-list"></div></section><div class="inspector-actions"><button class="secondary" id="canonicalSaveButton"><span data-review-icon="Save"></span><span>保存主稿</span></button><button class="secondary" id="draftButton"><span data-review-icon="FilePenLine"></span><span>保存恢复草稿</span></button></div></div></aside>
     </div>
   </div>
 

@@ -223,7 +223,9 @@ function updateSelection() {
   $('#uploadSection').hidden = mode !== 'bypage' || !REVIEW.allowUploads || !writable || !review?.capabilities.includes('asset-upload');
   $('#pagePrev').disabled = state.page_order.indexOf(page) <= 0;
   $('#pageNext').disabled = state.page_order.indexOf(page) >= state.page_order.length-1;
-  $('#pageTaskButton').disabled = !writable || conflicted; $('#saveButton').disabled = !writable || conflicted; $('#canonicalSaveButton').disabled = !writable || conflicted;
+  $('#pageTaskButton').hidden = !dsh || mode !== 'bypage';
+  // 这两个按钮由脚本动态创建，取不到时不要抛错（抛错会中断整段渲染）。
+  for (const node of [$('#pageTaskButton'), $('#saveButton'), $('#canonicalSaveButton')]) if (node) node.disabled = !writable || conflicted;
   $('#draftButton').disabled = !writable || conflicted;
 }
 function move(id,target,after) {
@@ -296,7 +298,11 @@ function navigate(delta) { document.activeElement?.blur(); const next = state.pa
 $('#pagePrev').onclick = () => navigate(-1); $('#pageNext').onclick = () => navigate(1);
 $('#feedback').oninput = () => { state.feedbacks[page] = $('#feedback').value; changed(false); };
 $('#overallFeedback').oninput = () => { state.overall_feedback_zh = $('#overallFeedback').value; changed(false); };
-  $('#saveButton').onclick = () => task('deck'); $('#canonicalSaveButton').onclick = save; $('#draftButton').onclick = persistDraft;
+// 任务动作与保存动作分开：任务会唤醒模型，保存只写入当前工作台。
+const canonicalButton = $('#canonicalSaveButton');
+$('#saveButton').onclick = () => task('deck');
+canonicalButton.onclick = save;
+$('#draftButton').onclick = persistDraft;
 $('#uploadButton').onclick = () => $('#uploadFile').click();
 $('#uploadFile').onchange = async () => {
   const file = $('#uploadFile').files[0], id = page; if (!file || !writable) return;
@@ -317,15 +323,16 @@ async function boot() {
   $('.decision-row').hidden = true; $('#priorOpinion').hidden = true; $('#chapterDetails').open = false;
   if (!REVIEW.sections.length) $('.mode-tabs [data-mode="storyline"]').hidden = true;
   $('#feedback').disabled = true; $('#overallFeedback').disabled = true;
-  $('#saveButton').textContent = '提交整套修改任务'; $('#draftButton').innerHTML = icon('Save')+'<span>保存草稿</span>';
-  const canonicalButton = document.createElement('button'); canonicalButton.id = 'canonicalSaveButton'; canonicalButton.className = 'review-secondary-action'; canonicalButton.innerHTML = icon('Save')+'<span>保存主稿</span>'; $('#saveButton').before(canonicalButton);
-  const pageButton = document.createElement('button'); pageButton.id = 'pageTaskButton'; pageButton.className = 'review-secondary-action'; pageButton.innerHTML = icon('MessageSquare')+'<span>修改本页</span>'; pageButton.onclick = () => task('page');
-  $('#feedback').after(pageButton); pageButton.hidden = true; render();
+  $('#saveButton').innerHTML = icon('MessageSquare')+'<span>提交整套修改任务</span>';
+  $('#pageTaskButton').onclick = () => task('page');
+  $('#canonicalSaveButton').innerHTML = icon('Save')+'<span>保存主稿</span>';
+  $('#draftButton').innerHTML = icon('FilePenLine')+'<span>保存恢复草稿</span>';
+  render();
   try {
     review = await ReviewBridge.connect(); dsh = review.transport === 'postMessage';
     if (!review.capabilities.includes('command') || !review.capabilities.includes('draft')) throw Error('宿主缺少工作台能力');
     const head = await command({op:'state'}); headRevision = head.revision; state = {...fresh(),...head.state};
-    let recovered; try { recovered = JSON.parse(await review.readText(REVIEW.draftPath)); } catch (_) {}
+    let recovered; try { recovered = JSON.parse(await review.readText(REVIEW.draftPath, {optional:true})); } catch (_) {}
     try { const local = JSON.parse(sessionStorage.getItem(recoveryKey)); if (local && (!recovered || local.saved_at > recovered.saved_at)) recovered = local; } catch (_) {}
     if (recovered?.source_sha256 === REVIEW.sourceSha256) {
       const different = uiProjection(recovered) !== uiProjection(state);

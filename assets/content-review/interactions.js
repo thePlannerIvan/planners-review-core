@@ -385,7 +385,7 @@ async function boot() {
     review = await Promise.race([ReviewBridge.connect(),new Promise((_,reject) => setTimeout(() => reject(Error('Timeout')),2500))]);
     writable = review.capabilities.includes('draft');
     if (!writable) throw Error('No draft');
-    try { restore(JSON.parse(await review.readText(REVIEW.draftPath || 'draft.json'))); } catch (_) {}
+    try { restore(JSON.parse(await review.readText(REVIEW.draftPath || 'draft.json', {optional:true}))); } catch (_) {}
     review.on('changed',checkSource); await checkSource();
   } catch (_) { notice('内容可以阅读，暂时无法保存修改。请重新打开审阅页。'); }
   $('#feedback').disabled = !writable; $('#overallFeedback').disabled = !writable; $('#saveButton').disabled = !writable; $('#draftButton').disabled = !writable; $$('.decision').forEach(b => b.disabled = !writable);

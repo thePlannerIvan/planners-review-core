@@ -159,11 +159,11 @@
           });
         },
         // 取原始字节（给 JSON 这类非图片资产用）。不动缓存：调用方自己决定怎么存。
-        read: function (rel) {
-          return call('read', { rel: String(rel) });
+        read: function (rel, extra) {
+          return call('read', { rel: String(rel), optional: !!(extra && extra.optional) });
         },
-        readText: function (rel) {
-          return call('read', { rel: String(rel) }).then(function (value) {
+        readText: function (rel, extra) {
+          return call('read', { rel: String(rel), optional: !!(extra && extra.optional) }).then(function (value) {
             return new TextDecoder('utf-8').decode(new Uint8Array(value.bytes));
           });
         },
@@ -268,12 +268,19 @@
           });
       },
       // 同源，直接取
-      read: function (rel) {
-        return fetch(base + String(rel), { cache: 'no-store' }).then(function (r) { return r.arrayBuffer(); })
-          .then(function (bytes) { return { bytes: bytes }; });
+      read: function (rel, extra) {
+        return fetch(base + String(rel), { cache: 'no-store' }).then(function (r) {
+          if (r.status === 404 && extra && extra.optional) return { bytes: new ArrayBuffer(0), missing: true };
+          if (!r.ok) throw new Error('读取资产失败 HTTP ' + r.status);
+          return r.arrayBuffer().then(function (bytes) { return { bytes: bytes }; });
+        });
       },
-      readText: function (rel) {
-        return fetch(base + String(rel), { cache: 'no-store' }).then(function (r) { return r.text(); });
+      readText: function (rel, extra) {
+        return fetch(base + String(rel), { cache: 'no-store' }).then(function (r) {
+          if (r.status === 404 && extra && extra.optional) return '';
+          if (!r.ok) throw new Error('读取资产失败 HTTP ' + r.status);
+          return r.text();
+        });
       },
       on: function (event, handler) {
         (listeners[event] = listeners[event] || []).push(handler);
