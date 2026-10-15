@@ -22,18 +22,18 @@ backend identifier does not enable command. The validator rejects unknown
 backend identifiers. DSH also requires a Core bridge and shared runner that
 both provide command; older installations do not advertise it.
 
-The backend executable is fixed:
-`planners-ppt-hell/scripts/workbench_store.py`. The runner searches trusted
-runtime sibling mounts, the candidate/monorepo `03-design-delivery` layout,
-then conventional Skill runtime locations. It never resolves an executable
-relative to the surface/project or accepts one in the request.
+The backend implementation is fixed by the declared backend identifier. For
+`content-workbench/1`, Core resolves its Node adapter from trusted runtime
+mounts; producer-specific backends follow the same allowlisted lookup rule.
+The runner never resolves an executable relative to the surface/project or
+accepts one in the request.
 
 Python selection is host-owned: `PLANNERS_REVIEW_PYTHON`, then `PYTHON`, then
 `python3` on PATH. Each configured value is one executable, not shell syntax
 or a command with flags. Invocation uses no shell:
 
 ```text
-<python> <fixed workbench_store.py> --root <canonical surface.project_root> --command-json --browser
+<backend runner> --root <canonical surface.project_root> --command-json --browser
 ```
 
 The command JSON goes to stdin unchanged. Root is resolved from the loaded
@@ -110,7 +110,7 @@ Use isolated imports and host tests before updating the installed plugin.
 Models use the fixed Store CLI directly, with JSON stdin and without `--browser`:
 
 ```text
-<python> <planners-ppt-hell>/scripts/workbench_store.py --root <absolute project> --command-json
+<backend runner> --root <absolute project> --command-json
 ```
 
 There is no DSH model command tool and no browser switch for becoming a model.

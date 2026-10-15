@@ -1,5 +1,6 @@
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
+import { homedir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { contentHash, contentProjection, sha256, validateChanges } from './content-review-contract.mjs';
 
@@ -33,14 +34,29 @@ function contained(root, path) {
   if (file.split(sep).some(part => /^\.env(?:\.|$)|^\.venv$/.test(part))) fail('sensitive_path', '敏感文件不是内容输入');
   return file;
 }
-async function adapter(context) {
+export function adapterCandidates(context) {
   const spec = PRODUCERS[context.reviewKind];
   if (!spec) fail('producer', '不支持的内容生产方');
   const core = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-  const candidates = [join(dirname(core), spec[1], spec[2]), join(dirname(dirname(core)), ...spec)];
+  return [
+    // DSH form skills are the primary runtime for plugin-hosted surfaces.
+    join(dirname(core), spec[1], spec[2]),
+    // Source/library layout and a plain DSH skills mount are valid fallbacks.
+    join(dirname(dirname(core)), ...spec),
+    join(homedir(), '.dsh', 'skills', spec[1], spec[2]),
+    join(homedir(), '.dsh', 'planners-form', 'skills', spec[1], spec[2]),
+  ];
+}
+
+export function resolveAdapterPath(context) {
+  const candidates = adapterCandidates(context);
   const file = candidates.find(existsSync);
-  if (!file) fail('adapter_missing', '找不到已安装的内容 adapter');
-  return import(pathToFileURL(file));
+  if (!file) fail('adapter_missing', '找不到已安装的内容 adapter；已检查：' + candidates.join('、'));
+  return file;
+}
+
+async function adapter(context) {
+  return import(pathToFileURL(resolveAdapterPath(context)));
 }
 function lock(path) {
   try { const fd = openSync(path, 'wx'); writeFileSync(fd, String(process.pid)); closeSync(fd); }

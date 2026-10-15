@@ -347,7 +347,11 @@ async function boot() {
     if (state.view?.mode) mode = state.view.mode;
     if (state.page_order.includes(state.view?.page)) page = state.view.page;
     else if (!state.page_order.includes(page)) page = state.page_order[0];
-    writable = true; pageButton.hidden = !dsh;
+    writable = true;
+    // This action only applies to DSH. Keep the optional control guarded so
+    // a missing button cannot abort the rest of the boot sequence.
+    const pageTaskButton = $('#pageTaskButton');
+    if (pageTaskButton) pageTaskButton.hidden = !dsh;
     $('#feedback').disabled = false; $('#overallFeedback').disabled = false;
     $('#addStoryline').hidden = !REVIEW.allowStructureChanges;
     status(editsVersion ? '主稿未保存' : '主稿已保存',Boolean(editsVersion));

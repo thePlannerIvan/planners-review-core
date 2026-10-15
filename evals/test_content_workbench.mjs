@@ -7,7 +7,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { runContentCommand } from '../scripts/content-workbench.mjs';
+import { resolveAdapterPath, runContentCommand } from '../scripts/content-workbench.mjs';
 import { sha256, writeReviewContext } from '../scripts/content-review-contract.mjs';
 
 const core = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -30,6 +30,11 @@ const variants = [
   { name: 'Bypage architecture', kind: 'storyline', type: 'architecture', claim: 'main_message', lead: 'audience_shift' },
   { name: 'Bypage copy', kind: 'bypage', type: 'copy' },
 ];
+
+test('adapter resolver finds the installed Bypage adapter from the current runtime', () => {
+  const path = resolveAdapterPath({ reviewKind: 'bypage' });
+  assert.match(path, /planners-bypage[\\/]scripts[\\/]lib[\\/]review-edits\.mjs$/);
+});
 
 function fixture(t, variant = variants[0]) {
   const root = mkdtempSync(join(tmpdir(), 'content-workbench-test-'));
