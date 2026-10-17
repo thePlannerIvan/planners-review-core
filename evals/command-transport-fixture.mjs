@@ -1,8 +1,8 @@
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { cp, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveCommandProcessor } from '../scripts/lib/review-command.mjs';
 
@@ -47,6 +47,17 @@ else:
     const latest = await resolveCommandProcessor();
     if (!latest) throw new Error('Candidate workbench_store.py is required for the integration test');
     await cp(latest, processor);
+    // The candidate store is a *modular* script: it imports sibling modules from
+    // its own scripts directory (`canvas_frame.py` since 2026-10-13). Copying only
+    // the entry file made this fixture die with ModuleNotFoundError on stderr and
+    // an empty stdout, which the host reported as `command_invalid_response` —
+    // a stale fixture that looked like a protocol break. Copy every sibling
+    // top-level Python module so the next split is covered without another edit.
+    const from = dirname(latest);
+    for (const entry of await readdir(from)) {
+      if (!entry.endsWith('.py') || entry === basename(latest)) continue;
+      await cp(join(from, entry), join(dirname(processor), entry));
+    }
   }
   const project = join(base, 'project with spaces');
   const dir = join(project, 'review');

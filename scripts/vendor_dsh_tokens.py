@@ -56,6 +56,13 @@ MOTION = ['--ds-ease-in-out', '--ds-transition-duration',
 # 少了 `--dsw-font-family`，所有 `font: var(--dsw-font-xs-13)` 会在计算期失效 ——
 # 页面没有报错，只是字族悄悄退回浏览器默认（Times）。
 BASE = ['--dsw-font-family', '--ds-font-family-code']
+# 0.2.1 起 markdown 代码字号改成继承式：`--dsw-font-markdown-code*` 的值形如
+# `calc(12px + var(--dsh-code-font-delta))`。而 `--dsh-code-font-delta` 与
+# `--dsh-code-font-size` 是**主题运行时注入到宿主 body** 的派生变量（基于用户的
+# 代码字号设置），welcome.css 里只引用、不定义。审阅页在不透明源 iframe 里，
+# 宿主 body 变量不会继承进来 —— 缺了这两个，整条字号 calc() 会失效。
+# 值不猜：delta 的定义与 size 的默认值都从同一发行版里取。
+DERIVED = ['--dsh-code-font-delta', '--dsh-code-font-size']
 LICENSE_IN_ASAR = '/dsh/node_modules/@deepseek-ai/dsh-client-ui-theme/LICENSE'
 TOKEN = r'--dsw-[a-zA-Z0-9-]+'
 
@@ -93,11 +100,12 @@ body[data-ds-dark-theme] {{
 {dark}
 }}
 
-/* ===== 补丁块：welcome.css 里也没有的那几组（更上游的 deepsuite 主题 / 运动曲线） =====
+/* ===== 补丁块：welcome.css 里也没有的那几组（更上游的 deepsuite 主题 / 运动曲线 / 派生字号） =====
  * 值由本脚本从同一发行版的其它位置取出，一个都没有猜。
  */
 body {{
 {base}
+{derived}
 {radius}
 {motion}
 }}
@@ -223,6 +231,31 @@ def main():
     if len(base) != len(BASE):
         raise SystemExit(f'发行版里缺底座变量：{[n for n in BASE if n not in base]}；'
                          '字体栈缺了字族会静默退回浏览器默认，拒绝写半份')
+    # 0.2.1 起「底座」本身也是引用：`--dsw-font-family: var(--dsh-font-family-text-default)`。
+    # 被引用的默认值在同一发行版里以字面量定义，必须一起带进来 —— 否则字族会在不透明源
+    # iframe 里静默退回浏览器默认（正是这段脚本存在的理由）。只解一层，多层引用直接报错。
+    for name in list(base):
+        for ref in re.findall(r'var\(\s*(--[\w-]+)', base[name]):
+            if ref in base:
+                continue
+            found = re.search(re.escape(ref)+r'\s*:\s*([^;}]*);', decoded)
+            if not found:
+                raise SystemExit(f'底座变量 {name} 引用了 {ref}，但发行版里找不到它的定义；拒绝写半份')
+            base[ref] = found.group(1).strip().replace('\\"', '"')
+
+    # 派生字号：welcome.css 只引用不定义，值在主题运行时（body 变量）里。
+    # delta 的定义是现成的；size 取 `var(--dsh-code-font-size, 11px)` 里的默认值。
+    derived = {}
+    delta = re.search(r'--dsh-code-font-delta\s*:\s*([^;}"]*)', decoded)
+    if delta:
+        derived['--dsh-code-font-delta'] = delta.group(1).strip()
+    size_default = re.search(r'var\(\s*--dsh-code-font-size\s*,\s*([^)]+)\)', decoded)
+    if size_default:
+        derived['--dsh-code-font-size'] = size_default.group(1).strip()
+    missing_derived = [n for n in DERIVED if n not in derived]
+    if missing_derived:
+        raise SystemExit(f'发行版里缺派生字号变量：{missing_derived}；'
+                         '缺了 markdown 代码字号 calc() 会整条失效，拒绝写半份')
 
     license_text = blob(LICENSE_IN_ASAR)
     if not license_text:
@@ -238,7 +271,7 @@ def main():
 
     # 自检：写盘前把"能不能被 CSS 解析器吃下去"验一遍。这次踩的坑就是抽值截断留下未闭合的
     # 括号 —— 页面没有报错，只是整段样式被丢掉，看起来像"没上样式"。
-    blocks = {'明色': light, '暗色': dark, '圆角': radius, '运动': motion}
+    blocks = {'明色': light, '暗色': dark, '圆角': radius, '运动': motion, '底座': base, '派生字号': derived}
     for label, table in blocks.items():
         for name, value in table.items():
             if value.count('(') != value.count(')'):
@@ -248,11 +281,12 @@ def main():
 
     # 表内自洽：整个表引用到的变量，要么自己定义了，要么本来就带 fallback（`--dsh-content-font-*`
     # 在表里都是 `var(--x, 默认值)` 形式）。这一条能拦住"表看着齐全、引用却悬空"那类静默失效。
-    sheet_defs = set(light) | set(dark) | set(radius) | set(motion) | set(base)
+    sheet_defs = set(light) | set(dark) | set(radius) | set(motion) | set(base) | set(derived)
     ALLOWED_FALLBACK = {'--dsh-content-font-size', '--dsh-content-font-delta',
                         '--dsh-content-font-size-secondary', '--dsh-content-font-delta-secondary'}
-    dangling = sorted({n for n in (light.values()) for n in re.findall(r'var\(\s*(--[\w-]+)', ' '.join(light.values()))}
-                      - sheet_defs - ALLOWED_FALLBACK)
+    referenced = {n for table in blocks.values() for value in table.values()
+                  for n in re.findall(r'var\(\s*(--[\w-]+)', value)}
+    dangling = sorted(referenced - sheet_defs - ALLOWED_FALLBACK)
     if dangling:
         raise SystemExit(f'表内引用了没定义的变量：{dangling}；这会静默失效，拒绝写半份')
 
@@ -260,6 +294,7 @@ def main():
         app_version=version, sheet=SHEET, sheet_sha=sha(sheet_text)[:32], n_radius=len(radius),
         n_motion=len(motion), cross_check=cross, light=as_block(light), dark=as_block(dark),
         radius=as_block(radius), motion=as_block(motion), base=as_block(base),
+        derived=as_block(derived),
     )
     OUT_CSS.write_text(body, encoding='utf-8')
     OUT_LICENSE.write_text(license_text.rstrip()+'\n', encoding='utf-8')
@@ -267,7 +302,8 @@ def main():
     print(f'桌面端 {version} ← {SHEET}')
     print(f'  源文件 sha256 {sha(sheet_text)[:16]}…')
     print(f'  抽到：明色 {len(light)} 条、暗色覆写 {len(dark)} 条；'
-          f'补 --dsw-radius-* {len(radius)} 条、运动 {len(motion)} 条、底座 {len(base)} 条')
+          f'补 --dsw-radius-* {len(radius)} 条、运动 {len(motion)} 条、底座 {len(base)} 条、'
+          f'派生字号 {len(derived)} 条')
     print(f'  比对：{cross}')
     if differing[:6]:
         print('  写法不同样例：', '、'.join(sorted(differing)[:6]))

@@ -116,3 +116,12 @@
 - **判据**：加载后断言**页面真的长出了内容**；**反面对照**把 `connect()` 换成永不返回 → 页面**仍须**完整；再加一条"渲染必须排在第一个 `await` 之前"。
 - **状态**：video-idea 与 bypage 已修（video-idea 判据 45→71、bypage 82→86，红/绿对照都有）；**video-craft 那页本来就是这条规则的样板**；**ppt-hell 未合格，已派修**。
 - **module**：所有审阅页（宿主/桥无关 —— 这是页面自己的事）
+
+## 11. 0.2.1 的令牌模型变了：字面量退到**运行时 body 变量**，静态副本必须自己补
+
+- **现象**（2026-10-17，升级 DSH 0.2.1-rc.1 后重跑 `vendor_dsh_tokens.py`）：脚本拒绝写盘 ——「表内引用了没定义的变量：`['--dsh-code-font-delta', '--dsh-code-font-size']`」。
+- **根因**：0.2.1 把 markdown 代码字号令牌改成了**继承式**（`--dsw-font-markdown-code*` 的值变成 `calc(12px + var(--dsh-code-font-delta))`），而 `--dsh-code-font-delta` / `--dsh-code-font-size` 是**主题运行时注入到宿主 body** 的派生变量（基于用户的代码字号设置，默认 11px），`welcome.css` 只引用、不定义。同一版里 `--dsw-font-family` 也变成了 `var(--dsh-font-family-text-default)` —— 字面量栈同样挪进了运行时。
+- **为什么审阅页必须自带**：页面跑在 `sandbox="allow-scripts"` 的不透明源 iframe 里，宿主 body 上的变量不会继承进来。缺这两个变量 → 代码字号整条 `calc()` 失效、字族静默退回浏览器默认（Times），**零报错**。
+- **修复**：`vendor_dsh_tokens.py` 里加 `DERIVED`（`--dsh-code-font-*`）并**解析底座引用**（`--dsh-font-family-text-default` / `--dsh-font-family-code-default`）；`var()` 引用全部落进补丁块，自洽检查扩大到所有块的所有值，不只明色块。值不猜：delta 的定义与 size 的默认值都从同一发行版的 `app.asar` 里取。
+- **判据**：脚本跑完自报「底座 4 条、派生字号 2 条」，并且对生成后的 CSS 做一次 `var(--x)` 引用全集 vs 定义全集比对 —— 只允许 `--dsh-content-font-*` 这 4 个带 fallback 的例外。
+- **module**：所有审阅页（任何内联 `dsh-tokens.css` 的页面）；升级 DSH 后先重跑脚本，别等页面自己坏。
