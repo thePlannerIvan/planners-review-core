@@ -124,7 +124,8 @@ with sync_playwright() as p:
             expect(ui.locator('#pageTitle')).to_have_text('Preserve failed edit')
             page.evaluate('window.failDraft=false')
             ui.locator('#pageTitle').fill('Human "title"')
-            ui.locator('#draftButton').click()
+            # 草稿自动保存（400ms 防抖），不再有手动按钮：等它自己落盘
+            page.wait_for_timeout(300)
             wait_draft(lambda d: d['edits']['pages']['1']['title'] == 'Human "title"')
         ui.locator('[data-decision="approve"]').click()
         ui.locator('#saveButton').click()

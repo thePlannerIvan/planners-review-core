@@ -1,4 +1,4 @@
-import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -119,6 +119,37 @@ export async function runContentCommand(surface, command) {
         atomic(path, head);
       }
       if (command.op === 'state') { checkSource(head, root); return {ok: true, ...head}; }
+      // 版本历史：每次 save 都会把上一版写进 workbench/history/<revision>.json
+      if (command.op === 'history') {
+        const archive = join(directory, 'history');
+        const items = existsSync(archive) ? readdirSync(archive).filter(name => name.endsWith('.json')).map(name => {
+          const revision = name.slice(0, -5);
+          let saved_at = '', pages = 0;
+          try { const doc = json(join(archive, name)); saved_at = doc.saved_at || ''; pages = Object.keys(doc.state?.edits?.pages || {}).length; } catch (_) {}
+          return { revision, saved_at, pages, current: revision === head.revision };
+        }).sort((a, b) => String(b.saved_at).localeCompare(String(a.saved_at))) : [];
+        return { ok: true, current: head.revision, history: items };
+      }
+      // 任务处理完成：模型改完主稿后把 task 标掉，页面才不会一直显示 pending
+      if (command.op === 'resolve') {
+        const ids = Array.isArray(command.task_ids) ? command.task_ids : [];
+        let resolved = 0;
+        for (const task of head.tasks ?? []) {
+          if (task.status !== 'pending' || (ids.length && !ids.includes(task.id))) continue;
+          task.status = 'resolved'; task.resolved_at = new Date().toISOString(); resolved += 1;
+        }
+        if (resolved) atomic(path, head);
+        return {ok: true, resolved, revision: head.revision};
+      }
+      // 恢复：只读回那一版的状态，由页面把它当一次新的编辑保存（历史不会丢）
+      if (command.op === 'restore') {
+        if (!/^[a-f0-9]{8,64}$/.test(String(command.revision || ''))) fail('restore_revision', '版本号无效');
+        const file = contained(root, join(directory, 'history', command.revision + '.json'));
+        if (!file || !existsSync(file)) fail('restore_missing', '找不到该历史版本');
+        const doc = json(file);
+        if (!doc?.state) fail('restore_empty', '该版本没有可恢复的内容');
+        return { ok: true, revision: command.revision, state: doc.state, source_hash: doc.source_hash || '' };
+      }
       const identity = command.operation_id;
       if (typeof identity !== 'string' || !/^[a-zA-Z0-9_-]{8,100}$/.test(identity)) fail('operation_id', '保存需要稳定操作身份');
       const signature = contentHash(command);
@@ -174,6 +205,23 @@ export async function runContentCommand(surface, command) {
         return receipt;
       }
       if (command.op === 'feedback') {
+        // 批注：一次交齐页面上已有的所有批注（每页一条），模型拿到 page → 文本
+        if (command.scope === 'annotations') {
+          const entries = Array.isArray(command.entries)
+            ? command.entries.map(entry => ({page: entry?.page, text: typeof entry?.text === 'string' ? entry.text.trim() : ''})).filter(entry => entry.text)
+            : [];
+          if (!entries.length) fail('feedback', '请先写下批注');
+          if (entries.some(entry => !head.state.page_order.includes(entry.page))) fail('feedback_page', '批注页面不存在');
+          const text = entries.map(entry => `第 ${head.page_mapping[entry.page]} 页：${entry.text}`).join('\n');
+          const task = {id: identity, scope: 'annotations', text,
+            entries: entries.map(entry => ({page: head.page_mapping[entry.page], text: entry.text})),
+            revision: head.revision, source_hash: head.source_hash,
+            pages: [...new Set(entries.map(entry => head.page_mapping[entry.page]))], status: 'pending'};
+          head.tasks.push(task);
+          const receipt = {ok: true, task_id: identity, task, revision: head.revision};
+          head.operations[identity] = {signature, receipt}; atomic(path, head);
+          return receipt;
+        }
         if (!['page', 'deck'].includes(command.scope) || typeof command.text !== 'string' || !command.text.trim()) fail('feedback', '请填写修改意见');
         const ids = command.scope === 'page' ? [command.page] : head.state.page_order;
         if (ids.some(id => !head.state.page_order.includes(id))) fail('feedback_page', '反馈页面不存在');

@@ -65,11 +65,16 @@ export function validateChanges(changes, context, submission) {
     for (const [key, value] of Object.entries(patch)) {
       if (['title', 'claim'].includes(key)) { if (typeof value !== 'string') throw Error('页面文字无效'); }
       else if (key === 'blocks') {
-        if (!object(value)) throw Error('内容块修改必须是对象');
-        for (const [index, block] of Object.entries(value ?? {})) {
-          if (!/^\d+$/.test(index) || !page.blocks?.[Number(index)]) throw Error('未知内容块');
-          fields(block, ['title', 'text']);
-        }
+        // 新形状：整组文本列表（上游审阅面按“一行一条”编辑，可增可删）
+        if (Array.isArray(value)) {
+          if (value.some(item => typeof item !== 'string')) throw Error('内容块必须是文本列表');
+          if (value.length > 12) throw Error('一页的内容块过多');
+        } else if (object(value)) {
+          for (const [index, block] of Object.entries(value ?? {})) {
+            if (!/^\d+$/.test(index) || !page.blocks?.[Number(index)]) throw Error('未知内容块');
+            fields(block, ['title', 'text']);
+          }
+        } else throw Error('内容块修改必须是列表或对象');
       } else if (key === 'sections') {
         if (!object(value)) throw Error('正文修改必须是对象');
         for (const [index, text] of Object.entries(value ?? {})) {

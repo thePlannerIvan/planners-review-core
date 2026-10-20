@@ -327,7 +327,7 @@ $$('.mode-tabs button').forEach(b => b.onclick = () => setMode(b.dataset.mode));
 $$('.decision').forEach(b => b.onclick = () => { currentPages().forEach(n => state.decisions[n] = b.dataset.decision); dirty(); updateSelection(); });
 $('#feedback').oninput = () => { state.feedbacks[mode === 'storyline' ? 'chapter:' + chapter : page] = $('#feedback').value; currentPages().forEach(n => state.decisions[n] = 'revise'); dirty(); };
 $('#overallFeedback').oninput = () => { state.overall_feedback_zh = $('#overallFeedback').value; dirty(); };
-$('#saveButton').onclick = submit; $('#draftButton').onclick = () => saveDraft();
+$('#saveButton').onclick = submit; const legacyDraftButton = $('#draftButton'); if (legacyDraftButton) legacyDraftButton.onclick = () => saveDraft();
 $('#addStoryline').onclick = addStorylineSection;
 $('#pagePrev').onclick = () => {
   const at = state.page_order.map(String).indexOf(String(page));
@@ -354,7 +354,18 @@ $('.workspace').onscroll = () => {
   const card = $$('.story-card').find(c => c.getBoundingClientRect().bottom > top);
   if (card && card.dataset.sectionId !== chapter) selectChapter(card.dataset.sectionId,false);
 };
-$('#uploadButton').onclick = () => $('#uploadFile').click();
+const legacyDrop = $('#uploadDrop');
+if (legacyDrop) {
+  legacyDrop.onclick = () => $('#uploadFile').click();
+  legacyDrop.ondragover = event => { event.preventDefault(); legacyDrop.classList.add('over'); };
+  legacyDrop.ondragleave = () => legacyDrop.classList.remove('over');
+  legacyDrop.ondrop = event => {
+    event.preventDefault(); legacyDrop.classList.remove('over');
+    const input = $('#uploadFile'); if (!input) return;
+    const transfer = new DataTransfer(); [...(event.dataTransfer?.files || [])].forEach(file => transfer.items.add(file));
+    input.files = transfer.files; input.onchange?.({target: input});
+  };
+}
 $('#uploadFile').onchange = async () => {
   const file = $('#uploadFile').files[0]; if (!file || !writable) return;
   const id = page, rel = 'uploads/page-' + pad(id) + '/' + Date.now() + '-' + file.name.replace(/[^\p{L}\p{N}._-]/gu,'-');
@@ -377,7 +388,7 @@ async function boot() {
   // Keep that compatibility surface readable on first load; the Workbench
   // editor has its own deliberate collapsed chapter context.
   $('#chapterDetails').open = Boolean(chapter);
-  $('#feedback').disabled = true; $('#overallFeedback').disabled = true; $('#saveButton').disabled = true; $('#draftButton').disabled = true; $$('.decision').forEach(b => b.disabled = true);
+  $('#feedback').disabled = true; $('#overallFeedback').disabled = true; $('#saveButton').disabled = true; if ($('#draftButton')) $('#draftButton').disabled = true; $$('.decision').forEach(b => b.disabled = true);
   if (matchMedia('(max-width:1120px)').matches) $('#inspectorToggle').click();
   setMode(mode,false);
   try {
@@ -388,7 +399,7 @@ async function boot() {
     try { restore(JSON.parse(await review.readText(REVIEW.draftPath || 'draft.json', {optional:true}))); } catch (_) {}
     review.on('changed',checkSource); await checkSource();
   } catch (_) { notice('内容可以阅读，暂时无法保存修改。请重新打开审阅页。'); }
-  $('#feedback').disabled = !writable; $('#overallFeedback').disabled = !writable; $('#saveButton').disabled = !writable; $('#draftButton').disabled = !writable; $$('.decision').forEach(b => b.disabled = !writable);
+  $('#feedback').disabled = !writable; $('#overallFeedback').disabled = !writable; $('#saveButton').disabled = !writable; if ($('#draftButton')) $('#draftButton').disabled = !writable; $$('.decision').forEach(b => b.disabled = !writable);
   $('#addStoryline').hidden = true;
   setMode(mode);
 }
