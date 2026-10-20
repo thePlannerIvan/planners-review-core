@@ -24,14 +24,14 @@ test('local host passes all allowlisted operations, JSON stdin, canonical root a
   const f = await commandFixture(t);
   const origin = await startCommandHost(t, f);
   assert.deepEqual((await (await fetch(origin + '/__review/capabilities')).json()).capabilities, ['command']);
-  for (const op of ['get', 'state', 'save', 'feedback', 'snapshot', 'restore', 'order']) {
+  for (const op of ['get', 'state', 'save', 'feedback', 'snapshot', 'restore', 'history', 'order']) {
     const payload = { op, operation_id: 'human_' + op, author: 'human', page_key: 'page_01', notes: 'Human text', edits: [{ element_id: 't1', kind: 'text', value: 'A & B' }] };
     const result = await (await post(origin, payload)).json();
     assert.equal(result.ok, true);
     assert.deepEqual(result.payload, payload);
     assert.deepEqual(result.args, ['--root', f.project, '--command-json', '--browser']);
   }
-  assert.equal((await f.calls()).length, 7);
+  assert.equal((await f.calls()).length, 8);
 });
 
 test('local host preserves backend rejection details despite nonzero CLI exit', async (t) => {

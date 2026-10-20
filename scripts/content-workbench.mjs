@@ -113,6 +113,11 @@ export async function runContentCommand(surface, command) {
         const source = contained(root, context.files[0].path), raw = readFileSync(source, 'utf8');
         if (sha256(raw) !== context.files[0].sha256) fail('source_conflict', '生成页面后的主稿已经变化');
         for (const item of context.files) contained(root, item.path);
+        if (head) {
+          const archive = join(directory, 'history'); mkdirSync(archive, {recursive:true});
+          contained(root, archive);
+          if (!existsSync(join(archive, head.revision + '.json'))) atomic(join(archive, head.revision + '.json'), head);
+        }
         head = {version: 'content-workbench/1', revision: sha256(raw + context.sourceSha256), context,
           baseline: raw, source_hash: sha256(raw), state: initial(context), tasks: head?.tasks ?? [], operations: {},
           page_mapping: Object.fromEntries(context.pages.map(p => [p.page_number, p.page_number]))};
@@ -125,14 +130,20 @@ export async function runContentCommand(surface, command) {
         const items = existsSync(archive) ? readdirSync(archive).filter(name => name.endsWith('.json')).map(name => {
           const revision = name.slice(0, -5);
           let saved_at = '', pages = 0;
-          try { const doc = json(join(archive, name)); saved_at = doc.saved_at || ''; pages = Object.keys(doc.state?.edits?.pages || {}).length; } catch (_) {}
+          try { const doc = json(join(archive, name)); saved_at = doc.saved_at || ''; pages = doc.state?.page_order?.length ?? 0; } catch (_) {}
           return { revision, saved_at, pages, current: revision === head.revision };
         }).sort((a, b) => String(b.saved_at).localeCompare(String(a.saved_at))) : [];
-        return { ok: true, current: head.revision, history: items };
+        return { ok: true, current: head.revision, history: [
+          {revision:head.revision,saved_at:head.saved_at || '',pages:head.state.page_order.length,current:true},
+          ...items.filter(item => item.revision !== head.revision),
+        ] };
       }
       // 任务处理完成：模型改完主稿后把 task 标掉，页面才不会一直显示 pending
       if (command.op === 'resolve') {
         const ids = Array.isArray(command.task_ids) ? command.task_ids : [];
+        if (!ids.length) fail('task_ids', '请指定已完成的任务');
+        if (command.base_revision !== head.revision || command.source_hash !== head.source_hash) fail('revision_conflict', '任务处理基线已变化，请核对后再标记完成');
+        if (ids.some(id => !(head.tasks ?? []).some(t => t.id === id && t.status === 'pending' && t.revision === command.base_revision && t.source_hash === command.source_hash))) fail('task_version', '任务不存在、已完成或不属于当前处理版本');
         let resolved = 0;
         for (const task of head.tasks ?? []) {
           if (task.status !== 'pending' || (ids.length && !ids.includes(task.id))) continue;
@@ -148,6 +159,7 @@ export async function runContentCommand(surface, command) {
         if (!file || !existsSync(file)) fail('restore_missing', '找不到该历史版本');
         const doc = json(file);
         if (!doc?.state) fail('restore_empty', '该版本没有可恢复的内容');
+        if (doc.context?.sourceSha256 !== head.context.sourceSha256) fail('restore_baseline', '该版本属于模型更新前的编辑基线；请让模型核对历史内容后恢复，当前主稿未改变');
         return { ok: true, revision: command.revision, state: doc.state, source_hash: doc.source_hash || '' };
       }
       const identity = command.operation_id;

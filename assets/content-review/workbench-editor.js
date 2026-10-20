@@ -37,11 +37,11 @@ function snapshot() { return {...structuredClone(state),base_revision:headRevisi
 function backup() { try { sessionStorage.setItem(recoveryKey,JSON.stringify(snapshot())); } catch (_) {} }
 function enqueue(run) { const result = chain.then(run,run); chain = result.catch(() => {}); return result; }
 function changed(content = true) {
-  if (content) editsVersion++;
+  if (content) { editsVersion++; status('待保存', true); }
   draftVersion++; backup();
   clearTimeout(timer); timer = setTimeout(() => enqueue(async () => {
     if (!await persistDraft()) return false;
-    return dsh && editsVersion > savedVersion ? persistCanonical() : true;
+    return editsVersion > savedVersion ? persistCanonical() : true;
   }),400);
 }
 async function persistDraft() {
@@ -53,19 +53,6 @@ async function command(payload) {
   const result = await review.command(payload);
   if (!result?.ok) throw Object.assign(Error(result?.error ?? '保存未成功'),{code:result?.code});
   return result;
-}
-// 旧宿主不认「bullets 数组」：退回对象形状并丢掉超出的条目，保证改动能存下去
-let compatBlocks = false;
-function compatibleState() {
-  const clone = structuredClone(state);
-  for (const [id, patch] of Object.entries(clone.edits.pages ?? {})) {
-    if (!Array.isArray(patch.blocks)) continue;
-    const limit = (pageById(Number(id))?.blocks ?? []).length;
-    const object = {};
-    patch.blocks.slice(0, limit).forEach((text, index) => { object[index] = { text: String(text ?? '') }; });
-    patch.blocks = object;
-  }
-  return clone;
 }
 async function persistCanonical() {
   if (!writable || conflicted) return false;
@@ -81,15 +68,9 @@ async function persistCanonical() {
     status('已自动保存');
     void loadVersions();
     notice('');
-    if (dsh && savedVersion !== editsVersion) return persistCanonical();
+    if (savedVersion !== editsVersion) return persistCanonical();
     return savedVersion === editsVersion;
   } catch (error) {
-    if (!compatBlocks && /内容块|未知页面字段/.test(String(error.message || ''))) {
-      compatBlocks = true; pendingSave = null;
-      state = compatibleState();
-      notice('当前宿主版本不支持增删支撑点：已按原有条目保存；重启 DSH 后即可增删。');
-      return persistCanonical();
-    }
     if (['revision_conflict','source_conflict','baseline_conflict','dependency_conflict'].includes(error.code)) conflicted = true;
     backup(); await persistDraft(); notice(error.message + '。当前编辑已保留。'); status('保存失败',true); return false;
   }
@@ -217,7 +198,7 @@ async function submitAnnotations() {
     status('已提交');
     for (const entry of entries) { (state.submitted_notes ??= {})[entry.page] = entry.text; }
     changed(false); renderNav(); status('已提交');
-    notice('已提交 ' + entries.length + ' 条批注' + (dsh ? '，正在通知模型' : ''));
+    notice('已提交 ' + entries.length + ' 条批注' + (dsh ? '，正在通知模型' : '，请回到对话通知模型处理'));
     if (dsh) {
       try {
         const wake = await review.wake({unit: entries.length + ' 条批注'});
@@ -236,7 +217,7 @@ function renderStory() {
   $('#outlineList').hidden = false;
   $('#outlineList').innerHTML = state.page_order.map((id,i) => {
     const open = expandedPages.has(String(id));
-    const bullets = outlineBullets(id).map((text,index) => '<div class="block-bullet" data-bullet-index="'+index+'" contenteditable="'+writable+'" spellcheck="false">'+esc(text)+'</div>').join('');
+    const bullets = (outlineBullets(id).length ? outlineBullets(id) : ['']).map((text,index) => '<div class="block-bullet" data-bullet-index="'+index+'" contenteditable="'+writable+'" spellcheck="false">'+esc(text)+'</div>').join('');
     const note = state.feedbacks[id] ?? '';
     return '<li class="outline-line'+(String(id) === String(page) ? ' active' : '')+(open ? ' open' : '')+'" data-outline-id="'+id+'" draggable="'+writable+'">'
       + '<div class="outline-head">'
@@ -249,6 +230,7 @@ function renderStory() {
       // claim 是 page-architecture 的必填字段，仍随数据下发，并在逐页稿页头可编辑；
       // 故事线的行展开里不重复显示，避免同一条判断在一屏出现两次。
       + '<div class="block-bullets">'+bullets+'</div>'
+      + (REVIEW.simpleStoryline ? '<details class="outline-notes"'+((state.edits.pages[id]?.notes ?? pageById(id).notes) ? ' open' : '')+'><summary>依据与边界</summary><textarea data-content-notes="'+id+'" rows="2" placeholder="必要的来源定位、证据缺口或限定">'+esc(state.edits.pages[id]?.notes ?? pageById(id).notes ?? '')+'</textarea></details>' : '')
       + (String(editingNote) === String(id)
           ? '<label class="outline-note-editor"><span class="outline-note-label">批注</span><textarea data-note-input="'+id+'" rows="2" placeholder="写这一句要改什么">'+esc(note)+'</textarea></label>'
           : (note
@@ -266,7 +248,7 @@ function renderStory() {
     const row = node.closest('[data-outline-id]');
     const id = row.dataset.outlineId;
     const read = () => [...row.querySelectorAll('.block-bullet')].map(item => item.textContent.trim());
-    const commit = list => { patch(id).blocks = list; changed(false); };
+    const commit = list => { patch(id).blocks = list; changed(); };
     node.oninput = () => commit(read());
     node.onkeydown = event => {
       const index = Number(node.dataset.bulletIndex);
@@ -284,6 +266,10 @@ function renderStory() {
         document.querySelector('[data-outline-id="'+id+'"] [data-bullet-index="'+Math.max(0, index - 1)+'"]')?.focus();
       }
     };
+  });
+  $$('#outlineList [data-content-notes]').forEach(node => {
+    node.disabled = !writable;
+    node.oninput = () => { patch(node.dataset.contentNotes).notes = node.value; changed(); };
   });
   $$('#outlineList [data-note-open]').forEach(button => button.onclick = () => {
     const id = button.dataset.noteOpen; selectPage(id);
@@ -325,7 +311,7 @@ function renderStory() {
   $$('.outline-line').forEach(row => bindDrag(row,Number(row.dataset.outlineId)));
   $('#storyStream').innerHTML = state.section_order.map(id => {
     const section = REVIEW.sections.find(s => s.section_id === id), e = state.edits.sections[id] ?? {};
-    return '<article class="story-card" data-section-id="'+esc(id)+'"><h2 data-field="title">'+esc(e.title ?? section.title)+'</h2><p data-field="lead">'+esc(e.lead ?? section.lead)+'</p><p data-field="transition">'+esc(e.transition ?? section.transition)+'</p></article>';
+    return '<article class="story-card" data-section-id="'+esc(id)+'"><h2 data-field="title">'+esc(e.title ?? section.title)+'</h2>'+ (REVIEW.simpleStoryline ? '' : '<p data-field="lead">'+esc(e.lead ?? section.lead)+'</p><p data-field="transition">'+esc(e.transition ?? section.transition)+'</p>')+'</article>';
   }).join('');
   $$('#storyStream [data-field]').forEach(node => textEditor(node,text => {
     const id = node.closest('[data-section-id]').dataset.sectionId; (state.edits.sections[id] ??= {})[node.dataset.field] = text;
@@ -388,7 +374,7 @@ function updateSelection() {
   $('#uploadSection').hidden = mode !== 'bypage' || !REVIEW.allowUploads || !writable || !review?.capabilities.includes('asset-upload');
   $('#pagePrev').disabled = state.page_order.indexOf(page) <= 0;
   $('#pageNext').disabled = state.page_order.indexOf(page) >= state.page_order.length-1;
-  $('#pageTaskButton').hidden = !dsh;
+  $('#pageTaskButton').hidden = false;
   $('#pagePrev').hidden = mode !== 'bypage'; $('#pageNext').hidden = mode !== 'bypage';
   // 这两个按钮由脚本动态创建，取不到时不要抛错（抛错会中断整段渲染）。
   for (const node of [$('#pageTaskButton'), $('#saveButton')]) if (node) node.disabled = !writable || conflicted;
@@ -531,6 +517,7 @@ window.addEventListener('beforeunload',e => { if (draftVersion > draftedVersion 
 async function boot() {
   $('.decision-row').hidden = true; $('#priorOpinion').hidden = true; $('#chapterDetails').open = false;
   if (!REVIEW.sections.length) $('.mode-tabs [data-mode="storyline"]').hidden = true;
+  if (REVIEW.simpleStoryline) $('.mode-tabs [data-mode="bypage"]').hidden = true;
   $('#feedback').disabled = true; $('#overallFeedback').disabled = true;
   $('#saveButton').innerHTML = icon('MessageSquare')+'<span>整体修改</span>';
   $('#pageTaskButton').onclick = () => submitAnnotations();
@@ -553,19 +540,19 @@ async function boot() {
         if (different) editsVersion = 1;
       }
     }
-    if (state.view?.mode) mode = state.view.mode;
+    if (state.view?.mode && !REVIEW.simpleStoryline) mode = state.view.mode;
     if (state.page_order.includes(state.view?.page)) page = state.view.page;
     else if (!state.page_order.includes(page)) page = state.page_order[0];
     writable = true;
     // This action only applies to DSH. Keep the optional control guarded so
     // a missing button cannot abort the rest of the boot sequence.
     const pageTaskButton = $('#pageTaskButton');
-    if (pageTaskButton) pageTaskButton.hidden = !dsh;
+    if (pageTaskButton) pageTaskButton.hidden = false;
     $('#feedback').disabled = false; $('#overallFeedback').disabled = false;
     $('#addStoryline').hidden = !REVIEW.allowStructureChanges;
-    status('已自动保存');
+    status('已载入');
     review.on('changed',async () => { try { await command({op:'state'}); } catch (error) { conflicted = true; backup(); notice(error.message+'。当前编辑已保留。'); updateSelection(); } });
-    if (dsh && editsVersion && !conflicted) enqueue(async () => await persistDraft() && await persistCanonical());
+    if (editsVersion && !conflicted) enqueue(async () => await persistDraft() && await persistCanonical());
   } catch (error) { notice('当前只读：'+error.message); }
   if (matchMedia('(max-width:1120px)').matches) $('#inspectorToggle').click();
   render(); ReviewUI.refresh(document);
@@ -604,6 +591,7 @@ if ($('#restoreRevision')) $('#restoreRevision').onclick = async () => {
   }
   restoreArmed = ''; button.textContent = '恢复此版';
   try {
+    if (editsVersion > savedVersion && !await save()) return;
     const restored = await command({op:'restore', revision});
     if (!restored?.state) throw Error('该版本没有可恢复的内容');
     state = {...state, ...restored.state};

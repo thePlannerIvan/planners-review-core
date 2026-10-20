@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const CORE_DIR = fileURLToPath(new URL('../../', import.meta.url));
 const BACKEND = 'svg-workbench/1';
 const PROCESSOR = ['planners-ppt-hell', 'scripts', 'workbench_store.py'];
-const OPERATIONS = new Set(['get', 'state', 'save', 'feedback', 'snapshot', 'restore', 'order']);
+const OPERATIONS = new Set(['get', 'state', 'save', 'feedback', 'snapshot', 'restore', 'history', 'order']);
 const OVERRIDES = ['root', 'project_root', 'projectRoot', 'executable', 'script', 'processor', 'python', 'argv', 'cwd', 'command_backend'];
 const INPUT_LIMIT = 1024 * 1024;
 const OUTPUT_LIMIT = 4 * 1024 * 1024;

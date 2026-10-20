@@ -63,12 +63,12 @@ export function validateChanges(changes, context, submission) {
     if (!page) throw Error('未知页面：' + id);
     if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw Error('页面修改不是对象');
     for (const [key, value] of Object.entries(patch)) {
-      if (['title', 'claim'].includes(key)) { if (typeof value !== 'string') throw Error('页面文字无效'); }
+      if (['title', 'claim'].includes(key) || (key === 'notes' && context.simpleStoryline)) { if (typeof value !== 'string') throw Error('页面文字无效'); }
       else if (key === 'blocks') {
         // 新形状：整组文本列表（上游审阅面按“一行一条”编辑，可增可删）
         if (Array.isArray(value)) {
           if (value.some(item => typeof item !== 'string')) throw Error('内容块必须是文本列表');
-          if (value.length > 12) throw Error('一页的内容块过多');
+          // 支撑数量由论证需要决定，保存不设任意条数门槛。
         } else if (object(value)) {
           for (const [index, block] of Object.entries(value ?? {})) {
             if (!/^\d+$/.test(index) || !page.blocks?.[Number(index)]) throw Error('未知内容块');

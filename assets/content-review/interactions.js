@@ -208,7 +208,6 @@ async function hydrateAssets(root) {
 function updateNavTitles() { $$('.page-nav').forEach(b => { const t = mode === 'storyline' ? sectionTitle(b.dataset.id) : title(b.dataset.id); b.querySelector('.page-nav-title').textContent = t; b.title = t; }); }
 function updateSelection() {
   $$('.page-nav').forEach(b => b.classList.toggle('active', b.dataset.id === String(mode === 'storyline' ? chapter : page)));
-  $('#inspectorKicker').textContent = mode === 'storyline' ? '本章审阅' : '本页审阅';
   $('#inspectorTitle').textContent = '第 ' + pad(position(mode === 'storyline' ? 'section' : 'page', mode === 'storyline' ? chapter : page)) + (mode === 'storyline' ? ' 章' : ' 页');
   const ids = currentPages(), values = ids.map(n => state.decisions[n]);
   $$('.decision').forEach(b => b.classList.toggle('active', values.length && values.every(d => d === b.dataset.decision)));

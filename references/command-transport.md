@@ -60,7 +60,7 @@ if (!receipt.ok) {
 }
 ```
 
-Browser operations are `get`, `state`, `save`, `feedback`, `snapshot`, `restore`
+Browser operations are `get`, `state`, `save`, `feedback`, `snapshot`, `restore`, `history`
 and `order`. Browser `author: model`, `checkout`, `resolve` and nonallowlisted
 operations are rejected. The backend enforces human patch-only saves and rejects
 model candidate SVG submission. Feedback rewrite authorization is a human
