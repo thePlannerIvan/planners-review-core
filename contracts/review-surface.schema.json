@@ -20,7 +20,7 @@
     "id": {
       "type": "string",
       "pattern": "^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*$",
-      "description": "<skill>/<面>。宿主用它区分多个面，并作为 tab 与路由的键。"
+      "description": "<skill>/<面>。宿主用它区分多个面，并作为 tab 与路由的键。**同一个 id 再打开 = 刷新那一个标签（revision 走一格，页面重载）；不同 id = 各占一个标签。**所以同一个 Skill 的两个不同面不许共用一个 id，否则第二份会把第一份顶掉。"
     },
     "title": {
       "type": "string",

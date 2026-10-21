@@ -56,6 +56,7 @@ review-bridge.js ──┘
 
 ## 接入 DSH 的硬要求（写给插件那边）
 
+- **标签类型必须声明 `multiple: true`，面必须从「每个标签自己的」navigation params 取**：一个会话共用一个「当前面」的存储，等于第二份审阅把第一份从人眼前顶掉（2026-10-21 之前的真实行为）；而只把标签改成多实例、仍从会话级的单一值取面，会变成"开了两个标签、显示同一份面"。
 - **`keepMounted: true` 是前置条件**：默认 falsy 时 tab 一切走 React 就卸载 → iframe 销毁 → 人写了一半的意见全丢。
 - **HTTP 端点必须挂在 `/api` 围栏下**（`ctx.connection.fetch.register`）。裸 `webServer.register({kind:'prefix'})` 没有 Host/Origin 围栏也没有 cookie 校验 —— 任何你能访问的网页都能让浏览器对 loopback 盲发带副作用的请求。
 - **父页面创建的 `blob:` URL 不属于不透明 iframe**。资产字节经桥传入后，由 iframe 自己创建 URL；不得直接引用受宿主围栏限制的资产路由。
@@ -70,6 +71,7 @@ review-bridge.js ──┘
 | 桥的 API | `assets/review-bridge.js` | 每个审阅目录里的副本（校验器报 `bridge_stale` 挡住），以及所有 Skill 的页面 |
 | 包含性规则 | 校验器 + 两个宿主 | 安全面；改前先想清楚能不能被绕过 |
 | 新增宿主（除 DSH 与本地服务器） | 本文件 + SKILL.md | 新宿主必须实现同样三件事，页面不用改 |
+| 定多个面怎么共处（能开几个、谁关、归哪个对话） | 本文件 + SKILL.md 的「多个面、多个对话」 | 这是**宿主语义**，不进 schema：加字段会把宿主的实现选择写进契约 |
 
 ## 同一件事的两个真相源（故意分开）
 
