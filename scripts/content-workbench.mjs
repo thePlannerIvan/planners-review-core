@@ -16,6 +16,11 @@ const initial = context => ({source_sha256: context.sourceSha256, review_kind: c
   edits: {pages: {}, sections: {}}, page_order: context.pages.map(p => p.page_number),
   section_order: context.sections.map(s => s.section_id), added_pages: {}, deleted_pages: [],
   feedbacks: {}, attachments: {}, asset_decisions: {}, overall_feedback_zh: ''});
+// 待办任务认的是「提交那一刻的 head」。而 resolve 要求 task.revision 等于 head.revision，
+// 一旦 head 前进（人提交批注后页面又自动保存一次、或产出方按新基线重建），任务就永远标不掉。
+// 所以 head 前进时 pending 任务跟着前进；已完成的任务保留它当时的版本，作为处理记录。
+const carryTasks = (tasks, revision, sourceHash) => (tasks ?? []).map(task =>
+  task.status === 'pending' ? {...task, revision, source_hash: sourceHash} : task);
 export const changesOf = state => ({contract_version: 'content-review-edits/1.1.0', edits: state.edits,
   page_order: state.page_order, section_order: state.section_order,
   added_pages: state.added_pages ?? {}, deleted_pages: state.deleted_pages ?? []});
@@ -118,8 +123,10 @@ export async function runContentCommand(surface, command) {
           contained(root, archive);
           if (!existsSync(join(archive, head.revision + '.json'))) atomic(join(archive, head.revision + '.json'), head);
         }
-        head = {version: 'content-workbench/1', revision: sha256(raw + context.sourceSha256), context,
-          baseline: raw, source_hash: sha256(raw), state: initial(context), tasks: head?.tasks ?? [], operations: {},
+        const rawHash = sha256(raw), revision = sha256(raw + context.sourceSha256);
+        head = {version: 'content-workbench/1', revision, context,
+          baseline: raw, source_hash: rawHash, state: initial(context),
+          tasks: carryTasks(head?.tasks, revision, rawHash), operations: {},
           page_mapping: Object.fromEntries(context.pages.map(p => [p.page_number, p.page_number]))};
         atomic(path, head);
       }
@@ -200,7 +207,8 @@ export async function runContentCommand(surface, command) {
           requires_fact_recheck: head.context.type === 'copy' && hash !== head.source_hash,
           page_mapping: Object.fromEntries(command.state.page_order.map((id, i) => [id, i + 1]))};
         head = {...head, revision: receipt.revision, source_hash: hash, state: command.state,
-          page_mapping: receipt.page_mapping, saved_at: new Date().toISOString()};
+          page_mapping: receipt.page_mapping, saved_at: new Date().toISOString(),
+          tasks: carryTasks(head.tasks, receipt.revision, hash)};
         head.operations[identity] = {signature, receipt};
         const archive = join(directory, 'history'); mkdirSync(archive, {recursive: true});
         contained(root, archive);

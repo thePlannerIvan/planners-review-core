@@ -273,7 +273,11 @@ for (const variant of variants) {
     const newer = modified(initial, variant);
     newer.edits.pages['1'].title = 'Later saved title';
     assert.equal((await f.run(saveCommand(await stateOf(f), newer, 'save_later_0001'))).ok, true);
-    assert.deepEqual(f.head().tasks[0], originalTask, 'A later save must not retarget an existing task');
+    const carried = f.head().tasks[0];
+    assert.deepEqual({...carried, revision: originalTask.revision, source_hash: originalTask.source_hash}, originalTask,
+      'A later save must not retarget what a task asks for');
+    assert.equal(carried.revision, f.head().revision, 'A pending task must ride the head forward, or it can never be resolved');
+    assert.equal(carried.source_hash, f.head().source_hash);
     const head = bytes(f.headPath), source = bytes(f.source);
     for (const extra of [
       { base_revision: saved.revision, scope: 'deck', text: 'Stale task' },
@@ -506,7 +510,7 @@ test('legacy draft.json without structural fields remains rebuild-compatible', t
   assert.equal(parse(join(f.dir, 'review-context.json')).draftPath, 'draft-' + next.sourceSha256 + '.json');
 });
 
-test('rebuilding an unsubmitted saved draft resets the baseline but preserves task version/scope', async t => {
+test('rebuilding an unsubmitted saved draft resets the baseline but keeps the task answerable', async t => {
   const f = fixture(t), initial = await stateOf(f), state = modified(initial, f.variant);
   const saved = await f.run(saveCommand(initial, state));
   assert.equal(saved.ok, true, JSON.stringify(saved));
@@ -528,8 +532,10 @@ test('rebuilding an unsubmitted saved draft resets the baseline but preserves ta
   assert.notEqual(rebuilt.revision, saved.revision);
   assert.deepEqual(rebuilt.state.edits, { pages: {}, sections: {} });
   assert.deepEqual(rebuilt.state.page_order, [1, 2]);
-  assert.deepEqual(rebuilt.tasks, [task.task]);
-  assert.equal(rebuilt.tasks[0].revision, saved.revision);
+  assert.deepEqual({...rebuilt.tasks[0], revision: task.task.revision, source_hash: task.task.source_hash}, task.task,
+    '重定基线只换版本，不改任务要什么');
+  assert.equal(rebuilt.tasks[0].revision, rebuilt.revision, 'A rebuilt baseline must re-baseline its pending tasks');
+  assert.equal(rebuilt.tasks[0].source_hash, rebuilt.source_hash);
   assert.deepEqual(rebuilt.tasks[0].pages, [2]);
   const repeat = await f.run(saveCommand(rebuilt, rebuilt.state, 'save_rebuilt_0001'));
   assert.equal(repeat.ok, true, JSON.stringify(repeat));
@@ -538,4 +544,29 @@ test('rebuilding an unsubmitted saved draft resets the baseline but preserves ta
   const stale = await f.run(saveCommand(initial, state, 'save_pre_rebuild_0001'));
   assert.equal(stale.ok, false);
   assert.equal(stale.code, 'revision_conflict');
+});
+
+test('a task submitted before the page auto-saved can still be resolved afterwards', async t => {
+  const f = fixture(t), initial = await stateOf(f), state = modified(initial, f.variant);
+  const saved = await f.run(saveCommand(initial, state));
+  assert.equal(saved.ok, true, JSON.stringify(saved));
+  const task = await f.run({ op: 'feedback', operation_id: 'feedback_then_autosave',
+    base_revision: saved.revision, scope: 'page', page: 1, text: '改这一页，提交后页面又存了一次' });
+  assert.equal(task.ok, true, JSON.stringify(task));
+  // 人提交批注后页面自动保存了一次：head 前进，任务基线必须跟着前进
+  const drifted = await f.run(saveCommand(await stateOf(f), state, 'save_after_feedback_0001'));
+  assert.equal(drifted.ok, true, JSON.stringify(drifted));
+  const head = await stateOf(f);
+  assert.equal(head.tasks[0].revision, head.revision);
+  assert.equal(head.tasks[0].source_hash, head.source_hash);
+  // 拿提交时的旧基线标任务会被拒；拿当前 head 就能标掉
+  const staleResolve = await f.run({ op: 'resolve', task_ids: [task.task_id],
+    base_revision: task.task.revision, source_hash: task.task.source_hash });
+  assert.equal(staleResolve.ok, false);
+  assert.equal(staleResolve.code, 'revision_conflict');
+  const resolved = await f.run({ op: 'resolve', task_ids: [task.task_id],
+    base_revision: head.revision, source_hash: head.source_hash });
+  assert.equal(resolved.ok, true, JSON.stringify(resolved));
+  assert.equal(resolved.resolved, 1);
+  assert.equal((await stateOf(f)).tasks[0].status, 'resolved');
 });
