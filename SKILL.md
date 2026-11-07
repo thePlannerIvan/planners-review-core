@@ -68,7 +68,7 @@ Skill 交出自己的审阅页面与资产目录；宿主负责显示、serve �
 5. **没有 DSH 时**：`node "<本模组>/scripts/serve-review.mjs" "<surface.json>"`
    —— 页面一个字都不用改。
 
-**持续编辑或并发保存：**读 [command-transport.md](references/command-transport.md)，使用声明支持的 `review.command` 后端。Workbench 的 `save` 是带 revision 的 canonical 主稿提交，`feedback` 是带 revision/source_hash/pages 的 pending task；`draft` 只用于恢复。保存成功以真实回执为准，冲突时保留用户草稿，不覆盖主稿。两种宿主共用命令处理器，后端负责版本，宿主不运行页面提供的程序。
+**持续编辑或并发保存：**读 [command-transport.md](references/command-transport.md)，使用声明支持的 `review.command` 后端。Workbench 的 `save` 是按页校验的 canonical 主稿提交（回执带 `deferred_pages`，同一页冲突不静默覆盖），`feedback` 是按页绑定的 pending task（`revision`/`pages`/`page_hashes`），`draft` 只用于恢复。保存成功以真实回执为准，冲突时保留用户草稿，不覆盖主稿。两种宿主共用命令处理器，后端负责版本，宿主不运行页面提供的程序。
 
 ## 怎么把一个新审阅页接进来（四步，与审什么无关）
 

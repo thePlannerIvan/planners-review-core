@@ -25,6 +25,105 @@ export const changesOf = state => ({contract_version: 'content-review-edits/1.1.
   page_order: state.page_order, section_order: state.section_order,
   added_pages: state.added_pages ?? {}, deleted_pages: state.deleted_pages ?? []});
 
+// ── 按页指纹（unit）──────────────────────────────────────────────────────────
+// adapter 可选导出 unitHashes(raw) → {pages:{[页号]:sha256}, sections:{[章节id]:sha256}}。
+// 没有这个导出、抛错或返回空页时返回 null，整条逻辑退回旧的「整份文件一个指纹」行为，
+// 别的 adapter 不会被弄坏。
+export function unitsOf(adapterModule, raw) {
+  try {
+    if (typeof adapterModule?.unitHashes !== 'function') return null;
+    const units = adapterModule.unitHashes(raw);
+    if (!units || typeof units !== 'object') return null;
+    const pages = units.pages && typeof units.pages === 'object' ? units.pages : {};
+    const sections = units.sections && typeof units.sections === 'object' ? units.sections : {};
+    if (!Object.keys(pages).length) return null;
+    return {pages: {...pages}, sections: {...sections}};
+  } catch { return null; }
+}
+const sameOrder = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length
+  && a.every((id, index) => String(id) === String(b[index]));
+// 一页的「编辑 patch」身份：页面文字修改 + 新增页自身的字段（负 id 页的标题就住在 added_pages 里）。
+const pagePatch = (state, id) => contentHash({edit: state?.edits?.pages?.[id] ?? null, added: state?.added_pages?.[id] ?? null});
+// page_versions 只记「人把这一页改成了不同内容」：模型改主稿不动它，重建基线按页集合/交集沿用。
+function nextPageVersions(previous, previousState, nextState) {
+  const versions = {};
+  for (const id of nextState.page_order) {
+    const key = String(id);
+    versions[key] = (previous?.[key] ?? 0) + (pagePatch(previousState, key) === pagePatch(nextState, key) ? 0 : 1);
+  }
+  return versions;
+}
+function carriedPageVersions(context, previous = {}) {
+  return Object.fromEntries(context.pages.map(page => {
+    const key = String(page.page_number);
+    return [key, previous?.[key] ?? 0];
+  }));
+}
+// 把「内部页 id」的累计编辑翻译成「磁盘当前文件页号」的形状，再作用在当前文件上。
+// 内部 id ↔ 磁盘页号 由上一版 head.state.page_order 的位置决定（磁盘就是按它写出来的）；
+// 新加页（负 id）保持负 id —— adapter 每次都会按 added_pages 重新生成它。
+function rebasedChanges(head, state) {
+  const base = head.state.page_order.map(String);
+  const translate = id => {
+    const key = String(id);
+    if (/^-\d+$/.test(key)) return key;
+    const index = base.indexOf(key);
+    return index < 0 ? key : String(index + 1);
+  };
+  const edits = state.edits ?? {};
+  return {
+    contract_version: 'content-review-edits/1.1.0',
+    edits: {
+      ...(edits.thesis !== undefined ? {thesis: edits.thesis} : {}),
+      pages: Object.fromEntries(Object.entries(edits.pages ?? {}).map(([id, patch]) => [translate(id), patch])),
+      sections: edits.sections ?? {},
+    },
+    page_order: state.page_order.map(translate),
+    section_order: state.section_order ?? [],
+    added_pages: state.added_pages ?? {},
+    deleted_pages: state.deleted_pages ?? [],
+  };
+}
+// 基线前进（另一个窗口/模型已保存过）时，把上一版已经提交的编辑并回 head.state：
+// 否则文件里的内容与 head.state 会脱节，页面刷新/下一次保存会把别人已经落盘的编辑「忘掉」。
+function mergeCommitted(previousState, nextState) {
+  const before = previousState?.edits ?? {}, after = nextState.edits ?? {};
+  const thesis = after.thesis !== undefined ? after.thesis : before.thesis;
+  return {...nextState, edits: {...after,
+    pages: {...(before.pages ?? {}), ...(after.pages ?? {})},
+    sections: {...(before.sections ?? {}), ...(after.sections ?? {})},
+    ...(thesis !== undefined ? {thesis} : {})},
+    attachments: {...(previousState?.attachments ?? {}), ...(nextState.attachments ?? {})}};
+}
+// 这次保存是否在「回退」上一版已经提交的编辑（删掉了某页/某段的 patch）：
+// 这种保存只有从基线重建才能把原文找回来。
+function patchKeysLost(before = {}, after = {}) {
+  return Object.entries(before).some(([id, patch]) => {
+    const next = after?.[id];
+    if (!next) return true;
+    return Object.keys(patch).some(field => !(field in next));
+  });
+}
+function editsReverted(previousState, nextState) {
+  const before = previousState?.edits ?? {}, after = nextState?.edits ?? {};
+  if (before.thesis !== undefined && after.thesis === undefined) return true;
+  return patchKeysLost(before.pages, after.pages) || patchKeysLost(before.sections, after.sections);
+}
+// 外部（模型）改动过、但人还没编辑的页 —— 只作「这些页在磁盘上变了」的提示。
+function externalPages(head, currentUnits, currentState) {
+  if (!head.units || !currentUnits) return null;
+  const edited = currentState?.edits?.pages ?? {}, added = currentState?.added_pages ?? {};
+  const order = head.state.page_order.map(String);
+  const pages = [];
+  for (const key of new Set([...Object.keys(head.units.pages), ...Object.keys(currentUnits.pages)])) {
+    if (head.units.pages[key] === currentUnits.pages[key]) continue;
+    const id = order[Number(key) - 1];
+    if (id !== undefined && (edited[id] !== undefined || added[id] !== undefined)) continue;
+    pages.push(Number(key));
+  }
+  return [...new Set(pages)].filter(Number.isFinite).sort((a, b) => a - b);
+}
+
 function atomic(path, value) {
   const temp = path + '.workbench.tmp';
   if (existsSync(temp)) unlinkSync(temp);
@@ -98,13 +197,35 @@ function checkSource(head, root) {
   if (sha256(readFileSync(file)) !== head.source_hash) fail('source_conflict', '主稿已有外部修改；你的编辑已保留，未覆盖主稿');
   return file;
 }
+// Uploaded images become canonical page references, not transient browser URLs.
+function attachImages(raw, state, head, source, reviewDir, root) {
+  if (head.context.type !== 'copy') return raw;
+  for (const [id, attachments] of Object.entries(state.attachments ?? {})) {
+    if (!head.context.pages.some(page => String(page.page_number) === id) || !Array.isArray(attachments)) fail('attachments', '图片未绑定当前页面');
+    const number = state.page_order.map(String).indexOf(id) + 1;
+    for (const image of attachments) {
+      if (typeof image.path !== 'string' || !image.path.startsWith('uploads/')) fail('attachments', '图片必须来自本工作台上传目录');
+      const file = contained(root, join(reviewDir, image.path));
+      if (!file.startsWith(realpathSync(join(reviewDir, 'uploads')) + sep)) fail('attachments', '图片越出上传目录');
+      if (!['.png', '.jpg', '.jpeg', '.webp', '.gif'].some(ext => file.toLowerCase().endsWith(ext))) fail('attachments', '只能添加图片');
+      const ref = relative(dirname(source), file).split(sep).join('/');
+      // 现在是把修改打在磁盘当前文件上（可能已经带着上次保存时插入的图片），
+      // 所以同一张图已在正文里就不再插一次。
+      if (raw.includes('](<' + ref + '>)')) continue;
+      const pattern = new RegExp('(page_number: ' + number + '\\n[\\s\\S]*?## Page Content\\s*\\n[\\s\\S]*?)(\\n## Speaker Notes)');
+      raw = raw.replace(pattern, (_, body, tail) => body + '\n![' + String(image.alt ?? '').replace(/[\[\]\n]/g, '') + '](<' + ref + '>)\n' + tail);
+    }
+  }
+  return raw;
+}
 
 /** Called by both hosts after their capability/path checks. No model is involved. */
 export async function runContentCommand(surface, command) {
   try {
     const root = realpathSync(surface.projectRoot), reviewDir = contained(root, surface.dir);
     const context = json(contained(root, join(reviewDir, 'review-context.json')));
-    const apply = (await adapter(context)).applyContentChanges;
+    const adapterModule = await adapter(context);
+    const apply = adapterModule.applyContentChanges;
     const directory = join(reviewDir, 'workbench'); mkdirSync(directory, {recursive: true});
     contained(root, directory);
     const unlock = lock(join(directory, 'save.lock'));
@@ -126,11 +247,26 @@ export async function runContentCommand(surface, command) {
         const rawHash = sha256(raw), revision = sha256(raw + context.sourceSha256);
         head = {version: 'content-workbench/1', revision, context,
           baseline: raw, source_hash: rawHash, state: initial(context),
-          tasks: carryTasks(head?.tasks, revision, rawHash), operations: {},
+          units: unitsOf(adapterModule, raw), page_versions: carriedPageVersions(context, head?.page_versions),
+          deferred: null, tasks: carryTasks(head?.tasks, revision, rawHash), operations: {},
           page_mapping: Object.fromEntries(context.pages.map(p => [p.page_number, p.page_number]))};
         atomic(path, head);
       }
-      if (command.op === 'state') { checkSource(head, root); return {ok: true, ...head}; }
+      if (command.op === 'state') {
+        // 磁盘整份 hash 变了不再报错：改由 external_pages 说清「哪几页在磁盘上变了」。
+        // 回执里带 context.sourceSha256，前端拿它和页面内嵌的 REVIEW.sourceSha256 比对即可
+        // 判断「页面过期需要刷新」。
+        if (!head.units) { checkSource(head, root); return {ok: true, ...head}; }
+        const receipt = {ok: true, ...head};
+        try {
+          const source = contained(root, head.context.files[0].path);
+          const currentUnits = unitsOf(adapterModule, readFileSync(source, 'utf8'));
+          const current = command.state && typeof command.state === 'object' ? command.state : head.state;
+          const pages = externalPages(head, currentUnits, current);
+          if (pages) receipt.external_pages = pages;
+        } catch (_) { /* 算不了就省略 */ }
+        return receipt;
+      }
       // 版本历史：每次 save 都会把上一版写进 workbench/history/<revision>.json
       if (command.op === 'history') {
         const archive = join(directory, 'history');
@@ -145,19 +281,28 @@ export async function runContentCommand(surface, command) {
           ...items.filter(item => item.revision !== head.revision),
         ] };
       }
-      // 任务处理完成：模型改完主稿后把 task 标掉，页面才不会一直显示 pending
+      // 任务处理完成：不再要求 revision/source_hash 与 head 相等（整份文件锁已解开）；
+      // stale_pages 只作提示：提交后用户又改过的页。
       if (command.op === 'resolve') {
         const ids = Array.isArray(command.task_ids) ? command.task_ids : [];
         if (!ids.length) fail('task_ids', '请指定已完成的任务');
-        if (command.base_revision !== head.revision || command.source_hash !== head.source_hash) fail('revision_conflict', '任务处理基线已变化，请核对后再标记完成');
-        if (ids.some(id => !(head.tasks ?? []).some(t => t.id === id && t.status === 'pending' && t.revision === command.base_revision && t.source_hash === command.source_hash))) fail('task_version', '任务不存在、已完成或不属于当前处理版本');
+        const pending = new Map((head.tasks ?? []).filter(task => task.status === 'pending').map(task => [task.id, task]));
+        if (ids.some(id => !pending.has(id))) fail('task_version', '任务不存在或已完成');
+        const stale = new Set();
+        const resolvedAt = new Date().toISOString();
         let resolved = 0;
         for (const task of head.tasks ?? []) {
-          if (task.status !== 'pending' || (ids.length && !ids.includes(task.id))) continue;
-          task.status = 'resolved'; task.resolved_at = new Date().toISOString(); resolved += 1;
+          if (task.status !== 'pending' || !ids.includes(task.id)) continue;
+          task.status = 'resolved'; task.resolved_at = resolvedAt; resolved += 1;
+          for (const [key, version] of Object.entries(task.page_versions ?? {})) {
+            if ((head.page_versions?.[key] ?? 0) === version) continue;
+            // 只提示当前工作台里还存在的页（重定基线后旧的新增页 id 可能已不在 page_mapping 里）。
+            const display = head.page_mapping?.[key];
+            if (display !== undefined) stale.add(Number(display));
+          }
         }
         if (resolved) atomic(path, head);
-        return {ok: true, resolved, revision: head.revision};
+        return {ok: true, resolved, revision: head.revision, stale_pages: [...stale].sort((a, b) => a - b)};
       }
       // 恢复：只读回那一版的状态，由页面把它当一次新的编辑保存（历史不会丢）
       if (command.op === 'restore') {
@@ -176,38 +321,109 @@ export async function runContentCommand(surface, command) {
         if (head.operations[identity].signature !== signature) fail('operation_reused', '操作身份已用于其他内容');
         return head.operations[identity].receipt;
       }
-      if (command.base_revision !== head.revision) fail('revision_conflict', '另一个窗口已保存新版本；当前编辑已保留，请核对后重试');
-      const source = checkSource(head, root);
+      // 按页合并只对 save 生效；feedback/resolve 不需要带基线。
+      const allowsMerge = command.op === 'save' && !!head.units;
+      if (allowsMerge && typeof command.base_revision !== 'string') fail('revision_conflict', '保存需要带上处理基线；当前编辑已保留');
+      if (command.base_revision !== head.revision && !allowsMerge) fail('revision_conflict', '另一个窗口已保存新版本；当前编辑已保留，请核对后重试');
+      // feedback 也不该被「模型改了别的页」整份锁住：只在 adapter 支持按页指纹时校验页集合，
+      // 旧 adapter / 旧 head 才退回整文件 checkSource。
+      const pagedFeedback = command.op === 'feedback' && !!head.units;
+      const source = (allowsMerge || pagedFeedback) ? contained(root, head.context.files[0].path) : checkSource(head, root);
       for (const item of head.context.files.slice(1)) {
         if (sha256(readFileSync(contained(root, item.path))) !== item.sha256) fail('dependency_conflict', '来源、核查或资产清单已有变化，请核对后重新生成工作台');
       }
       if (command.op === 'save') {
         if (command.state?.source_sha256 !== head.context.sourceSha256 || command.state?.review_kind !== head.context.reviewKind) fail('baseline_conflict', '编辑来自不同基线');
-        validateChanges(changesOf(command.state), head.context);
-        let raw = apply(head.baseline, changesOf(command.state), head.context);
-        // Uploaded images become canonical page references, not transient browser URLs.
-        if (head.context.type === 'copy') {
-          for (const [id, attachments] of Object.entries(command.state.attachments ?? {})) {
-            if (!head.context.pages.some(page => String(page.page_number) === id) || !Array.isArray(attachments)) fail('attachments', '图片未绑定当前页面');
-            const number = command.state.page_order.map(String).indexOf(id) + 1;
-            for (const image of attachments) {
-              if (typeof image.path !== 'string' || !image.path.startsWith('uploads/')) fail('attachments', '图片必须来自本工作台上传目录');
-              const file = contained(root, join(reviewDir, image.path));
-              if (!file.startsWith(realpathSync(join(reviewDir, 'uploads')) + sep)) fail('attachments', '图片越出上传目录');
-              if (!['.png', '.jpg', '.jpeg', '.webp', '.gif'].some(ext => file.toLowerCase().endsWith(ext))) fail('attachments', '只能添加图片');
-              const ref = relative(dirname(source), file).split(sep).join('/');
-              const pattern = new RegExp('(page_number: '+number+'\\n[\\s\\S]*?## Page Content\\s*\\n[\\s\\S]*?)(\\n## Speaker Notes)');
-              raw = raw.replace(pattern, (_, body, tail) => body + '\n![' + String(image.alt ?? '').replace(/[\[\]\n]/g, '') + '](<' + ref + '>)\n' + tail);
+        const changes = changesOf(command.state);
+        validateChanges(changes, head.context);
+        const previousState = head.state, previousVersions = head.page_versions ?? {};
+        const currentRaw = readFileSync(source, 'utf8');
+        const drifted = command.base_revision !== head.revision;
+        let effectiveState = command.state, deferredPages = [], raw;
+        if (!head.units) {
+          // 旧 adapter（没导出 unitHashes）或旧 head：退回整文件基线行为。
+          raw = apply(head.baseline, changes, head.context);
+        } else {
+          const added = changes.added_pages ?? {}, deleted = changes.deleted_pages ?? [];
+          const newAddition = Object.keys(added).some(id => !(id in (previousState.added_pages ?? {})));
+          const newDeletion = deleted.some(id => !(previousState.deleted_pages ?? []).includes(id));
+          // 结构性修改以「磁盘当前顺序」（head.state.page_order）为基准，而不是产出方 context 页序：
+          // 用户先重排过一次后再纯文字保存，相对磁盘其实也是重排，不能静默把页序翻回去。
+          const structural = newAddition || newDeletion || !sameOrder(command.state.page_order, previousState.page_order);
+          if (structural) {
+            // 重排/增删会重写页号，无法按页 rebase；而且保存回基线是「清空已保存编辑」
+            // 这类还原操作的唯一可靠路径，所以基线已前进时要求刷新，不能静默合并。
+            if (drifted) fail('revision_conflict', '另一个窗口已保存新版本；含页序、增删的保存无法按页合并，请刷新后重试');
+            // 磁盘必须仍是 head 写出的那份文件：结构性保存会按整份状态重建。
+            if (sha256(currentRaw) !== head.source_hash) fail('source_conflict', '主稿已有外部修改；含页序、增删的保存需要在主稿未变时提交，请刷新后重试');
+            // 从基线重建能精确还原用户状态，但会丢掉「已合并进主稿」的模型改动；作用在当前文件上则反之。
+            // 上一版状态从基线重投后与主稿字节一致 ⇒ 主稿里没有模型改动，可以放心从基线重建；
+            // 这次又在回退已保存的编辑 ⇒ 只有基线重建能还原原文。其余情况作用在当前文件上，保住模型改动。
+            const cleanBaseline = (() => {
+              try { return sha256(apply(head.baseline, changesOf(previousState), head.context)) === head.source_hash; }
+              catch { return true; }
+            })();
+            raw = cleanBaseline || editsReverted(previousState, command.state)
+              ? apply(head.baseline, changes, head.context)
+              : apply(currentRaw, rebasedChanges(head, command.state), head.context);
+          } else {
+            const currentUnits = unitsOf(adapterModule, currentRaw);
+            if (!currentUnits) fail('source_conflict', '主稿无法按页解析；你的编辑已保留，未覆盖主稿');
+            const keys = units => Object.keys(units.pages ?? {}).sort().join('\n');
+            if (keys(currentUnits) !== keys(head.units)) fail('source_conflict', '主稿页集合已变，请刷新工作台；你的编辑已保留，未覆盖主稿');
+            // 用户编辑过的页：文字 patch 所在页，加上「新增页自身字段」被改过的负 id 页
+            // （新页标题住在 added_pages 里，不是 edits.pages）。
+            const editedIds = [...new Set([...Object.keys(changes.edits?.pages ?? {}),
+              ...Object.keys(added).filter(id => previousState.added_pages?.[id] !== undefined
+                && pagePatch(previousState, id) !== pagePatch(command.state, id))])];
+            const forced = new Set((Array.isArray(command.force_pages) ? command.force_pages : []).map(String));
+            const forcedPage = id => forced.has(String(id)) || forced.has(String(head.page_mapping?.[id]));
+            const unitOf = (units, id) => units.pages[String(head.page_mapping?.[id] ?? id)];
+            // 冲突分两种来源，同一份 deferred_pages 里返回：
+            // ① 外部改动：磁盘该页指纹已不是 head 记录的那个（模型改过这一页）；
+            // ② 并发窗口：基线已前进，且 head.state 里这一页已有另一窗口刚提交的 patch、
+            //    与本次 patch 不同 —— 不静默覆盖另一个窗口同页的编辑。
+            const concurrentPage = id => {
+              if (!drifted || pagePatch(previousState, id) === pagePatch(command.state, id)) return false;
+              return previousState.edits?.pages?.[id] !== undefined || previousState.added_pages?.[id] !== undefined;
+            };
+            const conflicting = editedIds.filter(id => !forcedPage(id) && (
+              unitOf(currentUnits, id) !== unitOf(head.units, id) || concurrentPage(id)));
+            deferredPages = conflicting.map(id => command.state.page_order.map(String).indexOf(String(id)) + 1).filter(n => n > 0);
+            if (conflicting.length) {
+              // 只保存不冲突的页；冲突页的编辑留在用户窗口/草稿里，由前端处理。
+              const pages = {...(changes.edits.pages ?? {})};
+              const addedPages = {...(command.state.added_pages ?? {})};
+              for (const id of conflicting) {
+                delete pages[id];
+                if (previousState.added_pages?.[id] !== undefined) addedPages[id] = previousState.added_pages[id];
+              }
+              effectiveState = {...command.state, edits: {...changes.edits, pages}, added_pages: addedPages};
+              if ('attachments' in command.state) {
+                const attachments = {...(command.state.attachments ?? {})};
+                for (const id of conflicting) delete attachments[id];
+                effectiveState.attachments = attachments;
+              }
             }
+            if (drifted) effectiveState = mergeCommitted(previousState, effectiveState);
+            raw = apply(currentRaw, rebasedChanges(head, effectiveState), head.context);
           }
         }
+        raw = attachImages(raw, effectiveState, head, source, reviewDir, root);
         const hash = sha256(raw), previous = head.revision;
+        const pageMapping = Object.fromEntries(command.state.page_order.map((id, i) => [id, i + 1]));
+        const deferred = [...new Set(deferredPages)].sort((a, b) => a - b);
+        const savedAt = new Date().toISOString();
         const receipt = {ok: true, revision: sha256(previous + signature), source_hash: hash,
+          page_mapping: pageMapping,
           content_changed: hash !== head.source_hash,
           requires_fact_recheck: head.context.type === 'copy' && hash !== head.source_hash,
-          page_mapping: Object.fromEntries(command.state.page_order.map((id, i) => [id, i + 1]))};
-        head = {...head, revision: receipt.revision, source_hash: hash, state: command.state,
-          page_mapping: receipt.page_mapping, saved_at: new Date().toISOString(),
+          deferred_pages: deferred, merged: !!drifted && !deferred.length};
+        head = {...head, revision: receipt.revision, source_hash: hash, state: effectiveState,
+          page_mapping: receipt.page_mapping, saved_at: savedAt,
+          deferred: {pages: deferred, at: savedAt},
+          ...(head.units ? {units: unitsOf(adapterModule, raw) ?? head.units,
+            page_versions: nextPageVersions(previousVersions, previousState, effectiveState)} : {}),
           tasks: carryTasks(head.tasks, receipt.revision, hash)};
         head.operations[identity] = {signature, receipt};
         const archive = join(directory, 'history'); mkdirSync(archive, {recursive: true});
@@ -216,37 +432,75 @@ export async function runContentCommand(surface, command) {
         atomic(join(directory, 'journal.json'), {source, raw, old_hash: sha256(readFileSync(source)), new_hash: hash, head});
         recover(directory, root);
         // Mark the exact canonical projection as consumed so rebuilding this surface
-        // does not mistake a saved main稿 for an unsubmitted draft.
+        // does not mistake a saved main稿 for an unsubmitted draft. Deferred edits were
+        // NOT applied, so they stay unconsumed.
         const cursorPath = join(reviewDir, '.inbox-cursor.json');
         const cursor = existsSync(cursorPath) ? json(cursorPath) : {};
         if (existsSync(cursorPath)) contained(root, cursorPath);
-        cursor.applied_draft = contentHash(contentProjection(command.state));
+        cursor.applied_draft = contentHash(contentProjection(effectiveState));
         atomic(cursorPath, cursor);
         return receipt;
       }
       if (command.op === 'feedback') {
-        // 批注：一次交齐页面上已有的所有批注（每页一条），模型拿到 page → 文本
+        // 批注：一次交齐页面上已有的所有批注（每页一条），模型拿到 page → 文本。
+        // task 额外按页绑定内部页身份、提交时的 unit 指纹与页版本，供 resolve 判断 stale。
+        // 不再整份文件 gate：模型改了别的页仍可提交；只有「页集合变了」才要求刷新。
+        let currentUnits = null;
+        if (head.units) {
+          currentUnits = unitsOf(adapterModule, readFileSync(source, 'utf8'));
+          if (!currentUnits) fail('source_conflict', '主稿无法按页解析；你的批注已保留，请刷新工作台');
+          const keys = units => Object.keys(units.pages ?? {}).sort().join('\n');
+          if (keys(currentUnits) !== keys(head.units)) fail('source_conflict', '主稿页集合已变，请刷新工作台；你的批注已保留');
+        }
+        const createdAt = new Date().toISOString();
+        const unitHashFor = id => {
+          const number = head.page_mapping?.[id];
+          if (!head.units || number === undefined) return null;
+          return head.units.pages[String(number)] ?? null;
+        };
+        // 提交时指纹用的是「用户看到的那版」（head.units），不是当前磁盘指纹；
+        // page_drift 把「磁盘上这几页已和提交时不同」提示给模型，自己对照当前页。
+        const driftOf = ids => {
+          if (!currentUnits) return [];
+          const drift = [];
+          for (const id of ids) {
+            const number = head.page_mapping?.[id];
+            const before = number !== undefined ? head.units.pages[String(number)] : undefined;
+            const now = currentUnits.pages[String(number ?? id)];
+            if (before !== undefined && now !== undefined && now !== before) drift.push(Number(number ?? id));
+          }
+          return [...new Set(drift)].filter(Number.isFinite).sort((a, b) => a - b);
+        };
+        const hashesOf = ids => Object.fromEntries(ids.map(id => [String(id), unitHashFor(id)]).filter(([, hash]) => hash));
+        const versionsOf = ids => Object.fromEntries(ids.map(id => [String(id), head.page_versions?.[String(id)] ?? 0]));
         if (command.scope === 'annotations') {
           const entries = Array.isArray(command.entries)
             ? command.entries.map(entry => ({page: entry?.page, text: typeof entry?.text === 'string' ? entry.text.trim() : ''})).filter(entry => entry.text)
             : [];
           if (!entries.length) fail('feedback', '请先写下批注');
           if (entries.some(entry => !head.state.page_order.includes(entry.page))) fail('feedback_page', '批注页面不存在');
+          const keys = entries.map(entry => entry.page);
           const text = entries.map(entry => `第 ${head.page_mapping[entry.page]} 页：${entry.text}`).join('\n');
           const task = {id: identity, scope: 'annotations', text,
-            entries: entries.map(entry => ({page: head.page_mapping[entry.page], text: entry.text})),
+            entries: entries.map(entry => ({page: head.page_mapping[entry.page], key: entry.page,
+              hash: unitHashFor(entry.page), text: entry.text})),
             revision: head.revision, source_hash: head.source_hash,
-            pages: [...new Set(entries.map(entry => head.page_mapping[entry.page]))], status: 'pending'};
+            pages: [...new Set(entries.map(entry => head.page_mapping[entry.page]))],
+            page_keys: [...keys], page_hashes: hashesOf(keys), page_versions: versionsOf(keys),
+            page_drift: driftOf(keys), created_at: createdAt, status: 'pending'};
           head.tasks.push(task);
           const receipt = {ok: true, task_id: identity, task, revision: head.revision};
           head.operations[identity] = {signature, receipt}; atomic(path, head);
           return receipt;
         }
         if (!['page', 'deck'].includes(command.scope) || typeof command.text !== 'string' || !command.text.trim()) fail('feedback', '请填写修改意见');
-        const ids = command.scope === 'page' ? [command.page] : head.state.page_order;
-        if (ids.some(id => !head.state.page_order.includes(id))) fail('feedback_page', '反馈页面不存在');
+        const keys = command.scope === 'page' ? [command.page] : head.state.page_order;
+        if (keys.some(id => !head.state.page_order.includes(id))) fail('feedback_page', '反馈页面不存在');
         const task = {id: identity, scope: command.scope, text: command.text,
-          revision: head.revision, source_hash: head.source_hash, pages: ids.map(id => head.page_mapping[id]), status: 'pending'};
+          revision: head.revision, source_hash: head.source_hash,
+          pages: keys.map(id => head.page_mapping[id]),
+          page_keys: [...keys], page_hashes: hashesOf(keys), page_versions: versionsOf(keys),
+          page_drift: driftOf(keys), created_at: createdAt, status: 'pending'};
         head.tasks.push(task);
         const receipt = {ok: true, task_id: identity, task, revision: head.revision};
         head.operations[identity] = {signature, receipt}; atomic(path, head);

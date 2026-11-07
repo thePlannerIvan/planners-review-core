@@ -9,7 +9,7 @@ const fresh = () => ({source_sha256:REVIEW.sourceSha256,review_kind:REVIEW.revie
   section_order:REVIEW.sections.map(s => s.section_id),added_pages:{},deleted_pages:[],
   feedbacks:{},attachments:{},asset_decisions:{},overall_feedback_zh:'',submitted_notes:{}});
 let state = fresh(), page = state.page_order[0], mode = REVIEW.sections.length ? 'storyline' : 'bypage';
-let review, writable = false, dsh = false, headRevision, pendingSave, pendingTask;
+let review, writable = false, dsh = false, headRevision, pendingSave, pendingTask, contextStale = false;
 let editsVersion = 0, draftVersion = 0, savedVersion = 0, draftedVersion = 0;
 let timer, chain = Promise.resolve(), drag, justDragged = false, conflicted = false;
 const recoveryKey = 'content-workbench:' + REVIEW.reviewKind + ':' + REVIEW.sourceSha256;
@@ -33,7 +33,17 @@ const uiProjection = s => JSON.stringify([projection(s),s.feedbacks ?? {},s.over
 function notice(text) { $('#notice').textContent = text; $('#notice').hidden = !text; }
 function status(text, dirty = false) { $('.save-state').classList.add('visible'); $('#saveState').textContent = text; $('#saveDot').classList.toggle('dirty',dirty); }
 function snapshot() { return {...structuredClone(state),base_revision:headRevision,pending_save:pendingSave,
-  pending_task:pendingTask,view:{mode,page},saved_at:new Date().toISOString()}; }
+  pending_task:pendingTask,blocked_pages:blocked,view:{mode,page},saved_at:new Date().toISOString()}; }
+// 模型已经改过、人还没核对的页：这次保存先不带它们，等用户选「保留我的」或「用模型版」。
+function saveState() {
+  const clone = structuredClone(state);
+  for (const id of Object.keys(blocked)) {
+    if (forcePages.has(String(id))) continue;
+    if (clone.edits?.pages) delete clone.edits.pages[id];
+  }
+  return clone;
+}
+const pageIdOfNumber = number => state.page_order[Number(number) - 1];
 function backup() { try { sessionStorage.setItem(recoveryKey,JSON.stringify(snapshot())); } catch (_) {} }
 function enqueue(run) { const result = chain.then(run,run); chain = result.catch(() => {}); return result; }
 function changed(content = true) {
@@ -55,24 +65,43 @@ async function command(payload) {
   return result;
 }
 async function persistCanonical() {
-  if (!writable || conflicted) return false;
+  if (!writable || conflicted || contextStale) return false;
   try {
     // Keep the same operation across uncertain transport failures.
     if (!pendingSave) pendingSave = {op:'save',operation_id:operationId(),base_revision:headRevision,
-      state:structuredClone(state),edit_version:editsVersion};
+      state:saveState(),force_pages:[...forcePages],edit_version:editsVersion};
     const version = pendingSave.edit_version;
     const {edit_version:_,...payload} = pendingSave; backup();
     const result = await command(payload);
     headRevision = result.revision; savedVersion = version; pendingSave = null;
+    for (const key of [...forcePages]) forcePages.delete(key);
+    for (const id of Object.keys(payload.state?.edits?.pages ?? {})) externalPages.delete(String(id));
     backup(); await persistDraft();
-    status('已自动保存');
+    if (needsRenderAfterSave) { needsRenderAfterSave = false; if (mode === 'storyline') renderStory(); else { updateSelection(); renderPageNotice(); } }
+    const deferred = (result.deferred_pages ?? []).map(Number);
+    if (deferred.length) {
+      for (const number of deferred) blocked[pageIdOfNumber(number) ?? number] = true;
+      status('已自动保存 · ' + deferred.length + ' 页待核对', true);
+      notice('模型已更新第 ' + deferred.join('、') + ' 页；你这几页的修改先留着，没有覆盖模型版本。');
+      if (mode === 'storyline') renderStory(); else { updateSelection(); renderPageNotice(); }
+    } else {
+      status('已自动保存');
+      notice(result.merged ? '另一处已经存过新版本，这次按页合并了。' : '');
+    }
     void loadVersions();
-    notice('');
     if (savedVersion !== editsVersion) return persistCanonical();
     return savedVersion === editsVersion;
   } catch (error) {
-    if (['revision_conflict','source_conflict','baseline_conflict','dependency_conflict'].includes(error.code)) conflicted = true;
-    backup(); await persistDraft(); notice(error.message + '。当前编辑已保留。'); status('保存失败',true); return false;
+    if (error.code === 'baseline_conflict') { contextStale = true; $('#reload')?.classList.add('attention'); status('待刷新', true); }
+    if (['source_conflict','revision_conflict','baseline_conflict','dependency_conflict'].includes(error.code)) conflicted = true;
+    backup(); await persistDraft();
+    if (error.code === 'revision_conflict' || error.code === 'source_conflict') {
+      $('#reload')?.classList.add('attention');
+      notice(error.message + '：含页序/增删的保存需要刷新后重试；当前编辑已保留，刷新不会丢草稿。');
+    } else {
+      notice((error.code === 'baseline_conflict' ? '主稿已被模型更新；当前页面内容已过期，点右上角刷新载入新版本。' : error.message) + '：当前编辑已保留。');
+    }
+    status('保存失败',true); return false;
   }
 }
 async function save() {
@@ -150,37 +179,14 @@ async function hydrateAssets(root) {
     img.onclick = event => { event.stopPropagation(); $('#modalImage').src = img.src; $('#modalImage').alt = img.alt; $('#imageModal').classList.add('open'); };
   }));
 }
-let expandedPages = new Set();
-let editingNote = null;
-function toggleOutline(id) {
-  const key = String(id);
-  if (expandedPages.has(key)) expandedPages.delete(key); else expandedPages.add(key);
-  renderStory();
-}
-function outlineBlocks(id) {
-  const p = pageById(id) ?? {};
-  const edits = state.edits.pages[id] ?? {};
-  return (p.blocks ?? []).map((block, index) => {
-    const edited = edits.blocks?.[index] ?? {};
-    return { index, title: edited.title ?? block.title, text: edited.text ?? block.text };
-  });
-}
-function outlineBullets(id) {
-  const edited = state.edits.pages[id]?.blocks;
-  if (Array.isArray(edited)) return edited;
-  const blocks = pageById(id)?.blocks ?? [];
-  return blocks.map((block, index) => {
-    const legacy = edited?.[index] && typeof edited[index] === 'object' ? edited[index].text : undefined;
-    return legacy ?? block.text;
-  });
-}
 let submittingAnnotations = false;
+let submittingNote = false;
 async function submitAnnotations() {
   if (!writable || submittingAnnotations) return;
   const entries = state.page_order
     .map(id => ({page: id, text: String(state.feedbacks[id] ?? '').trim()}))
     .filter(entry => entry.text);
-  if (!entries.length) { notice('还没有批注：点行内的批注按钮，或在右侧写本页批注。'); return; }
+  if (!entries.length) { notice('还没有批注：点行尾的批注按钮写一条。'); return; }
   document.activeElement?.blur();
   if (editsVersion > savedVersion) { if (!await save()) return; }
   submittingAnnotations = true;
@@ -191,13 +197,13 @@ async function submitAnnotations() {
     try {
       result = await command({op:'feedback', operation_id:operationId(), base_revision:headRevision, scope:'annotations', entries});
     } catch (error) {
-      // 宿主还没更新到「批注」形状时退回整套反馈，保证批注不丢
       if (!['feedback', 'feedback_page'].includes(error?.code)) throw error;
       result = await command({op:'feedback', operation_id:operationId(), base_revision:headRevision, scope:'deck', text});
     }
     status('已提交');
     for (const entry of entries) { (state.submitted_notes ??= {})[entry.page] = entry.text; }
-    changed(false); renderNav(); status('已提交');
+    changed(false); renderNav(); if (mode === 'storyline') renderStory(); else updateSelection();
+    status('已提交');
     notice('已提交 ' + entries.length + ' 条批注' + (dsh ? '，正在通知模型' : '，请回到对话通知模型处理'));
     if (dsh) {
       try {
@@ -210,73 +216,182 @@ async function submitAnnotations() {
     notice('批注提交失败：' + (error?.message || error));
   } finally { submittingAnnotations = false; }
 }
+async function submitPageNote(id) {
+  if (!writable || submittingNote) return;
+  const pageKey = Number(id);
+  const text = String(state.feedbacks[pageKey] ?? '').trim();
+  if (!text) { notice('先写这一页要改什么。'); return; }
+  document.activeElement?.blur();
+  if (editsVersion > savedVersion) { if (!await save()) return; }
+  submittingNote = true; status('提交中', true);
+  try {
+    const result = await command({op:'feedback', operation_id:operationId(), base_revision:headRevision,
+      scope:'page', page:pageKey, text});
+    (state.submitted_notes ??= {})[pageKey] = text;
+    status('已提交');
+    const drift = result?.task?.page_drift ?? [];
+    notice('已提交第 '+(state.page_order.indexOf(pageKey)+1)+' 页批注'
+      + (drift.length ? '；第 '+drift.join('、')+' 页磁盘上已更新，模型会以最新内容为准' : '')
+      + (dsh ? '，正在通知模型' : '，请回到对话通知模型处理'));
+    changed(false); renderNav(); if (mode === 'storyline') renderStory(); else updateSelection();
+    if (dsh) {
+      try { const wake = await review.wake({unit:'task-' + (result?.task_id ?? '')}); if (wake?.woke === false) notice('批注已保存，请回到对话继续。'); }
+      catch (_) { notice('批注已保存，通知未送达，请回到对话继续。'); }
+    }
+  } catch (error) {
+    status('提交失败', true); notice('批注提交失败：' + (error?.message || error));
+  } finally { submittingNote = false; }
+}
+let openComment = null;
+let blocked = {};
+let externalPages = new Set();
+let forcePages = new Set();
+let needsRenderAfterSave = false;
+function defaultPageOrder() {
+  const pages = (REVIEW.pages ?? []).map(p => Number(p.page_number)).filter(id => !(state.deleted_pages ?? []).includes(id));
+  return [...pages, ...Object.keys(state.added_pages ?? {}).map(Number)];
+}
+function normalizeOrder() {
+  const allowed = defaultPageOrder();
+  const list = Array.isArray(state.page_order) ? state.page_order.map(Number) : [];
+  const valid = list.length === allowed.length && new Set(list).size === list.length
+    && allowed.every(id => list.includes(id));
+  if (!valid) state.page_order = allowed;
+  if (!state.page_order.includes(Number(page)) && Number.isFinite(Number(page))) page = state.page_order[0];
+}
+function outlineBullets(id) {
+  const edited = state.edits.pages[id]?.blocks;
+  if (Array.isArray(edited)) return edited;
+  const blocks = pageById(id)?.blocks ?? [];
+  return blocks.map((block, index) => {
+    const legacy = edited?.[index] && typeof edited[index] === 'object' ? edited[index].text : undefined;
+    return legacy ?? block.text;
+  });
+}
+function focusEnd(node) {
+  if (!node) return;
+  node.focus();
+  if (node.tagName === 'TEXTAREA' || node.tagName === 'INPUT') {
+    const end = node.value.length;
+    try { node.setSelectionRange(end, end); } catch (_) {}
+    return;
+  }
+  const selection = getSelection();
+  if (!selection) return;
+  const range = document.createRange();
+  range.selectNodeContents(node); range.collapse(false);
+  selection.removeAllRanges(); selection.addRange(range);
+}
+function supportNode(id, index) { return document.querySelector('[data-outline-id="'+id+'"] .support-text[data-support-index="'+index+'"]'); }
+function commentCard(id) {
+  const value = state.feedbacks[id] ?? '';
+  const submitted = String(state.submitted_notes?.[id] ?? '') === String(value).trim() && String(value).trim();
+  return '<div class="line-comment" data-comment-card="'+id+'"'+(submitted ? ' data-submitted="1"' : '')+'>'
+    + '<textarea data-note-input="'+id+'" rows="3" placeholder="这一页要怎么改？模型会收到这条批注。">'+esc(value)+'</textarea>'
+    + '<div class="line-comment-foot">'
+    + '<button type="button" class="secondary" data-comment-close="'+id+'">收起</button>'
+    + '<button type="button" class="primary" data-comment-submit="'+id+'">提交这一页</button></div></div>';
+}
+function conflictCard(id) {
+  return '<div class="line-conflict" data-conflict="'+id+'"><span>模型已更新这一页；你的这页修改还没保存。</span>'
+    + '<button type="button" class="secondary" data-keep-mine="'+id+'">保留我的</button>'
+    + '<button type="button" class="secondary" data-use-model="'+id+'">用模型版</button></div>';
+}
 function renderStory() {
   $('.thesis').hidden = !REVIEW.thesis && state.edits.thesis === undefined;
   $('.thesis p').textContent = state.edits.thesis ?? REVIEW.thesis;
   textEditor($('.thesis p'),text => { state.edits.thesis = text; });
   $('#outlineList').hidden = false;
   $('#outlineList').innerHTML = state.page_order.map((id,i) => {
-    const open = expandedPages.has(String(id));
-    const bullets = (outlineBullets(id).length ? outlineBullets(id) : ['']).map((text,index) => '<div class="block-bullet" data-bullet-index="'+index+'" contenteditable="'+writable+'" spellcheck="false">'+esc(text)+'</div>').join('');
+    const supportList = outlineBullets(id), bullets = supportList.length ? supportList : [''];
+    const supports = bullets.map((text,index) => '<div class="support-row"><span class="support-dot" aria-hidden="true">·</span>'
+      + '<div class="support-text" data-support-index="'+index+'" contenteditable="'+writable+'" spellcheck="false">'+esc(text)+'</div></div>').join('');
+    const rawNotes = state.edits.pages[id]?.notes ?? pageById(id).notes;
+    const notes = REVIEW.simpleStoryline
+      ? '<div class="line-notes" data-content-notes="'+id+'" contenteditable="'+writable+'" spellcheck="false">'+esc(rawNotes ?? '')+'</div>' : '';
     const note = state.feedbacks[id] ?? '';
-    return '<li class="outline-line'+(String(id) === String(page) ? ' active' : '')+(open ? ' open' : '')+'" data-outline-id="'+id+'" draggable="'+writable+'">'
-      + '<div class="outline-head">'
-      + '<button class="outline-grip" title="点按展开，按住拖动" aria-label="点按展开，按住拖动">'+icon(open?'ChevronDown':'ChevronRight')+'</button>'
-      + '<div data-outline-title="'+id+'">'+esc(title(id))+'</div>'
-      + '<button class="review-icon-button" data-outline-note="'+id+'" title="批注" aria-label="批注">'+icon('MessageSquare')+'</button>'
-      + '<button class="review-icon-button" data-delete-node="'+id+'" title="删除这一句" aria-label="删除这一句" '+(!writable || state.page_order.length < 2 ? 'disabled' : '')+'>'+icon('Trash2')+'</button>'
+    return '<li class="outline-line'+(String(id) === String(page) ? ' active' : '')+'" data-outline-id="'+id+'">'
+      + '<div class="line-gutter"><span class="line-index">'+(i+1)+'</span>'
+      + '<button type="button" class="outline-grip" title="按住拖动调整页序；Alt+↑↓ 也可以" aria-label="拖动调整页序">'+icon('GripVertical')+'</button></div>'
+      + '<div class="line-body">'
+      + '<div class="line-title" data-outline-title="'+id+'" contenteditable="'+writable+'" spellcheck="false">'+esc(title(id))+'</div>'
+      + (Number(id) < 0 ? '<span class="line-new-tag">新页</span>' : '')
+      + (externalPages.has(String(id)) && !blocked[id] ? '<span class="line-external-tag" title="模型改过这一页；刷新审阅页后能看到模型版本">模型已更新</span>' : '')
+      + '<div class="line-supports">'+supports+'</div>'
+      + (writable || !supportList.length ? '<button type="button" class="support-add" data-support-add="'+id+'">＋ 添加支撑</button>' : '')
+      + notes
+      + (blocked[id] ? conflictCard(id) : '')
+      + (openComment === String(id) ? commentCard(id) : '')
       + '</div>'
-      + '<div class="outline-detail"'+(open?'':' hidden')+'>'
-      // claim 是 page-architecture 的必填字段，仍随数据下发，并在逐页稿页头可编辑；
-      // 故事线的行展开里不重复显示，避免同一条判断在一屏出现两次。
-      + '<div class="block-bullets">'+bullets+'</div>'
-      + (REVIEW.simpleStoryline ? '<details class="outline-notes"'+((state.edits.pages[id]?.notes ?? pageById(id).notes) ? ' open' : '')+'><summary>依据与边界</summary><textarea data-content-notes="'+id+'" rows="2" placeholder="必要的来源定位、证据缺口或限定">'+esc(state.edits.pages[id]?.notes ?? pageById(id).notes ?? '')+'</textarea></details>' : '')
-      + (String(editingNote) === String(id)
-          ? '<label class="outline-note-editor"><span class="outline-note-label">批注</span><textarea data-note-input="'+id+'" rows="2" placeholder="写这一句要改什么">'+esc(note)+'</textarea></label>'
-          : (note
-              ? '<button type="button" class="outline-note-summary" data-note-open="'+id+'"><span class="outline-note-label">批注</span><span class="outline-note-text">'+esc(note)+'</span></button>'
-              : '<button type="button" class="outline-note-empty" data-note-open="'+id+'">写批注</button>'))
+      + '<div class="line-actions">'
+      + '<button type="button" class="review-icon-button" data-outline-note="'+id+'" data-has-note="'+(note.trim() ? 1 : 0)+'" title="批注这一页" aria-label="批注这一页">'+icon('MessageSquare')+'</button>'
+      + '<button type="button" class="review-icon-button" data-delete-node="'+id+'" title="删除这一页" aria-label="删除这一页" '+(!writable || state.page_order.length < 2 ? 'disabled' : '')+'>'+icon('Trash2')+'</button>'
       + '</div></li>';
   }).join('');
   $$('#outlineList [data-outline-title]').forEach(node => {
     textEditor(node,text => {
       if (state.added_pages[node.dataset.outlineTitle]) state.added_pages[node.dataset.outlineTitle].title = text;
       else patch(node.dataset.outlineTitle).title = text;
-    }); node.onfocus = () => selectPage(node.dataset.outlineTitle);
+    });
+    node.onfocus = () => selectPage(node.dataset.outlineTitle);
+    node.onkeydown = event => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        focusEnd(supportNode(node.dataset.outlineTitle, 0));
+      }
+      if (event.key === 'Escape') node.blur();
+    };
   });
-  $$('#outlineList .block-bullet').forEach(node => {
+  $$('#outlineList .support-text').forEach(node => {
     const row = node.closest('[data-outline-id]');
     const id = row.dataset.outlineId;
-    const read = () => [...row.querySelectorAll('.block-bullet')].map(item => item.textContent.trim());
+    const read = () => [...row.querySelectorAll('.support-text')].map(item => item.textContent.replace(/\s+$/,''));
     const commit = list => { patch(id).blocks = list; changed(); };
     node.oninput = () => commit(read());
+    node.onfocus = () => selectPage(id);
     node.onkeydown = event => {
-      const index = Number(node.dataset.bulletIndex);
+      const index = Number(node.dataset.supportIndex);
       if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
         const list = read(); list.splice(index + 1, 0, ''); commit(list); renderStory();
-        document.querySelector('[data-outline-id="'+id+'"] [data-bullet-index="'+(index + 1)+'"]')?.focus();
+        focusEnd(supportNode(id, index + 1));
         return;
       }
       if (event.key === 'Backspace' && !node.textContent.trim()) {
         const list = read();
-        if (!node.dataset.bulletIndex || list.length <= 1) return;
+        if (list.length <= 1) return;
         event.preventDefault();
         list.splice(index, 1); commit(list); renderStory();
-        document.querySelector('[data-outline-id="'+id+'"] [data-bullet-index="'+Math.max(0, index - 1)+'"]')?.focus();
+        focusEnd(supportNode(id, Math.max(0, index - 1)));
+        return;
       }
+      if (event.key === 'ArrowUp' && index === 0) { event.preventDefault(); focusEnd(document.querySelector('[data-outline-id="'+id+'"] [data-outline-title]')); }
+      if (event.key === 'ArrowDown' && index === read().length - 1) {
+        const next = document.querySelector('[data-outline-id="'+id+'"] [data-content-notes]');
+        if (next) { event.preventDefault(); focusEnd(next); }
+      }
+      if (event.key === 'Escape') node.blur();
     };
   });
+  $$('#outlineList [data-support-add]').forEach(button => button.onclick = () => {
+    const id = button.dataset.supportAdd;
+    const list = outlineBullets(id).slice(); list.push('');
+    patch(id).blocks = list; changed(); renderStory(); focusEnd(supportNode(id, list.length - 1));
+  });
   $$('#outlineList [data-content-notes]').forEach(node => {
-    node.disabled = !writable;
-    node.oninput = () => { patch(node.dataset.contentNotes).notes = node.value; changed(); };
+    const id = node.dataset.contentNotes;
+    node.oninput = () => { patch(id).notes = node.textContent.replace(/\s+$/,''); changed(); };
+    node.onfocus = () => selectPage(id);
+    node.onkeydown = event => { if (event.key === 'Escape') node.blur(); };
   });
-  $$('#outlineList [data-note-open]').forEach(button => button.onclick = () => {
-    const id = button.dataset.noteOpen; selectPage(id);
-    if (!expandedPages.has(String(id))) expandedPages.add(String(id));
-    editingNote = Number(id); renderStory();
-    document.querySelector('[data-note-input="'+id+'"]')?.focus();
+  $$('#outlineList [data-outline-note]').forEach(button => button.onclick = () => {
+    const id = button.dataset.outlineNote;
+    openComment = String(openComment) === String(id) ? null : String(id);
+    selectPage(id); renderStory();
+    if (openComment) focusEnd(document.querySelector('[data-note-input="'+openComment+'"]'));
   });
+  $$('#outlineList [data-comment-close]').forEach(button => button.onclick = () => { openComment = null; renderStory(); });
+  $$('#outlineList [data-comment-submit]').forEach(button => button.onclick = () => { void submitPageNote(button.dataset.commentSubmit); });
   $$('#outlineList [data-note-input]').forEach(node => {
     node.oninput = () => {
       const id = node.dataset.noteInput;
@@ -284,22 +399,34 @@ function renderStory() {
       if (String(page) === String(id)) $('#feedback').value = node.value;
       changed(false); renderNav();
     };
-    node.onkeydown = event => { if (event.key === 'Escape') { event.preventDefault(); editingNote = null; renderStory(); } };
-    node.onblur = () => { if (String(editingNote) === String(node.dataset.noteInput)) { editingNote = null; renderStory(); } };
+    node.onkeydown = event => { if (event.key === 'Escape') { openComment = null; renderStory(); } };
   });
-  $$('#outlineList [data-outline-note]').forEach(button => button.onclick = () => {
-    const id = button.dataset.outlineNote; selectPage(id);
-    expandedPages.add(String(id)); editingNote = Number(id); renderStory();
-    document.querySelector('[data-note-input="'+id+'"]')?.focus();
+  $$('#outlineList [data-keep-mine]').forEach(button => button.onclick = () => {
+    const id = button.dataset.keepMine;
+    forcePages.add(String(id)); delete blocked[id]; externalPages.delete(String(id)); pendingSave = null;
+    needsRenderAfterSave = true;
+    notice('正在用你的版本覆盖这一页'); void save();
   });
-  $$('#outlineList .outline-grip').forEach(grip => grip.addEventListener('click', event => {
-    if (justDragged) return;
-    const id = grip.closest('[data-outline-id]').dataset.outlineId; selectPage(id); toggleOutline(id);
-  }));
+  $$('#outlineList [data-use-model]').forEach(button => button.onclick = () => {
+    const id = button.dataset.useModel;
+    delete blocked[id]; forcePages.delete(String(id)); pendingSave = null;
+    const target = state.edits.pages[id];
+    if (target && !state.added_pages[id]) {
+      for (const key of ['title','blocks','notes','claim']) delete target[key];
+      if (!Object.keys(target).length) delete state.edits.pages[id];
+    }
+    renderStory();
+    notice('已放弃你对这一页的修改。模型改过的内容会在模型重新生成审阅页后出现。');
+    void save();
+  });
   $$('#outlineList .outline-line').forEach(row => {
     const id = row.dataset.outlineId;
-    row.addEventListener('click', () => selectPage(id));
+    row.addEventListener('click', event => {
+      if (event.target.closest('button, .line-comment, [contenteditable]')) return;
+      selectPage(id);
+    });
     row.addEventListener('focusin', () => selectPage(id));
+    enableRowDrag(row, Number(row.dataset.outlineId));
   });
   $$('#outlineList [data-delete-node]').forEach(button => button.onclick = () => {
     const id = Number(button.dataset.deleteNode); if (!writable || state.page_order.length < 2) return;
@@ -308,7 +435,6 @@ function renderStory() {
     else state.deleted_pages.push(id);
     if (page === id) page = state.page_order[0]; changed(); render();
   });
-  $$('.outline-line').forEach(row => bindDrag(row,Number(row.dataset.outlineId)));
   $('#storyStream').innerHTML = state.section_order.map(id => {
     const section = REVIEW.sections.find(s => s.section_id === id), e = state.edits.sections[id] ?? {};
     return '<article class="story-card" data-section-id="'+esc(id)+'"><h2 data-field="title">'+esc(e.title ?? section.title)+'</h2>'+ (REVIEW.simpleStoryline ? '' : '<p data-field="lead">'+esc(e.lead ?? section.lead)+'</p><p data-field="transition">'+esc(e.transition ?? section.transition)+'</p>')+'</article>';
@@ -317,8 +443,37 @@ function renderStory() {
     const id = node.closest('[data-section-id]').dataset.sectionId; (state.edits.sections[id] ??= {})[node.dataset.field] = text;
   }));
 }
+
+function renderPageNotice() {
+  const box = $('#pageNotice'); if (!box) return;
+  if (blocked[page]) {
+    box.hidden = false;
+    box.innerHTML = '<div class="line-conflict"><span>模型已更新这一页；你的这页修改还没保存。</span>'
+      + '<button type="button" class="secondary" data-keep-mine="'+page+'">保留我的</button>'
+      + '<button type="button" class="secondary" data-use-model="'+page+'">用模型版</button></div>';
+    box.querySelector('[data-keep-mine]').onclick = () => {
+      forcePages.add(String(page)); delete blocked[page]; externalPages.delete(String(page)); pendingSave = null;
+      needsRenderAfterSave = true; notice('正在用你的版本覆盖这一页'); void save();
+    };
+    box.querySelector('[data-use-model]').onclick = () => {
+      delete blocked[page]; forcePages.delete(String(page)); pendingSave = null;
+      const target = state.edits.pages[page];
+      if (target && !state.added_pages[page]) {
+        for (const key of ['title','blocks','notes','claim']) delete target[key];
+        if (!Object.keys(target).length) delete state.edits.pages[page];
+      }
+      renderPage();
+      notice('已放弃你对这一页的修改。模型改过的内容会在模型重新生成审阅页后出现。');
+      void save();
+    };
+  } else if (externalPages.has(String(page))) {
+    box.hidden = false;
+    box.innerHTML = '<div class="line-external-tag">模型已更新这一页；刷新审阅页后可见</div>';
+  } else { box.hidden = true; box.innerHTML = ''; }
+}
 function renderPage() {
   const p = pageById(page), e = state.edits.pages[page] ?? {};
+  renderPageNotice();
   $('#currentPageLabel').textContent = String(state.page_order.indexOf(page)+1).padStart(2,'0');
   $('#pageTitle').textContent = title(page); $('#pageClaim').textContent = e.claim ?? p.claim ?? '';
   $('#pageClaim').hidden = !$('#pageClaim').textContent;
@@ -362,7 +517,10 @@ function renderAssets() {
     };
   }); hydrateAssets($('#candidateList'));
 }
-function updateNavTitles() { $$('.page-nav').forEach(node => { node.querySelector('.page-nav-title').textContent = title(node.dataset.id); }); }
+function updateNavTitles() {
+  $$('.page-nav').forEach(node => { node.querySelector('.page-nav-title').textContent = title(node.dataset.id); });
+  if ($('#inspectorTitle') && state.page_order.includes(page)) { $('#inspectorTitle').textContent = title(page); $('#inspectorTitle').title = title(page); }
+}
 function updateSelection() {
   $$('.page-nav').forEach(node => node.classList.toggle('active',Number(node.dataset.id) === page));
   const kicker = $('#inspectorKicker'); if (kicker) kicker.textContent = '本页'; const pageNo = state.page_order.indexOf(page)+1;
@@ -379,48 +537,79 @@ function updateSelection() {
   // 这两个按钮由脚本动态创建，取不到时不要抛错（抛错会中断整段渲染）。
   for (const node of [$('#pageTaskButton'), $('#saveButton')]) if (node) node.disabled = !writable || conflicted;
 }
-function move(id,target,after) {
-  if (!writable || id === target) return;
-  state.page_order = state.page_order.filter(n => n !== id);
-  state.page_order.splice(state.page_order.indexOf(target)+(after ? 1 : 0),0,id); changed(); render();
+function movePage(id,target,after) {
+  id = Number(id); target = Number(target);
+  if (!writable || !Number.isFinite(id) || !Number.isFinite(target) || id === target) return;
+  state.page_order = state.page_order.filter(n => Number(n) !== id);
+  const at = state.page_order.indexOf(target);
+  if (at < 0) return;
+  state.page_order.splice(at + (after ? 1 : 0), 0, id); changed(); render();
 }
-function bindDrag(node,id) {
-  node.draggable = writable;
-  node.ondragstart = e => { if (!writable || e.target.isContentEditable) return e.preventDefault(); drag = {id,started:true}; node.classList.add('dragging'); e.dataTransfer.setData('text/plain',String(id)); };
-  node.ondragover = e => { if (!drag) return; e.preventDefault(); node.classList.toggle('drop-after',e.clientY > node.getBoundingClientRect().top+node.offsetHeight/2); node.classList.toggle('drop-before',!node.classList.contains('drop-after')); };
-  node.ondragleave = () => node.classList.remove('drop-before','drop-after');
-  node.ondrop = e => { e.preventDefault(); if (drag) move(drag.id,id,e.clientY > node.getBoundingClientRect().top+node.offsetHeight/2); drag = null; };
-  node.ondragend = () => { drag = null; justDragged = true; node.classList.remove('dragging'); setTimeout(() => { justDragged = false; }, 260); $$('.drop-before,.drop-after').forEach(n => { n.classList.remove('drop-before','drop-after'); }); };
-  const handle = node.querySelector('.outline-grip,.drag-handle');
-  handle.onkeydown = e => { if (!writable || !e.altKey || !['ArrowUp','ArrowDown'].includes(e.key)) return;
-    e.preventDefault(); const at = state.page_order.indexOf(id), target = state.page_order[at+(e.key === 'ArrowUp' ? -1 : 1)]; if (target !== undefined) move(id,target,e.key === 'ArrowDown');
-  };
-  handle.onpointerdown = e => { if (!writable || e.button !== 0) return; e.preventDefault(); drag = {id,pointer:true}; node.classList.add('dragging'); handle.setPointerCapture(e.pointerId); };
+function enableRowDrag(node, id) {
+  const handle = node.querySelector('.outline-grip, .drag-handle');
+  if (!handle) return;
+  handle.addEventListener('click', event => event.preventDefault());
+  handle.addEventListener('pointerdown', event => {
+    if (!writable || event.button !== 0) return;
+    event.preventDefault(); event.stopPropagation();
+    const startX = event.clientX, startY = event.clientY;
+    let active = false, target = null, after = false;
+    const list = node.closest('.outline-list, .page-list');
+    const ghost = document.createElement('div');
+    ghost.className = 'drag-ghost'; ghost.textContent = title(id); ghost.hidden = true;
+    document.body.appendChild(ghost);
+    const clear = () => $$('.drop-before, .drop-after').forEach(other => other.classList.remove('drop-before', 'drop-after'));
+    const onMove = event => {
+      if (!active) {
+        if (Math.abs(event.clientY - startY) < 4 && Math.abs(event.clientX - startX) < 4) return;
+        active = true; node.classList.add('dragging'); ghost.hidden = false;
+      }
+      ghost.style.left = (event.clientX + 14) + 'px';
+      ghost.style.top = (event.clientY + 8) + 'px';
+      const hit = document.elementFromPoint(event.clientX, event.clientY)?.closest('.outline-line, .page-nav');
+      if (hit && hit !== node && list?.contains(hit)) {
+        target = Number(hit.dataset.outlineId ?? hit.dataset.id);
+        after = event.clientY > hit.getBoundingClientRect().top + hit.offsetHeight / 2;
+        clear(); hit.classList.toggle('drop-after', after); hit.classList.toggle('drop-before', !after);
+      } else { target = null; clear(); }
+      const scroller = $('.workspace');
+      if (list?.classList.contains('outline-list')) {
+        const box = scroller.getBoundingClientRect();
+        if (event.clientY < box.top + 48) scroller.scrollTop -= 12;
+        else if (event.clientY > box.bottom - 48) scroller.scrollTop += 12;
+      }
+    };
+    const finish = () => {
+      window.removeEventListener('pointermove', onMove);
+      node.classList.remove('dragging'); ghost.remove(); clear();
+      if (active && target !== null) movePage(id, target, after);
+      justDragged = true; setTimeout(() => { justDragged = false; }, 220);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', finish, { once: true });
+    window.addEventListener('pointercancel', finish, { once: true });
+  });
+  handle.addEventListener('keydown', event => {
+    if (!writable || !event.altKey || !['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+    event.preventDefault();
+    const at = state.page_order.indexOf(Number(id));
+    const target = state.page_order[at + (event.key === 'ArrowUp' ? -1 : 1)];
+    if (target !== undefined) movePage(Number(id), target, event.key === 'ArrowDown');
+  });
 }
-window.addEventListener('pointermove',e => {
-  if (!drag?.pointer) return;
-  const node = document.elementFromPoint(e.clientX,e.clientY)?.closest('[data-id],[data-outline-id]');
-  if (node) {
-    drag.target = Number(node.dataset.id ?? node.dataset.outlineId);
-    drag.after = e.clientY > node.getBoundingClientRect().top+node.offsetHeight/2;
-    $$('.drop-before,.drop-after').forEach(n => { if (n !== node) n.classList.remove('drop-before','drop-after'); });
-    node.classList.toggle('drop-after',drag.after); node.classList.toggle('drop-before',!drag.after);
-  }
-});
-window.addEventListener('pointerup',() => { if (!drag?.pointer) return; const value = drag; drag = null; $$('.drop-before,.drop-after,.dragging').forEach(n => n.classList.remove('drop-before','drop-after','dragging')); if (value.target !== undefined) move(value.id,value.target,value.after); });
-window.addEventListener('pointercancel',() => { drag = null; });
+
 function renderNav() {
   $('#railTitle').hidden = true;
   $('#railCount').textContent = state.page_order.length+' 页';
   $('#pageList').innerHTML = state.page_order.map((id,i) => {
     const pending = pendingNote(id) ? 1 : 0;
-    return '<button class="page-nav'+(Number(id) === page ? ' active' : '')+'" data-id="'+id+'" data-pending="'+pending+'">'
+    return '<button class="page-nav'+(Number(id) === page ? ' active' : '')+'" data-id="'+id+'" data-pending="'+pending+'"'+(blocked[id] ? ' data-blocked="1"' : '')+'>'
       +'<span class="page-num">'+String(i+1).padStart(2,'0')+'</span>'
       +'<span class="page-nav-title">'+esc(title(id))+'</span>'
       +'<span class="page-state" role="img" aria-label="'+(pending?'有未提交批注':'')+'" title="'+(pending?'有未提交批注':'')+'"></span>'
       +'<span class="drag-handle" role="button" tabindex="0" title="调整顺序" aria-label="调整顺序">'+icon('GripVertical')+'</span></button>';
   }).join('');
-  $$('.page-nav').forEach(node => { const id = Number(node.dataset.id); bindDrag(node,id);
+  $$('.page-nav').forEach(node => { const id = Number(node.dataset.id); enableRowDrag(node,id);
     node.onclick = e => { if (e.target.closest('.drag-handle')) return; document.activeElement?.blur(); page = id; renderPage(); updateSelection();
       if (mode === 'storyline') $('[data-outline-id="'+id+'"]')?.scrollIntoView({block:'nearest'});
       else $('.workspace').scrollTop = 0;
@@ -460,17 +649,20 @@ $('#addStoryline').onclick = () => {
   if (!writable) return; let id = -1; while (state.added_pages[id]) id--;
   state.added_pages[id] = {title:'新判断',section_id:pageById(page).section_id ?? REVIEW.sections[0].section_id};
   const at = state.page_order.indexOf(page); state.page_order.splice(at+1,0,id); page = id; changed(); render();
-  const node = $('[data-outline-title="'+id+'"]'); node.focus(); const selection = getSelection(), range = document.createRange(); range.selectNodeContents(node); selection.removeAllRanges(); selection.addRange(range);
+  focusEnd($('[data-outline-title="'+id+'"]'));
 };
 $$('.mode-tabs button').forEach(b => b.onclick = () => { document.activeElement?.blur(); mode = b.dataset.mode; render(); });
 function navigate(delta) { document.activeElement?.blur(); const next = state.page_order[state.page_order.indexOf(page)+delta]; if (next !== undefined) { page = next; renderNav(); renderPage(); $('.workspace').scrollTop = 0; } }
 $('#pagePrev').onclick = () => navigate(-1); $('#pageNext').onclick = () => navigate(1);
-let noteSyncTimer;
-$('#feedback').oninput = () => { state.feedbacks[page] = $('#feedback').value;
+$('#feedback').oninput = () => {
+  state.feedbacks[page] = $('#feedback').value;
   changed(false); renderNav();
   const inline = document.querySelector('[data-note-input="'+page+'"]'); if (inline) inline.value = $('#feedback').value;
-  clearTimeout(noteSyncTimer);
-  noteSyncTimer = setTimeout(() => { if (mode === 'storyline' && editingNote === null) renderStory(); }, 250); };
+  if (mode === 'storyline') {
+    const dot = document.querySelector('[data-outline-note="'+page+'"]');
+    if (dot) dot.dataset.hasNote = $('#feedback').value.trim() ? '1' : '0';
+  }
+};
 $('#overallFeedback').oninput = () => { state.overall_feedback_zh = $('#overallFeedback').value; changed(false); };
 // 任务动作与保存动作分开：任务会唤醒模型，保存只写入当前工作台。
 $('#saveButton').onclick = () => task('deck');
@@ -506,7 +698,12 @@ $('#railToggle').onclick = () => {
   $('#railToggle').setAttribute('aria-expanded', String(!collapsed));
   $('#railToggle').innerHTML = icon(collapsed?'ChevronRight':'ChevronLeft');
 };
-$('#reload').onclick = async () => { if (editsVersion > savedVersion && !await save()) return; if (await persistDraft()) location.reload(); };
+// 刷新永远可达：先尽力保存，保存不了（冲突/基线变化）也要把草稿留下再刷新。
+$('#reload').onclick = async () => {
+  clearTimeout(timer);
+  if (!contextStale && !conflicted && editsVersion > savedVersion) await save();
+  if (await persistDraft()) location.reload();
+};
 $('#inspectorToggle').onclick = () => { const collapsed = $('.layout').classList.toggle('inspector-collapsed'); $('.inspector').classList.toggle('collapsed',collapsed); $('#inspectorToggle').innerHTML = icon(collapsed ? 'ChevronLeft' : 'ChevronRight'); $('#inspectorToggle').setAttribute('aria-expanded',String(!collapsed)); };
 $('#modalClose').onclick = () => $('#imageModal').classList.remove('open');
 $('#imageModal').onclick = e => { if (e.target === $('#imageModal')) $('#imageModal').classList.remove('open'); };
@@ -523,11 +720,23 @@ async function boot() {
   $('#pageTaskButton').onclick = () => submitAnnotations();
   $('#pageTaskButton').innerHTML = icon('MessageSquare')+'<span>提交批注</span>';
   render();
+  // 宿主握手卡住时也让人看得懂：内容已经画出来，只是暂时不能保存。
+  const handshake = setTimeout(() => {
+    if (writable) return;
+    notice('内容可以阅读，暂时无法保存修改：审阅宿主没有响应。请重新打开审阅页。');
+    status('未连接', true);
+  }, 2500);
   try {
-    review = await ReviewBridge.connect(); dsh = review.transport === 'postMessage';
+    review = await ReviewBridge.connect(); clearTimeout(handshake); dsh = review.transport === 'postMessage';
     document.body.dataset.host = dsh ? 'dsh' : 'standalone';
     if (!review.capabilities.includes('command') || !review.capabilities.includes('draft')) throw Error('宿主缺少工作台能力');
     const head = await command({op:'state'}); headRevision = head.revision; state = {...fresh(),...head.state};
+    if (Array.isArray(head.external_pages)) externalPages = new Set(head.external_pages.map(String));
+    // 主稿被模型处理过并重新生成过工作台：这份页面内嵌的数据已经过期，先让人刷新。
+    if (head.context?.sourceSha256 && head.context.sourceSha256 !== REVIEW.sourceSha256) contextStale = true;
+    if (head.deferred?.pages?.length) for (const number of head.deferred.pages) {
+      const key = pageIdOfNumber(Number(number)); if (key !== undefined) blocked[key] = true;
+    }
     let recovered; try { recovered = JSON.parse(await review.readText(REVIEW.draftPath, {optional:true})); } catch (_) {}
     try { const local = JSON.parse(sessionStorage.getItem(recoveryKey)); if (local && (!recovered || local.saved_at > recovered.saved_at)) recovered = local; } catch (_) {}
     if (recovered?.source_sha256 === REVIEW.sourceSha256) {
@@ -537,23 +746,49 @@ async function boot() {
         state = recovered; conflicted = true; notice('另一个窗口已保存新版本。当前草稿已恢复，需核对两个版本后继续。');
       } else if (different || recovered.base_revision === headRevision) {
         state = {...state,...recovered}; pendingSave = recovered.pending_save; pendingTask = recovered.pending_task;
+        if (recovered.blocked_pages) blocked = recovered.blocked_pages;
         if (different) editsVersion = 1;
       }
     }
+    normalizeOrder();
     if (state.view?.mode && !REVIEW.simpleStoryline) mode = state.view.mode;
     if (state.page_order.includes(state.view?.page)) page = state.view.page;
     else if (!state.page_order.includes(page)) page = state.page_order[0];
-    writable = true;
-    // This action only applies to DSH. Keep the optional control guarded so
-    // a missing button cannot abort the rest of the boot sequence.
-    const pageTaskButton = $('#pageTaskButton');
-    if (pageTaskButton) pageTaskButton.hidden = false;
-    $('#feedback').disabled = false; $('#overallFeedback').disabled = false;
-    $('#addStoryline').hidden = !REVIEW.allowStructureChanges;
-    status('已载入');
-    review.on('changed',async () => { try { await command({op:'state'}); } catch (error) { conflicted = true; backup(); notice(error.message+'。当前编辑已保留。'); updateSelection(); } });
-    if (editsVersion && !conflicted) enqueue(async () => await persistDraft() && await persistCanonical());
-  } catch (error) { notice('当前只读：'+error.message); }
+    if (contextStale) {
+      writable = false;
+      $('#reload').classList.add('attention');
+      status('待刷新', true);
+      notice('主稿已被模型更新。点右上角刷新载入新版本；刷新前的编辑留在草稿里，需要时让模型合并。');
+    } else {
+      writable = true;
+      // This action only applies to DSH. Keep the optional control guarded so
+      // a missing button cannot abort the rest of the boot sequence.
+      const pageTaskButton = $('#pageTaskButton');
+      if (pageTaskButton) pageTaskButton.hidden = false;
+      $('#feedback').disabled = false; $('#overallFeedback').disabled = false;
+      $('#addStoryline').hidden = !REVIEW.allowStructureChanges;
+      status('已载入');
+      if (editsVersion && !conflicted) enqueue(async () => await persistDraft() && await persistCanonical());
+    }
+    review.on('changed',async () => {
+      try {
+        const next = await command({op:'state'});
+        if (Array.isArray(next.external_pages)) { externalPages = new Set(next.external_pages.map(String)); if (mode === 'storyline') renderStory(); }
+        if (next.context?.sourceSha256 && next.context.sourceSha256 !== REVIEW.sourceSha256 && !contextStale) {
+          contextStale = true; writable = false; conflicted = true;
+          $('#reload').classList.add('attention'); status('待刷新', true);
+          notice('主稿已被模型更新。点右上角刷新载入新版本；刷新前的编辑留在草稿里，需要时让模型合并。');
+          if (mode === 'storyline') renderStory(); else updateSelection();
+        }
+      } catch (error) { conflicted = true; backup(); notice(error.message+'。当前编辑已保留。'); updateSelection(); }
+    });
+  } catch (error) {
+    clearTimeout(handshake);
+    const raw = String(error?.message || error);
+    notice('当前只读：' + (/ReviewBridge|未定义|not defined/.test(raw)
+      ? '没有连上审阅宿主，请从审阅入口重新打开页面。'
+      : raw));
+  }
   if (matchMedia('(max-width:1120px)').matches) $('#inspectorToggle').click();
   render(); ReviewUI.refresh(document);
   void loadVersions();

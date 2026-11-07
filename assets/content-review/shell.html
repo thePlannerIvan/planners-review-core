@@ -84,6 +84,7 @@
     .page-nav.active .page-num { color: var(--review-accent-text, var(--blue)); }
     .page-state { width: 7px; height: 7px; border-radius: 50%; background: transparent; align-self: center; justify-self: center; }
     .page-nav[data-pending="1"] .page-state { background: var(--review-accent); }
+    .page-nav[data-blocked="1"] .page-state { background: var(--amber); }
     .page-nav-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; }
     .page-nav-meta { display: none; }
     .status-dot { display: none; }
@@ -215,6 +216,7 @@
     .editable-ready { overflow-wrap: anywhere; }
     .editing:focus { outline: 1px solid var(--blue); outline-offset: 4px; border-radius: 2px; }
     .empty-content { color: var(--ink-3); padding: 24px 0; }
+    .page-notice { margin: -6px 0 14px; }
     .page-actions { display: flex; justify-content: space-between; gap: 8px; margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--line); }
     .page-actions button { min-width: 108px; }
     .storyline-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin: 0 0 6px; }
@@ -297,9 +299,10 @@
       .workspace-inner { padding: 12px 14px 24px; }
       .inspector.collapsed { }
       .inspector { max-width: calc(100vw - 48px); }
-      .outline-line { grid-template-columns: 20px 20px minmax(0,1fr) 30px; gap: 5px; }
-      .outline-grip { width: 20px; }
+      .outline-line { grid-template-columns: 24px minmax(0,1fr) 34px; }
+      .outline-grip { width: 22px; opacity: .65; }
       .outline-line [contenteditable] { font-size: 14px; }
+      .line-actions, .support-add { opacity: 1; }
       .page-header h2 { font-size: 22px; }
     }
     /* 底栏：翻页与任务动作固定在底部 */
@@ -348,52 +351,62 @@
     /* 顶栏：按钮统一尺寸、垂直居中 */
     .topbar .review-icon-button { width: 30px; height: 30px; padding: 0; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; }
     .topbar .review-icon-button svg { width: 18px; height: 18px; }
+    .topbar .review-icon-button.attention { color: var(--review-accent); background: var(--review-accent-soft); }
     .topbar .save-state { height: 30px; }
-    /* 故事线：一行 = 一句主张；展开后是内容块与批注 */
-    .outline-line { display: block; padding: 0; border-bottom: 0; }
-    .outline-line.open { border-bottom: 1px solid var(--line); }
-    .outline-line.open .outline-head { background: transparent; }
-    .outline-head { display: grid; grid-template-columns: 22px minmax(0,1fr) 26px 26px 26px; align-items: center; gap: 6px; padding: 10px 8px; }
-    .outline-head [data-outline-title] { min-height: 22px; font-size: 14px; font-weight: 500; line-height: 1.55; overflow-wrap: anywhere; }
-    .outline-head .review-icon-button { width: 26px; height: 26px; opacity: 0; pointer-events: none; transition: opacity .12s ease; }
-    .outline-line:hover .outline-head .review-icon-button,
-    .outline-line:focus-within .outline-head .review-icon-button { opacity: 1; pointer-events: auto; }
-    .outline-detail { padding: 2px 10px 16px 44px; display: grid; gap: 10px; }
-    .outline-line:hover .outline-head { background: var(--surface-hover); }
-        .outline-line.open .outline-head { background: var(--surface-subtle, #f5f5f6); }
-    .outline-head { border-radius: 8px; padding: 11px 10px; }
-    .outline-grip { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; border: 0; background: transparent; color: var(--ink-2); cursor: grab; }
-    .outline-grip:hover { color: var(--ink); }
-    .outline-grip svg { width: 16px; height: 16px; }
-    .outline-line { position: relative; }
-    .outline-line.dragging { opacity: .4; }
+    /* 故事线：一条 = 一页。悬停左侧出现拖动把手；正文点哪改哪。 */
+    .outline-list { list-style: none; display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 4px 0 28px; }
+    .outline-line { position: relative; display: grid; grid-template-columns: 34px minmax(0,1fr) 56px; align-items: start; padding: 8px 2px 8px 0; border-radius: 10px; transition: background .12s ease; }
+    .outline-line:hover { background: var(--surface-hover); }
+    .line-gutter { position: relative; width: 34px; height: 28px; }
+    .line-index { position: absolute; inset: 0; display: grid; place-items: center; color: var(--ink-3); font: 11px/1 var(--mono); font-variant-numeric: tabular-nums; letter-spacing: .02em; transition: opacity .12s ease; }
+    .outline-line.active .line-index { color: var(--review-accent); }
+    .outline-grip { position: absolute; inset: 0; margin: auto; display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--ink-3); cursor: grab; touch-action: none; opacity: 0; transition: opacity .12s ease, background .12s ease; }
+    .outline-line:hover .line-index, .outline-line:focus-within .line-index, .outline-line.dragging .line-index { opacity: 0; }
+    .outline-line:hover .outline-grip, .outline-line:focus-within .outline-grip, .outline-grip:focus-visible, .outline-line.dragging .outline-grip { opacity: 1; }
+    .outline-grip:hover { background: var(--surface-subtle); color: var(--ink-2); }
+    .outline-grip:active { cursor: grabbing; }
+    .outline-grip svg { width: 15px; height: 15px; }
+    .line-body { min-width: 0; padding: 0 4px 0 4px; }
+    .line-title { min-height: 26px; margin: 0 -4px; padding: 1px 4px; border-radius: 5px; color: var(--ink); font-size: 15px; font-weight: 550; line-height: 1.62; outline: none; overflow-wrap: anywhere; }
+    .line-title:focus { background: var(--surface); box-shadow: inset 0 0 0 1px var(--line-strong); }
+    .line-title:empty::before { content: '写一句这一页要成立的主张'; color: var(--ink-3); font-weight: 400; }
+    .line-supports { display: grid; margin-top: 3px; }
+    .support-row { display: grid; grid-template-columns: 16px minmax(0,1fr); align-items: start; }
+    .support-dot { color: var(--ink-3); text-align: center; font-size: 15px; line-height: 1.62; user-select: none; }
+    .support-text { min-height: 24px; margin: 0 -4px; padding: 1px 4px; border-radius: 5px; color: var(--ink-2); font-size: 13.5px; line-height: 1.7; outline: none; overflow-wrap: anywhere; }
+    .support-text:focus { background: var(--surface); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-strong); }
+    .support-text:empty::before { content: '写一条支撑，回车加下一条'; color: var(--ink-3); }
+    .support-add { justify-self: start; margin-top: 1px; padding: 2px 7px 2px 14px; border: 0; border-radius: 5px; background: transparent; color: var(--ink-3); font-size: 12px; cursor: pointer; opacity: 0; transition: opacity .12s ease; }
+    .outline-line:hover .support-add, .outline-line:focus-within .support-add { opacity: 1; }
+    .support-add:hover { color: var(--ink-2); background: var(--surface-subtle); }
+    .line-notes { min-height: 20px; margin: 7px -4px 0; padding: 1px 4px; border-radius: 5px; color: var(--ink-3); font-size: 12.5px; line-height: 1.65; outline: none; overflow-wrap: anywhere; }
+    .line-notes:focus { background: var(--surface); color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--line-strong); }
+    .line-notes:empty::before { content: '依据与边界：来源定位 / 限定 / 证据缺口'; opacity: .7; }
+    .line-actions { display: flex; align-items: center; justify-content: flex-end; gap: 2px; padding-top: 1px; opacity: 0; transition: opacity .12s ease; }
+    .outline-line:hover .line-actions, .outline-line:focus-within .line-actions { opacity: 1; }
+    .line-actions .review-icon-button { width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--ink-3); }
+    .line-actions .review-icon-button:hover { background: var(--surface-subtle); color: var(--ink-2); }
+    .line-actions .review-icon-button[data-has-note="1"] { color: var(--review-accent); background: var(--review-accent-soft); }
+    .line-external-tag { display: inline-block; margin: 2px 0 0 18px; padding: 0 6px; border-radius: 4px; background: var(--surface-subtle); color: var(--ink-3); font-size: 10.5px; line-height: 18px; }
+    .line-new-tag { margin-left: 8px; padding: 1px 6px; border-radius: 4px; background: var(--review-accent-soft); color: var(--review-accent); font-size: 10.5px; font-weight: 500; vertical-align: 2px; }
+    .line-comment { margin: 10px 4px 2px 0; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+    .line-comment textarea { min-height: 56px; margin: 0; padding: 7px 9px; font-size: 12.5px; line-height: 1.7; border-radius: 6px; resize: vertical; }
+    .line-comment-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+    .line-comment-foot button { width: auto; height: 30px; padding: 0 12px; display: inline-flex; align-items: center; gap: 5px; }
+    .line-conflict { display: flex; align-items: center; gap: 8px; margin: 10px 4px 2px 0; padding: 8px 10px; border-radius: 7px; background: var(--amber-soft); color: #875011; font-size: 12px; line-height: 1.5; }
+    .line-conflict span { flex: 1; }
+    .line-conflict button { width: auto; height: 26px; padding: 0 9px; font-size: 12px; }
+    .outline-line.dragging { opacity: .35; }
     .outline-line.drop-before::before, .outline-line.drop-after::after {
-      content: ''; position: absolute; left: 8px; right: 8px; height: 3px; border-radius: 2px;
-      background: var(--review-accent); box-shadow: 0 0 0 3px rgba(208,84,58,.14);
+      content: ''; position: absolute; left: 34px; right: 8px; height: 2px; border-radius: 2px;
+      background: var(--review-accent); box-shadow: 0 0 0 3px rgba(208,84,58,.12);
     }
     .outline-line.drop-before::before { top: -2px; }
     .outline-line.drop-after::after { bottom: -2px; }
-    .outline-number { font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; letter-spacing: .02em; }
-    .outline-detail { padding: 0 14px 16px 50px; gap: 6px; }
-    .block-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-    .block-item { border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; background: var(--surface); }
-    .block-item .block-title { font-size: 12px; font-weight: 650; min-height: 18px; }
-    .block-item .block-text { margin-top: 3px; font-size: 12px; line-height: 1.55; color: var(--ink-2); min-height: 18px; }
-    /* 内容块：一行一条的 bullet，回车增、删空行即减 */
-    .block-bullets { display: grid; gap: 1px; }
-    .block-bullet { position: relative; padding: 4px 10px 4px 18px; font-size: 13px; font-weight: 400; color: var(--ink-2); line-height: 1.75; border-radius: 6px; min-height: 28px; overflow-wrap: anywhere; }
-    .block-bullet::before { content: '·'; position: absolute; left: 8px; top: 5px; color: var(--ink-3); font-size: 15px; }
-    .block-bullet:hover { background: var(--surface-hover); }
-    .block-bullet:focus { outline: none; background: var(--surface-hover); }
-    .block-bullet:empty::after { content: '回车加一条；空行回退即删除'; color: var(--ink-2); opacity: .5; }
-    .outline-note-editor { display: grid; gap: 6px; }
-    .outline-note-editor textarea { min-height: 52px; margin: 0; padding: 7px 9px; font-size: 12.5px; line-height: 1.7; border-radius: 7px; }
-    .outline-note-summary { display: flex; gap: 10px; width: 100%; padding: 0; border: 0; background: transparent; text-align: left; color: var(--ink-2); font-size: 12px; line-height: 1.6; cursor: text; }
-    .outline-note-label { flex: none; color: var(--ink-3); }
-    .outline-note-text { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-    .outline-note-summary:hover .outline-note-text { color: var(--ink); }
-    .outline-note-empty { padding: 0; border: 0; background: transparent; color: var(--ink-3); font-size: 12px; line-height: 1.6; cursor: text; text-align: left; }
-    .outline-note-empty:hover { color: var(--ink-2); }
+    .drag-ghost { position: fixed; z-index: 60; max-width: 320px; padding: 8px 12px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); box-shadow: 0 10px 30px rgba(0,0,0,.16); color: var(--ink); font-size: 13px; line-height: 1.5; pointer-events: none; opacity: .96; }
+    .storyline-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin: 0 0 6px; }
+    .storyline-actions small { color: var(--ink-3); font-size: 12px; }
+    .workspace-inner { width: min(100%, 920px); }
   </style>
 </head>
 <body>
@@ -428,6 +441,7 @@
 
           <section class="bypage-view" id="bypageView">
             <article class="page-header"><div class="page-header-row"><div><div class="eyebrow">第 <span id="currentPageLabel"></span> 页</div><h2 id="pageTitle"></h2><div class="page-claim" id="pageClaim"></div></div></div></article>
+            <div id="pageNotice" class="page-notice" hidden></div>
             <div id="pageContent"></div>
             
           </section>
