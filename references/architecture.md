@@ -18,6 +18,7 @@ review-bridge.js ──┘
 |---|---|---|---|---|
 | `contracts/review-surface.schema.json` | 契约 | surface 的字段与语义 | 被校验器与宿主读取 | 不表达审阅语义（审什么、能下什么决定、怎么绑版本） |
 | `scripts/validate-surface.mjs` | **唯一校验器** | 结构、路径包含性、桥的哈希一致性 | CLI，输出 JSON，非零即不合规 | 不评价审阅设计 |
+| `assets/annotate/annotate.js` | **与内容无关的批注层**（单文件、shadow DOM、无依赖） | 四种采集（改字 / 点选 / 框选 / 选句）、版本读取、草稿自动保存与恢复、`artifact-annotations/1` | 由宿主在 `annotate: true` 时内联；协议见 [annotate.md](annotate.md) | 不认识审阅语义，不写文件，不唤醒（走桥） |
 | `assets/review-bridge.js` | 页面与宿主之间唯一的说话方式 | 两种传输（postMessage / fetch）、文件、资产、命令与唤醒 | `window.ReviewBridge.connect()`；由宿主注入 | 不解释反馈形状或页面版本 |
 | `scripts/lib/review-command.mjs` | 受限后端命令传输 | 固定处理器解析、进程限制、结构化回执 | `runBrowserCommand(surface,payload)`；两种宿主复用 | 不定义 SVG、版本或任务语义，不执行页面提供的程序 |
 | `scripts/serve-review.mjs` | 没有 DSH 时的宿主 | serve `dir`、写 feedback、wake 落日志、版本令牌 | CLI | 不唤醒 Agent（没人可唤）—— 打印提示让人回对话 |
@@ -71,6 +72,7 @@ review-bridge.js ──┘
 | 桥的 API | `assets/review-bridge.js` | 每个审阅目录里的副本（校验器报 `bridge_stale` 挡住），以及所有 Skill 的页面 |
 | 包含性规则 | 校验器 + 两个宿主 | 安全面；改前先想清楚能不能被绕过 |
 | 新增宿主（除 DSH 与本地服务器） | 本文件 + SKILL.md | 新宿主必须实现同样三件事，页面不用改 |
+| 批注层 / 它的注入点 | `assets/annotate/annotate.js` + 两个宿主的注入实现 | 所有 `annotate: true` 的面；它自己带版本与草稿协议（[annotate.md](annotate.md)） |
 | 定多个面怎么共处（能开几个、谁关、归哪个对话） | 本文件 + SKILL.md 的「多个面、多个对话」 | 这是**宿主语义**，不进 schema：加字段会把宿主的实现选择写进契约 |
 
 ## 同一件事的两个真相源（故意分开）
@@ -79,6 +81,8 @@ review-bridge.js ──┘
 - **桥**的真相源在本模组，且**只有这一份**：宿主把它注入到 serve 出去的 HTML 里（页面只留 `{{REVIEW_BRIDGE}}` 注入点，换成**源码内联**或 URL 由宿主决定）。**不做副本**，也不给帧一个 `/api` 下的 `<script src>` —— 不透明帧取不到它（实测 403）。
 
 **注入点的写法只有一种**：`{{REVIEW_BRIDGE}}` **裸着独占一行**。宿主原地替换它，放进 `src=` 或 `<script>` 里都会把标签撑破（两种都真的发生过，校验器现在拦 `bridge_placeholder_not_bare` / `bridge_placeholder_multiple`）。
+**缺注入点不再是错误**（2026-11）：两个宿主都会把整段脚本补在 `</body>` 前 —— 这样一份普通产物不用改一行就能被审。校验器只报 `bridge_placeholder_absent` 警告（老宿主仍会 409）。
+批注层同理，额外有一个 `{{REVIEW_ANNOTATE}}` 注入点；`annotate: true` 时宿主内联 `assets/annotate/annotate.js`，它自己的注入点同样必须裸且只一次。
 
 ## 退役
 

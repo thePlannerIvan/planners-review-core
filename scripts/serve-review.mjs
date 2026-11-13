@@ -46,6 +46,9 @@ const surfaceDir = dirname(surfacePath);
 const ROOT = realpathSync(resolve(surfaceDir, doc.dir));
 const COMMAND_SURFACE = { data: doc, projectRoot: realpathSync(resolve(surfaceDir, doc.project_root)), dir: ROOT };
 const ENTRY = doc.entry;
+// 与内容无关的批注层：`annotate: true` 时把公共件的 annotate.js 内联进页面。
+// 不透明帧里取不到 /assets 下的脚本（和桥同一个原因），所以只能内联。
+const ANNOTATE = doc.annotate === true;
 const FEEDBACK = doc.feedback ? resolve(surfaceDir, doc.feedback) : null;
 // 草稿：和 feedback 分开两个文件。feedback 是**决定**（人点了提交、模型要收件），
 // draft 是**还没提交的草稿**（页面拿它做「刷新不丢」，模型不当它是收件）。
@@ -65,6 +68,18 @@ const MIME = {
   '.mov': 'video/quicktime', '.m4v': 'video/x-m4v',
   '.txt': 'text/plain; charset=utf-8', '.md': 'text/markdown; charset=utf-8', '.csv': 'text/csv; charset=utf-8'
 };
+
+/** 把一段完整标签放进页面：三种写法都容忍，缺注入点就补到 </body> 前。 */
+function injectBlock(html, marker, block) {
+  const escaped = marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const srcElement = new RegExp('<script\\b[^>]*\\bsrc\\s*=\\s*["\']' + escaped + '["\'][^>]*>\\s*<\\/script>', 'i');
+  const inlineElement = new RegExp('<script\\b[^>]*>\\s*' + escaped + '\\s*<\\/script>', 'i');
+  if (srcElement.test(html)) return html.replace(srcElement, block);
+  if (inlineElement.test(html)) return html.replace(inlineElement, block);
+  if (html.includes(marker)) return html.replaceAll(marker, block);
+  const at = html.search(/<\/body\s*>/i);
+  return at >= 0 ? html.slice(0, at) + block + '\n' + html.slice(at) : html + '\n' + block;
+}
 
 function resolveInRoot(urlPath) {
   const clean = decodeURIComponent(urlPath.split('?')[0]);
@@ -86,6 +101,9 @@ const WATCH = (Array.isArray(doc.watch) ? doc.watch : []).map((rel) => resolve(s
 
 function versionToken() {
   const hash = createHash('sha256');
+  // 宿主自己写的文件（反馈、草稿、接入日志）不能算进"产物变了"：否则每次自动保存草稿
+  // 都会让页面收到一次"变了"，页面上就会弹"产物已更新" —— 自己踩自己的脚。
+  const ownFiles = new Set([FEEDBACK, DRAFT, join(surfaceDir, 'wake-log.jsonl')].filter(Boolean));
   if (WATCH.length) {
     for (const abs of WATCH) {
       try { const st = statSync(abs); hash.update(`${abs}:${st.size}:${st.mtimeMs}\n`); }
@@ -98,6 +116,7 @@ function versionToken() {
       const abs = join(dir, name.name);
       if (name.isDirectory()) walk(abs);
       else if (name.isFile()) {
+        if (ownFiles.has(abs)) continue;
         const st = statSync(abs);
         hash.update(`${abs.slice(ROOT.length)}:${st.size}:${st.mtimeMs}\n`);
       }
@@ -174,6 +193,15 @@ const server = createServer(async (req, res) => {
         return json(res, 200, { ok: true, path: FEEDBACK, persisted: true });
       } catch (error) { return json(res, 400, { ok: false, error: error.message }); }
     }
+    if (url.split('?')[0] === '/__review/draft' && req.method === 'GET') {
+      // 读回草稿：刷新 / 重开之后，未提交的批注还在。读不到就是 null，不是错误。
+      if (DRAFT === null) return json(res, 200, { draft: null, note: '这个面没有声明 draft' });
+      try {
+        return json(res, 200, { draft: JSON.parse(readFileSync(DRAFT, 'utf8')) });
+      } catch {
+        return json(res, 200, { draft: null });
+      }
+    }
     if (url.startsWith('/__review/draft') && req.method === 'POST') {
       if (DRAFT === null) return json(res, 409, { ok: false, error: '这个面没有 draft 文件（surface 里没写 draft）' });
       try {
@@ -231,15 +259,13 @@ const server = createServer(async (req, res) => {
     // `<script>{{…}}</script>`）在生产里出现过，所以把**整个元素**一并换掉 —— 换成什么由宿主
     // 决定，但必须是一段完整合法的标签，不能把标记留在一个被撑破的标签里。
     const block = '<script>window.__REVIEW_BASE__="/"</script>\n<script src="/__review/bridge.js"></script>';
-    const html = bytes.toString('utf8');
-    const legacyTag = /<script\b[^>]*\bsrc\s*=\s*["']\{\{REVIEW_BRIDGE\}\}["'][^>]*>\s*<\/script>/i;
-    const legacyInner = /<script\b[^>]*>\s*\{\{REVIEW_BRIDGE\}\}\s*<\/script>/i;
-    bytes = Buffer.from(
-      legacyTag.test(html) ? html.replace(legacyTag, block)
-        : legacyInner.test(html) ? html.replace(legacyInner, block)
-          : html.replaceAll('{{REVIEW_BRIDGE}}', block),
-      'utf8'
-    );
+    let html = injectBlock(bytes.toString('utf8'), '{{REVIEW_BRIDGE}}', block);
+    if (ANNOTATE) {
+      const annotateSource = readFileSync(join(HERE, '..', 'assets', 'annotate', 'annotate.js'), 'utf8')
+        .replaceAll('</script', '<\\/script');
+      html = injectBlock(html, '{{REVIEW_ANNOTATE}}', '<script>\n' + annotateSource + '\n</script>');
+    }
+    bytes = Buffer.from(html, 'utf8');
   }
   const size = bytes.length;
   const rangeHeader = String(req.headers.range ?? '').trim();

@@ -37,6 +37,7 @@ Skill 交出自己的审阅页面与资产目录；宿主负责显示、serve �
 ## 怎么用（Skill 侧）
 
 1. 造一个审阅目录，里面放：入口 HTML 与资产。入口 HTML 里留一个 **`{{REVIEW_BRIDGE}}` 注入点**，宿主在 serve 时把它换掉 —— **换成什么由宿主决定**：DSH 插件**内联桥的源码**，无插件宿主给一个 URL。
+   **这个注入点现在是可选的**：不留，两个宿主都会把整段脚本补在 `</body>` 前（校验器只报 `bridge_placeholder_absent` 警告）。所以一份普通产物不改一行也能被审 —— 要更稳（老宿主仍会 409）就留。
 
 > **注入点必须裸着独占一行**（就这七个记号，前后只有空白）：
 > ```
@@ -132,15 +133,31 @@ Proposal 与 By-page 调用 `scripts/render-content-review.mjs` 的 `renderConte
 
 `scripts/content-review-contract.mjs` 只提供壳的字段检查、稳定内容哈希与审阅快照/草稿元数据。生产方的 builder 与 inbox 负责映射到自己的原生契约、保护原文、回写用户修改及重新判门；宿主仍只传输字节。接口与保存规则见 `references/content-review.md`。
 
+## 可选产物批注层
+
+产出的东西本身是 HTML（报告、提案页、SVG 页、落地页）时，人往往不是要"逐单位决定"，而是要**指着页面说**：这句话改了、这一块不对、这个数字核一下。
+
+在 surface 里写一行 `"annotate": true`，宿主就把 `assets/annotate/annotate.js` 内联进入口页（页面可用裸的 `{{REVIEW_ANNOTATE}}` 指定位置，不留就补在 `</body>` 前）。人在页面上：
+
+- **编辑**：点正文直接改，提交时给出 `before / after / 逐字 ops`；
+- **点选**：点任意元素，给最短唯一选择器 + 索引路径 + 文本 + 章节 + 页面坐标；
+- **框选**：拖一个框，给矩形 + 被框住的元素清单（子元素被全框住时收成父容器）+ 区域文本；
+- **选句**：选中一句话，给 `quote` + 前后文 + 字符偏移。
+
+产出一份 `artifact-annotations/1`，走同一个 `feedback` / `draft` / `wake`。这一层**不替代**任何 Skill 已有的审阅页，只补"产物是 HTML、反馈是空间性的"那类任务。
+
+**版本与覆盖**（必读）：产物生成时写 `<meta name="artifact-version">`，每次重新生成换一个值；页面把版本带进 `base.version`，未提交的改动进 `draft`。生产方必须**一次提交当一批**、按 patch 应用、版本不一致时按引文重锚、重新生成前先收未应用的批注。完整规则见 [references/annotate.md](references/annotate.md)。
+
 ## 文件索引
 
 | 路径 | 用途 |
 |---|---|
-| `contracts/review-surface.schema.json` | `review-surface/2.0.0` 契约（**唯一真相源**） |
+| `contracts/review-surface.schema.json` | `review-surface/2.0.0` 契约（**唯一真相源**；含可选的 `annotate` 开关） |
 | `scripts/validate-surface.mjs` | 唯一校验器：结构 + 路径包含性 + 桥的哈希一致性 |
 | `assets/review-bridge.js` | 桥。**由宿主注入**（页面只留 `{{REVIEW_BRIDGE}}` 注入点），所以不存在副本漂移 |
 | `scripts/lib/review-command.mjs` | 两种宿主共用的受限后端传输；操作语义归后端 |
 | `scripts/serve-review.mjs` | 没有插件时的宿主（serve + write + wake + 版本令牌） |
+| `assets/annotate/annotate.js` | **与内容无关的批注层**（单文件、shadow DOM、无依赖）：改字 / 点选 / 框选 / 选句；产出 `artifact-annotations/1`，含草稿恢复与版本绑定。协议见 [references/annotate.md](references/annotate.md) |
 | `assets/dsh-tokens.css` | **所有审阅页共用的设计令牌**（DSH 的，vendored）。页面跑在不透明源 iframe 里继承不到宿主变量，所以只能内联；**一处定义，谁都不许再存第二份** |
 | `scripts/vendor_dsh_tokens.py` | 重抄那份表：读**本机已装的 DSH 版本**（`Info.plist`），从发行版里抽 —— 别用 `npm view ... version`，那个包的 `latest` 卡在最老一版，会静默抄错 |
 | `scripts/inline_review_tokens.py` | 把表内联进某个页面（模板留 `/*__DSH_TOKENS__*/`）。写盘前验括号配对与表是否真在里面 —— 这两类错误**都不报错**，只是页面悄悄没上样式 |

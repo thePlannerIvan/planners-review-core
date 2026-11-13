@@ -85,10 +85,31 @@ for (const [label, mutate, expect] of cases) {
   else bad(`${label} → 期望 ${expect}，实际 ${JSON.stringify(codes(r))}`);
 }
 {
+  // 2026-11：两个宿主都会在缺注入点时补到 </body> 前（"任意 HTML 产物直接批注"），
+  // 所以这从错误降成警告 —— 但必须出声，因为老宿主仍会拒绝服务。
   writeFileSync(join(reviewDir, 'no-slot.html'), '<!doctype html><html><body>没有注入点</body></html>', 'utf8');
   const r = validate(surface((d) => { d.entry = 'no-slot.html'; }, 'no-slot.json'));
-  if (r.code !== 0 && codes(r).includes('bridge_placeholder')) ok('入口没有 {{REVIEW_BRIDGE}} → bridge_placeholder');
-  else bad(`缺注入点没拦住：${JSON.stringify(codes(r))}`);
+  const warns = (r.out?.warnings ?? []).map((w) => w.code);
+  if (r.code === 0 && warns.includes('bridge_placeholder_absent')) ok('入口没有注入点 → 只警告 bridge_placeholder_absent（宿主会补）');
+  else bad(`缺注入点的判定不对：${r.code} ${JSON.stringify(codes(r))} / ${JSON.stringify(warns)}`);
+}
+{
+  // 批注层的三件事：annotate 必须是布尔；它自己的注入点同样必须裸且只一次
+  const badBool = validate(surface((d) => { d.annotate = 'yes'; }, 'annotate-bool.json'));
+  if (badBool.code !== 0 && codes(badBool).includes('annotate_shape')) ok('annotate 不是布尔 → annotate_shape');
+  else bad(`annotate 形状没拦住：${JSON.stringify(codes(badBool))}`);
+
+  writeFileSync(join(reviewDir, 'annotate-inline.html'),
+    '<!doctype html><html><body>\n{{REVIEW_BRIDGE}}\n<script src="{{REVIEW_ANNOTATE}}"></script>\n</body></html>', 'utf8');
+  const inline = validate(surface((d) => { d.entry = 'annotate-inline.html'; d.annotate = true; }, 'annotate-inline.json'));
+  if (inline.code !== 0 && codes(inline).includes('annotate_placeholder_not_bare')) ok('{{REVIEW_ANNOTATE}} 放进标签里 → annotate_placeholder_not_bare');
+  else bad(`批注层注入点写法没拦住：${JSON.stringify(codes(inline))}`);
+
+  writeFileSync(join(reviewDir, 'annotate-twice.html'),
+    '<!doctype html><html><body>\n{{REVIEW_BRIDGE}}\n{{REVIEW_ANNOTATE}}\n{{REVIEW_ANNOTATE}}\n</body></html>', 'utf8');
+  const twice = validate(surface((d) => { d.entry = 'annotate-twice.html'; d.annotate = true; }, 'annotate-twice.json'));
+  if (twice.code !== 0 && codes(twice).includes('annotate_placeholder_multiple')) ok('{{REVIEW_ANNOTATE}} 出现两次 → annotate_placeholder_multiple');
+  else bad(`批注层重复注入点没拦住：${JSON.stringify(codes(twice))}`);
 }
 {
   // 注入点写法的三条闸门 —— 这两种写法真把页面打挂过（第三方与自家页面各一次）
@@ -419,6 +440,79 @@ console.log('\n第二个形状的面');
   } finally { try { other.proc.kill(); } catch { /* 已退出 */ } }
 }
 
+// ---------- 2c. 产物批注层：annotate: true，页面什么都不留 ----------
+console.log('\n产物批注层');
+{
+  const artifactDir = join(projectRoot, 'work', 'reviews', 'artifact');
+  mkdirSync(artifactDir, { recursive: true });
+  // 普通产物：没有桥注入点，也没有批注层注入点
+  writeFileSync(join(artifactDir, 'report.html'),
+    '<!doctype html><html><head><meta name="artifact-version" content="v1"></head>'
+    + '<body><h1>季度复盘</h1><p>一句话</p></body></html>', 'utf8');
+  const doc3 = {
+    contract_version: 'review-surface/2.0.0', id: 'artifact/report', title: '季度复盘',
+    project_root: '../../..', dir: '.', entry: 'report.html',
+    feedback: 'annotations.json', draft: 'annotations-draft.json',
+    annotate: true, capabilities: ['draft'],
+    wake: { mode: 'steer', text: '产物上有新批注。' },
+  };
+  const p3 = join(artifactDir, 'artifact.json');
+  writeFileSync(p3, JSON.stringify(doc3), 'utf8');
+  const v3 = validate(p3);
+  const v3warn = (v3.out?.warnings ?? []).map((w) => w.code);
+  if (v3.code === 0 && v3warn.includes('bridge_placeholder_absent')) {
+    ok('annotate:true 的 surface 合规（普通产物没有注入点，只警告）');
+  } else bad(`批注层 surface 不合规：${JSON.stringify(codes(v3))} / ${JSON.stringify(v3warn)}`);
+
+  const start = (surfacePath) => new Promise((done, fail) => {
+    const proc = spawn(process.execPath, [HOST, surfacePath, '--port', '0', '--no-open'], { encoding: 'utf8' });
+    let buffer = '';
+    const timer = setTimeout(() => fail(new Error(`宿主没就绪：${buffer}`)), 15000);
+    proc.stdout.on('data', (chunk) => {
+      buffer += chunk;
+      const match = buffer.match(/\{[\s\S]*"url"[\s\S]*\}/);
+      if (match) { clearTimeout(timer); try { done({ proc, info: JSON.parse(match[0]) }); } catch { /* 继续读 */ } }
+    });
+    proc.on('exit', (code) => { clearTimeout(timer); fail(new Error(`宿主提前退出 ${code}：${buffer}`)); });
+  });
+
+  const art = await start(p3);
+  const base3 = art.info.url.replace(/\/report\.html$/, '');
+  try {
+    const html = await (await fetch(`${base3}/report.html`)).text();
+    if (html.includes('ReviewBridge') && html.includes('ReviewAnnotate')) {
+      ok('annotate:true → 桥与批注层都内联进普通产物（页面没留任何注入点）');
+    } else bad('普通产物上没同时注入桥与批注层');
+    if (!html.includes('{{REVIEW_BRIDGE}}') && !html.includes('{{REVIEW_ANNOTATE}}')) {
+      ok('两个标记都没有留在页面上');
+    } else bad('页面上残留了注入点标记');
+    // 比的是两个**赋值**的位置：批注层的注释里也提到了 ReviewBridge，拿裸名字比会误判。
+    if (html.indexOf('window.ReviewBridge =') < html.indexOf('window.ReviewAnnotate =')) {
+      ok('桥先就位，批注层才连得上');
+    } else bad('批注层排在桥前面：握手会一直等不到桥');
+    if (html.includes('artifact-version')) ok('产物自带的版本标记原样保留（宿主不解释它）');
+    else bad('宿主动了产物的版本标记');
+
+    const before = await (await fetch(`${base3}/__review/draft`)).json();
+    if (before.draft === null) ok('GET draft（还没写过）→ null，不是错误');
+    else bad(`空草稿读回不对：${JSON.stringify(before)}`);
+
+    const draft = {
+      contract: 'artifact-annotations-draft/1',
+      payload: { base: { version: 'v1' }, annotations: [{ id: 'a1', kind: 'element' }] },
+    };
+    await fetch(`${base3}/__review/draft`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(draft)
+    });
+    const after = await (await fetch(`${base3}/__review/draft`)).json();
+    if (JSON.stringify(after.draft) === JSON.stringify(draft)) {
+      ok('GET draft → 读回刚写的草稿（刷新 / 切标签后恢复未提交批注靠它）');
+    } else bad(`草稿读回不一致：${JSON.stringify(after)}`);
+
+    await fetch(`${base3}/__review/shutdown`);
+  } finally { try { art.proc.kill(); } catch { /* 已退出 */ } }
+}
+
 // ---------- 3. 桥的线协议（假 DOM，直接驱真实源码）----------
 console.log('\n桥的线协议');
 {
@@ -524,6 +618,8 @@ console.log('\n桥的形状');
     [source.includes("'asset-upload'"), '上传能力按 capabilities 声明走'],
     [source.split("draft: function").length - 1 === 2 && source.includes("capabilities.indexOf('draft')"),
      '草稿（draft）两条通道都实现，且按 capabilities 声明走'],
+    [source.split("draftRead: function").length - 1 === 2 && source.includes("call('draftRead')"),
+     '草稿读回（draftRead）两条通道都实现（刷新恢复靠它）'],
     [source.includes("URL.createObjectURL(blob)"), '资产由子帧自造 blob（父页面代取字节）'],
     [source.includes('readText: function') && source.includes("call('read'"), '有 read/readText（给非图片资产，如 snapshot.json）'],
     [/var capabilitiesReady = fetch\(base \+ '__review\/capabilities'/.test(source) && /return capabilitiesReady\.then/.test(source),

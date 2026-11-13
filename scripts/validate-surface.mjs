@@ -79,6 +79,9 @@ if (doc !== null) {
   } else if (!isBlank(doc.wake)) {
     err('wake_shape', 'wake 必须是 { mode, text }');
   }
+  if (doc.annotate !== undefined && typeof doc.annotate !== 'boolean') {
+    err('annotate_shape', `annotate 只能是 true / false，实际 ${JSON.stringify(doc.annotate)}`);
+  }
   const KNOWN_CAPABILITIES = ['asset-upload', 'draft', 'command'];
   if (doc.command_backend !== undefined && !['svg-workbench/1', 'content-workbench/1'].includes(doc.command_backend)) {
     err('command_backend', 'command_backend must be an allowlisted workbench identifier');
@@ -129,7 +132,11 @@ if (doc !== null) {
         const MARK = '{{REVIEW_BRIDGE}}';
         const occurrences = entryHtml.split(MARK).length - 1;
         if (occurrences === 0) {
-          err('bridge_placeholder', 'entry HTML 里没有 {{REVIEW_BRIDGE}} —— 桥由宿主注入，页面必须留这个注入点');
+          // 2026-11：宿主也会在缺注入点时补到 </body> 前（"任何 HTML 产物就能直接批注"），
+          // 所以这不再是错误，只是要出声 —— 老版本宿主仍会 409。
+          warn('bridge_placeholder_absent',
+            'entry HTML 里没有 {{REVIEW_BRIDGE}}：新宿主会补到 </body> 前，老宿主会拒绝服务。'
+            + '想跨宿主稳定，就留一行裸的注入点。');
         } else if (occurrences > 1) {
           err('bridge_placeholder_multiple', `{{REVIEW_BRIDGE}} 出现了 ${occurrences} 次 —— 只能有一个（多了会把桥注入两遍）`);
         } else if (!entryHtml.split('\n').some((line) => line.trim() === MARK)) {
@@ -143,6 +150,22 @@ if (doc !== null) {
           err('bridge_placeholder_not_bare',
             `{{REVIEW_BRIDGE}} 必须裸着独占一行（现在长这样：${where}）。宿主会把这个标记原地换成整段标签，`
             + '放进 src="" 里或 <script> 里都会把标签撑破。正确写法就是单独一行：{{REVIEW_BRIDGE}}');
+        }
+
+        // 2a) 批注层：`annotate: true` 时宿主内联 assets/annotate/annotate.js。
+        // 页面可以用 {{REVIEW_ANNOTATE}} 指定位置；不留也能用（宿主补在 </body> 前）。
+        if (doc.annotate === true) {
+          const ANNOTATE_MARK = '{{REVIEW_ANNOTATE}}';
+          const annotateHits = entryHtml.split(ANNOTATE_MARK).length - 1;
+          if (annotateHits > 1) {
+            err('annotate_placeholder_multiple', `{{REVIEW_ANNOTATE}} 出现了 ${annotateHits} 次 —— 只能有一个`);
+          } else if (annotateHits === 1 && !entryHtml.split('\n').some((line) => line.trim() === ANNOTATE_MARK)) {
+            err('annotate_placeholder_not_bare',
+              '{{REVIEW_ANNOTATE}} 必须裸着独占一行 —— 宿主原地换成整段 <script>，放进标签里会把它撑破');
+          }
+        } else if (entryHtml.includes('{{REVIEW_ANNOTATE}}')) {
+          warn('annotate_placeholder_without_flag',
+            'entry 里有 {{REVIEW_ANNOTATE}} 但 surface 没写 "annotate": true —— 宿主不会注入批注层，标记会原样留在页面上');
         }
       }
     }

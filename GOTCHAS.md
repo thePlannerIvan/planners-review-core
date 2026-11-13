@@ -125,3 +125,12 @@
 - **修复**：`vendor_dsh_tokens.py` 里加 `DERIVED`（`--dsh-code-font-*`）并**解析底座引用**（`--dsh-font-family-text-default` / `--dsh-font-family-code-default`）；`var()` 引用全部落进补丁块，自洽检查扩大到所有块的所有值，不只明色块。值不猜：delta 的定义与 size 的默认值都从同一发行版的 `app.asar` 里取。
 - **判据**：脚本跑完自报「底座 4 条、派生字号 2 条」，并且对生成后的 CSS 做一次 `var(--x)` 引用全集 vs 定义全集比对 —— 只允许 `--dsh-content-font-*` 这 4 个带 fallback 的例外。
 - **module**：所有审阅页（任何内联 `dsh-tokens.css` 的页面）；升级 DSH 后先重跑脚本，别等页面自己坏。
+
+## 12. 内联的脚本里出现注入点字面量 → "标记已被换掉"永远是假的
+
+- **现象**：批注层的注入测试一直红：宿主返回 200、页面里也确实有批注层，但断言"`{{REVIEW_ANNOTATE}}` 应该被换掉"始终为真（标记还在）。宿主这一侧看起来完全成功。
+- **原因**：`annotate.js` 自己的注释里写着 `{{REVIEW_ANNOTATE}}`。宿主把它**内联**进页面之后，这段注释把标记又带回了 HTML —— 于是"页面里还有没有这个标记"永远为真。桥没这个问题，只是因为它的注释里恰好没写自己的标记。
+- **行为修正**：① 会被内联的 bundle（桥、批注层，以及以后任何注入物）里**不许出现自己的注入点字面量**，改用文字描述；② 测试要断言"页面上这个标记出现 0 次"，不要断言"注入函数返回了"；③ 顺带：判两段脚本的先后要比**赋值语句**（`window.ReviewBridge =` / `window.ReviewAnnotate =`），拿裸名字比会被注释里的提及误导。
+- **证据**：`evals/run.mjs` 的"产物批注层"三条 + `dsh-review-dock/test/bridge-injection.test.mjs` 的 `annotate:true` 两条。
+- **状态**：已落地。
+- **module**：`assets/annotate/annotate.js` + 两个宿主 + 测试

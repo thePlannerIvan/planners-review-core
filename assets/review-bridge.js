@@ -9,6 +9,7 @@
  *   const review = await ReviewBridge.connect()
  *   await review.write(payload)                 // 写进 surface 的 feedback 文件（**这是决定**）
  *   await review.draft(payload)                 // 写进 surface 的 draft 文件（**这是草稿**，不唤醒、模型不当它是收件）
+ *   var saved = await review.draftRead()        // 读回草稿（刷新/重开恢复用；没有就是 { draft: null }）
  *   await review.wake({ unit: 'page-03' })      // 唤醒模型
  *   img.src = await review.asset('shots/page-03.png', { v: 'v2' })   // 资产：两种宿主都可用
  *   var snap = JSON.parse(await review.readText('state.json'))   // 取非图片资产（文本）
@@ -151,6 +152,11 @@
           if (capabilities.indexOf('draft') < 0) return Promise.reject(new Error('这个宿主没有声明 draft 能力'));
           return call('draft', payload);
         },
+        // 读回草稿：刷新、切标签、产物被重新生成之后，未提交的批注还能回到页面上。
+        draftRead: function () {
+          if (capabilities.indexOf('draft') < 0) return Promise.reject(new Error('这个宿主没有声明 draft 能力'));
+          return call('draftRead');
+        },
         wake: function (payload) { return call('wake', payload || {}); },
         upload: function (file, rel) {
           if (capabilities.indexOf('asset-upload') < 0) return Promise.reject(new Error('这个宿主没有声明 asset-upload 能力'));
@@ -255,6 +261,12 @@
       draft: function (payload) {
         if (capabilities.indexOf('draft') < 0) return Promise.reject(new Error('这个宿主没有声明 draft 能力'));
         return post('draft', payload);
+      },
+      draftRead: function () {
+        if (capabilities.indexOf('draft') < 0) return Promise.reject(new Error('这个宿主没有声明 draft 能力'));
+        return fetch(base + '__review/draft', { cache: 'no-store' })
+          .then(function (response) { return response.ok ? response.json() : { draft: null }; })
+          .catch(function () { return { draft: null }; });
       },
       wake: function (payload) { return post('wake', payload || {}); },
       upload: function (file, rel) {
