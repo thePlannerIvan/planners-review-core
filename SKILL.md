@@ -146,6 +146,8 @@ Proposal 与 By-page 调用 `scripts/render-content-review.mjs` 的 `renderConte
 
 产出一份 `artifact-annotations/1`，走同一个 `feedback` / `draft` / `wake`。这一层**不替代**任何 Skill 已有的审阅页，只补"产物是 HTML、反馈是空间性的"那类任务。
 
+**手上有现成产物时用一条命令**：`node scripts/open-artifact.mjs --entry <产物.html>` —— 把 surface 写在产物旁边、跑校验、给出下一步。哪些面该开、哪些别开，见 [references/annotate.md](references/annotate.md)。
+
 **版本与覆盖**（必读）：产物生成时写 `<meta name="artifact-version">`，每次重新生成换一个值；页面把版本带进 `base.version`，未提交的改动进 `draft`。生产方必须**一次提交当一批**、按 patch 应用、版本不一致时按引文重锚、重新生成前先收未应用的批注。完整规则见 [references/annotate.md](references/annotate.md)。
 
 ## 文件索引
@@ -153,6 +155,7 @@ Proposal 与 By-page 调用 `scripts/render-content-review.mjs` 的 `renderConte
 | 路径 | 用途 |
 |---|---|
 | `contracts/review-surface.schema.json` | `review-surface/2.0.0` 契约（**唯一真相源**；含可选的 `annotate` 开关） |
+| `scripts/open-artifact.mjs` | 给已有 HTML 产物一条命令做出 surface（`annotate: true` + feedback/draft + 校验），产物不用改 |
 | `scripts/validate-surface.mjs` | 唯一校验器：结构 + 路径包含性 + 桥的哈希一致性 |
 | `assets/review-bridge.js` | 桥。**由宿主注入**（页面只留 `{{REVIEW_BRIDGE}}` 注入点），所以不存在副本漂移 |
 | `scripts/lib/review-command.mjs` | 两种宿主共用的受限后端传输；操作语义归后端 |

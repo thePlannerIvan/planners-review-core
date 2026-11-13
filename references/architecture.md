@@ -21,6 +21,7 @@ review-bridge.js ──┘
 | `assets/annotate/annotate.js` | **与内容无关的批注层**（单文件、shadow DOM、无依赖） | 四种采集（改字 / 点选 / 框选 / 选句）、版本读取、草稿自动保存与恢复、`artifact-annotations/1` | 由宿主在 `annotate: true` 时内联；协议见 [annotate.md](annotate.md) | 不认识审阅语义，不写文件，不唤醒（走桥） |
 | `assets/review-bridge.js` | 页面与宿主之间唯一的说话方式 | 两种传输（postMessage / fetch）、文件、资产、命令与唤醒 | `window.ReviewBridge.connect()`；由宿主注入 | 不解释反馈形状或页面版本 |
 | `scripts/lib/review-command.mjs` | 受限后端命令传输 | 固定处理器解析、进程限制、结构化回执 | `runBrowserCommand(surface,payload)`；两种宿主复用 | 不定义 SVG、版本或任务语义，不执行页面提供的程序 |
+| `scripts/open-artifact.mjs` | **一条命令给已有产物做面** | 写 surface（`annotate: true`）、跑校验、给出 `review_open` 调用 | CLI | 不碰产物本身，不替人决定审什么 |
 | `scripts/serve-review.mjs` | 没有 DSH 时的宿主 | serve `dir`、写 feedback、wake 落日志、版本令牌 | CLI | 不唤醒 Agent（没人可唤）—— 打印提示让人回对话 |
 | `scripts/review-host.mjs` | **宿主的生命周期，唯一实现**（Node CLI） | 写/校验 surface、起/复用宿主、判死活与**身份**、停干净、找 node、解析启动自证、越界出声 | `write` / `validate` / `state` / `alive` / `start` / `stop` / `open` ＋ `pid` / `report` / `match` / `constants`；入参是**一个 surface 路径** | **不认识任何 Skill 的业务**：不解释审的是什么，也不需要在替谁干活；文档内容由各家的 `surface_document()` 建 |
 | `scripts/lib/review_host.py` | **只是传输层**（Python） | spawn `review-host.mjs` + 解析 JSON + 映射名字 | 同名函数给 Python 调用方；只有 `node_binary()` 留在这一侧（怎么启动 CLI）；**开浏览器也归实现侧**（`launchBrowser()` / `--no-open`） | **判据一条都没有** —— 僵尸、身份、越界、日志解析全在 Node 侧（上面那一行） |

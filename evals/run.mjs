@@ -513,6 +513,45 @@ console.log('\n产物批注层');
   } finally { try { art.proc.kill(); } catch { /* 已退出 */ } }
 }
 
+// ---------- 2d. 一条命令：给已有产物做 surface ----------
+console.log('\n接产物（open-artifact）');
+{
+  const OPEN = join(ROOT, 'scripts', 'open-artifact.mjs');
+  const dir = join(projectRoot, 'work', 'reviews', 'artifacts');
+  mkdirSync(dir, { recursive: true });
+  const entry = join(dir, '季度复盘.html');
+  writeFileSync(entry, '<!doctype html><html><head><title>季度复盘 · 第二版</title></head><body><h1>结论</h1></body></html>', 'utf8');
+  const run = (...extra) => spawnSync(process.execPath, [OPEN, '--entry', entry, ...extra], { encoding: 'utf8' });
+
+  const first = run('--json');
+  let parsed = null;
+  try { parsed = JSON.parse(first.stdout) } catch { /* below */ }
+  if (first.status === 0 && parsed?.ok === true && parsed.annotate === true) {
+    ok('产物没有注入点也能一条命令做出 surface（annotate 已开）');
+  } else bad(`open-artifact 失败：${first.status} / ${first.stdout} ${first.stderr}`);
+  const written = join(dir, 'review-surface.json');
+  const doc = existsSync(written) ? JSON.parse(readFileSync(written, 'utf8')) : null;
+  if (doc?.annotate === true && doc?.entry === '季度复盘.html' && doc?.draft === 'annotations-draft.json') {
+    ok('surface 写在产物旁边，entry/draft 的基准都对（title 取的是页面自己的 <title>）');
+  } else bad(`surface 内容不对：${JSON.stringify(doc)}`);
+  if (parsed?.title === '季度复盘 · 第二版') ok('title 从 <title> 读，不拿文件名充数');
+  else bad(`title 不对：${JSON.stringify(parsed?.title)}`);
+
+  const again = run('--json');
+  if (again.status !== 0 && again.stderr.includes('--force')) ok('已有 surface 时拒绝覆盖（要覆盖得显式 --force）');
+  else bad(`重复生成没拦住：${again.status} ${again.stderr}`);
+
+  const noDraft = run('--json', '--force', '--no-draft', '--feedback', 'notes.json');
+  let nd = null;
+  try { nd = JSON.parse(noDraft.stdout) } catch { /* below */ }
+  if (noDraft.status === 0 && nd.draft === null) ok('--no-draft 不声明草稿，也不广告 draft 能力');
+  else bad(`--no-draft 不对：${noDraft.status} / ${noDraft.stdout}`);
+
+  const notHtml = spawnSync(process.execPath, [OPEN, '--entry', VALIDATOR], { encoding: 'utf8' });
+  if (notHtml.status === 2 && notHtml.stderr.includes('只能给 HTML')) ok('非 HTML 直接拒绝，不生成半个面');
+  else bad(`非 HTML 没拦住：${notHtml.status} ${notHtml.stderr}`);
+}
+
 // ---------- 3. 桥的线协议（假 DOM，直接驱真实源码）----------
 console.log('\n桥的线协议');
 {

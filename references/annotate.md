@@ -23,6 +23,27 @@
 - 没 DSH：`serve-review.mjs` 起本地宿主，桥自动切 fetch。
 - 双击打开：页面自己带 `<script src="annotate.js">`，提交时给可复制的 JSON。
 
+## 一条命令：给已有产物做面
+
+```bash
+node "<本模组>/scripts/open-artifact.mjs" --entry <artifact.html>
+```
+
+它把 `review-surface.json` 写到产物旁边（`annotate: true`、feedback / draft、`watch` 只盯产物本身），
+跑一遍官方校验器，并给出下一步该调什么。**产物一个字都不用改。**
+
+- 已有 surface 不覆盖，除非 `--force`；注意换 `id` 会顶掉正在审的那个标签。
+- `--no-draft` 不声明草稿（页面就不能刷新恢复了，通常别用）。
+- 默认 `id` 是 `artifact/<文件名 slug>`，需要稳定身份时显式给 `--id <skill>/<面>`。
+
+### 哪些面该开，哪些别开
+
+| 情况 | 开不开 |
+|---|---|
+| 交付物是**独立 HTML**（报告、提案页、落地页、图、SVG 页），人目前在浏览器里看 | **开**：这是它存在的理由 |
+| Skill 已经有**自己的审阅页**（bypage 的逐页稿、ppt-hell 的工作台、video-craft 的镜头面） | **别叠加**：那页有自己的交互与决定语义，再加一条浮栏只是噪音 |
+| Skill 明写"人在这里不做决定、不接缝"（例如 `planners-quali-box` 的 CP0 判据） | **别开**：那是那条 Skill 的裁定，不是这里能推翻的 |
+
 ## 版本与"别被覆盖"（这一节是重点）
 
 ### 为什么会覆盖
@@ -55,6 +76,7 @@
 ### 一个产物只归一个面
 
 两个会话同时开同一份产物，最后写入的一方会赢。约定：**一个产物只有一个拥有它的 surface**；要换人审，先关掉旧的。
+DSH 侧的 `review_open` 会出声：同一份 entry 已经被另一个面打开时，它的 `warnings` 里会指名那一份 —— 不拦，但你知道了。
 宿主的 `wake-log.jsonl` 是 append-only 的接入日志，可用来核对"这次提交进了哪一轮"。
 
 ## 记录形状
