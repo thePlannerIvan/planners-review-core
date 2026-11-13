@@ -2,7 +2,8 @@
 name: planners-review-core
 description: |
   人工审阅的公共接缝：一个 surface 契约 + 一份桥 + 一个"没有插件时"的本地宿主，让任何 Skill 的审阅页面都能挂进 DSH 侧栏，也能在没有 DSH 时照常跑。
-  被所有带审阅环节的 Skill 调用，**不由用户直接触发**。只有一种情况直接用它：你手上已经有一份 `review-surface.json`，想单独校验它，或者想在没有 DSH 的情况下把那个审阅面跑起来。
+  另带一层与内容无关的**产物批注**（surface 里 `"annotate": true`）：人在任意 HTML 产物上直接改字、点选元素、框选区域、选中一句话，产出 `artifact-annotations/1`，产物不用改一行。
+  被所有带审阅环节的 Skill 调用，**不由用户直接触发**。两种直接用法：手上已有 `review-surface.json`，想单独校验或没有 DSH 时把它跑起来；或者交付物本身就是 HTML，用 `scripts/open-artifact.mjs --entry <产物>` 一条命令做出批注面。
 ---
 
 # Planners Review Core
