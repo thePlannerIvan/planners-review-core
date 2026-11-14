@@ -53,7 +53,7 @@ Skill 交出自己的审阅页面与资产目录；宿主负责显示、serve �
 > 于是长出了三种互不兼容的页面写法，而其中两种只在"换一种宿主"时才炸。
 
    （为什么插件侧只能内联：不透明帧里 `/api` 下的 `<script src>` 与 `<img>` 一样会被信任围栏打回 403 —— 见 GOTCHAS 第 2 条。）
-   **不要在页面里放一份 `review-bridge.js` 副本** —— 插件模式下页面地址是一个路由（`/api/review.page?…`）而不是文件路径，相对引用的副本会 404。校验器会挡住缺注入点的入口。
+   **不要在页面里放一份 `review-bridge.js` 副本** —— 插件模式下页面地址是一个路由（`/api/review.page?…`）而不是文件路径，相对引用的副本会 404。校验器只在缺注入点时给一条 `bridge_placeholder_absent` 警告（不拦），老版本宿主仍会 409 —— 要跨宿主稳定就留那一行。
 2. 写 `review-surface.json`（契约见 `contracts/review-surface.schema.json`）。
 3. **校验**：`node "<本模组>/scripts/validate-surface.mjs" "<surface.json>" --text`
 4. 页面里用桥说话：
@@ -77,7 +77,7 @@ Skill 交出自己的审阅页面与资产目录；宿主负责显示、serve �
 | 步 | 做什么 | 为什么 |
 |---|---|---|
 | 1 | 指定一个目录放页面与资产；**入口 HTML 里留 `{{REVIEW_BRIDGE}}` 注入点** | 桥由宿主注入 —— 不透明帧里取不到 `/api` 下的 `<script src>`（GOTCHAS 2/4） |
-| 2 | 写 `review-surface.json` | **宿主只懂那几个字段**（required 7 + optional 5），别的它一概不解释 |
+| 2 | 写 `review-surface.json` | **宿主只懂那几个字段**（required 7 + optional 7；字段以 `contracts/review-surface.schema.json` 为准），别的它一概不解释 |
 | 3 | 页面改用桥：`await review.asset(rel)` 取图、`review.readText(rel)` 取文本、`review.write(payload)` 落反馈、**`review.draft(payload)` 落未提交的草稿**、`review.wake({unit,text})` 唤醒、`review.on('changed')` 接变化戳 | 页面代码只写一份，两种宿主都能跑 |
 | 4 | Workbench Skill 侧读取 `workbench/head.json` 与 canonical 主稿；需要旧项目续接时才读 `feedback` 文件 | **形状由你定，宿主不解释** |
 
@@ -157,7 +157,7 @@ Proposal 与 By-page 调用 `scripts/render-content-review.mjs` 的 `renderConte
 |---|---|
 | `contracts/review-surface.schema.json` | `review-surface/2.0.0` 契约（**唯一真相源**；含可选的 `annotate` 开关） |
 | `scripts/open-artifact.mjs` | 给已有 HTML 产物一条命令做出 surface（`annotate: true` + feedback/draft + 校验），产物不用改 |
-| `scripts/validate-surface.mjs` | 唯一校验器：结构 + 路径包含性 + 桥的哈希一致性 |
+| `scripts/validate-surface.mjs` | 唯一校验器：结构 + 路径包含性 + 注入点形态 |
 | `assets/review-bridge.js` | 桥。**由宿主注入**（页面只留 `{{REVIEW_BRIDGE}}` 注入点），所以不存在副本漂移 |
 | `scripts/lib/review-command.mjs` | 两种宿主共用的受限后端传输；操作语义归后端 |
 | `scripts/serve-review.mjs` | 没有插件时的宿主（serve + write + wake + 版本令牌） |
@@ -168,15 +168,15 @@ Proposal 与 By-page 调用 `scripts/render-content-review.mjs` 的 `renderConte
 | `scripts/review-host.mjs` | **宿主的生命周期，唯一实现**（Node CLI）：`write` / `validate` / `state` / `alive` / `start` / `stop` / `open`（＋ `pid` / `report` / `match` / `constants`）。入参是一个 surface 路径，**不带任何 Skill 的业务**。**为什么是 Node**：缝的四块里三块本来就是 Node，而 **Node 是所有人的底线** —— 校验器、无插件宿主都是 Node CLI，连 Python 技能也要找 node 才能用它们；放 Python 就把纯 `.mjs` 的调用方（bypage）关在门外，而它们不能再写一份 Node 生命周期（那正是要消灭的两份副本漂移） |
 | `scripts/lib/review_host.py` | **只是传输层**：spawn 上面那个 CLI + 解析 JSON + 映射名字。**判据一条都没有**（僵尸、身份、越界、日志解析全在 CLI 侧）；留在这一侧的只有 `node_binary()`（怎么启动 CLI）—— **开浏览器也在 CLI 里**（`launchBrowser()` / `--no-open`），一件事只有一套行为。给 ppt-hell / video-craft 用，让它们不必自己拼命令行 |
 | `evals/test_review_host.mjs` | **Node 侧的牙**：僵尸语义、按内容判身份（两个项目的宿主互不认）、注入形态、启动自证跨行 JSON、越界出声（21 条） |
-| `evals/test_review_host.py` | **Python 侧的牙**：同一批行为走 Python 入口（顺带测传输层，10 条）＋ 镜像名字与 CLI 的核对 |
+| `evals/test_review_host.py` | **Python 侧的牙**：同一批行为走 Python 入口（顺带测传输层；条数以 discover 实际结果为准）＋ 镜像名字与 CLI 的核对 |
 | `evals/review-host-example.mjs` | 最小示例：**纯 Node、不碰 python** 走完 `write → validate → start → alive → stop`（bypage 那类调用方的用法） |
 | `references/architecture.md` | module 表、缝、DSH 侧的接入要求 |
-| `evals/run.mjs` | 回归（JS，**52 条**）：校验器 15 + 宿主 18 + 第二形状 3 + 线协议 5 + 轮询 2 + 桥 9 |
+| `evals/run.mjs` | 回归（JS；条数以脚本实际输出为准，当前 75 条）：校验器 + 宿主 + 第二形状 + 线协议 + 轮询 + 桥 |
 
 **跑测试要跑两条入口，只跑一条就等于没跑**（这里踩过：JS 绿而 Python 那条没跑）：
 
 ```
-node "<本模组>/evals/run.mjs"                                        # JS，52 条
-python3 -m unittest discover -s "<本模组>/evals" -p 'test_*.py'      # Python，9 条（生命周期）
+node "<本模组>/evals/run.mjs"                                        # JS，75 条
+python3 -m unittest discover -s "<本模组>/evals" -p 'test_*.py'      # Python，11 条（生命周期）
 ```
 | `GOTCHAS.md` | 候选经验 |
