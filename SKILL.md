@@ -157,7 +157,8 @@ Proposal 与 By-page 调用 `scripts/render-content-review.mjs` 的 `renderConte
 |---|---|
 | `contracts/review-surface.schema.json` | `review-surface/2.0.0` 契约（**唯一真相源**；含可选的 `annotate` 开关） |
 | `contracts/planners-doc.md` | `planners-doc/1` 文档契约：文档头、层级、七种块、锚点、页为空、图片；样例在 `contracts/examples/` |
-| `contracts/planners-doc-task.md` | `planners-doc-task/1` 块级反馈任务：只带块身份与内容指纹、任务状态机、锁、模型写回 / 待核对 / journal 判据；给模型与 07 消费 |
+| `contracts/planners-doc-task.md` | `planners-doc-task/1` 块级反馈任务：只带块身份与内容指纹、任务状态机、锁、模型写回 / 待核对 / journal 判据；无插件派发的本地收件箱与旧 JSON 只读也在这里 |
+| `scripts/doc-inbox.mjs` | 模型侧收件箱命令：`list` 未处理任务（块身份 + 指纹 + 意见），`take` 把 pending 标成 processing |
 | `scripts/validate-doc.mjs` | `planners-doc/1` 唯一校验器：结构 + 锚点唯一 + 块白名单 + 图片可解析，错误带行号与块身份 |
 | `scripts/open-artifact.mjs` | 给已有 HTML 产物一条命令做出 surface（`annotate: true` + feedback/draft + 校验），产物不用改 |
 | `scripts/validate-surface.mjs` | 唯一校验器：结构 + 路径包含性 + 注入点形态 |
@@ -179,6 +180,7 @@ Proposal 与 By-page 调用 `scripts/render-content-review.mjs` 的 `renderConte
 | `evals/test_doc_workbench.mjs` | 文字工作台回归（18 条）：只改一块、未编辑块逐字不动、补锚点幂等、退化显示、行内序列化；页内 / 跨页移动块、整页重排、拒绝空页空章节、落点算法与目录 / 句柄接线 |
 | `evals/test_doc_feedback.mjs` | 块级反馈与派发回归（6 条）：任务只带块身份与指纹、整页 / 整份范围、锁定期间改别的块、完成后解锁、任务状态机、半句吸成整块 |
 | `evals/test_doc_conflict.mjs` | 待核对与并发回归（5 条）：同块双改只锁该块其余落盘、裁决两个方向、跨块并发按块合并、journal 崩溃恢复、页面裁决入口 |
+| `evals/test_doc_dispatch.mjs` | 无插件派发与旧项目只读回归（5 条）：收件箱落盘 / 读回 / 重复写不重复、pending→processing、有插件与无插件同形、旧 JSON 只读拒绝且磁盘不变、界面状态如实 |
 
 **跑测试要跑两条入口，只跑一条就等于没跑**（这里踩过：JS 绿而 Python 那条没跑）：
 

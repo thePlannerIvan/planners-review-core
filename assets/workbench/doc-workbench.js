@@ -223,15 +223,47 @@ function degradedBlock(block) {
   return node;
 }
 
+/** 旧 JSON 主稿的块：只排版，不给编辑面、不给锚点、不给反馈按钮。 */
+function readonlyBlock(block) {
+  const node = document.createElement('div');
+  node.className = 'doc-block is-readonly';
+  node.dataset.type = block.type;
+  node.setAttribute('data-readonly', '1');
+  const body = document.createElement('div');
+  body.className = 'block-text';
+  body.innerHTML = renderInline(block.inline);
+  node.append(body);
+  if (block.legacy?.page_job) {
+    const job = document.createElement('p');
+    job.className = 'legacy-page-job';
+    job.textContent = block.legacy.page_job;
+    node.append(job);
+  }
+  if (block.legacy?.content_blocks?.length) {
+    const list = document.createElement('ul');
+    list.className = 'legacy-block-list';
+    for (const item of block.legacy.content_blocks) {
+      if (!item.title && !item.requirement) continue;
+      const entry = document.createElement('li');
+      entry.textContent = item.title || item.requirement;
+      if (item.title && item.requirement) entry.title = item.requirement;
+      list.append(entry);
+    }
+    if (list.children.length) node.append(list);
+  }
+  return node;
+}
+
 function renderBlock(block) {
   let node;
-  if (block.degraded) node = degradedBlock(block);
+  if (block.readonly) node = readonlyBlock(block);
+  else if (block.degraded) node = degradedBlock(block);
   else if (block.type === 'image') node = imageBlock(block);
   else if (block.type === 'table') node = tableBlock(block);
   else if (block.type === 'code') node = codeBlock(block);
   else node = textBlock(block);
-  attachBlockFeedback(node, block);
-  blockByAnchor.set(block.anchor, { block, node });
+  if (!block.readonly) attachBlockFeedback(node, block);
+  if (block.anchor) blockByAnchor.set(block.anchor, { block, node });
   return node;
 }
 
@@ -277,12 +309,39 @@ function renderDocument() {
   $('#projectName').textContent = snapshot.project ?? '未命名项目';
   $('#docKind').textContent = snapshot.doc === 'by-page' ? '逐页文案' : '主线';
   document.title = `${snapshot.project ?? '文字工作台'} · ${snapshot.doc === 'by-page' ? '逐页文案' : '主线'}`;
+  renderReadonlyState();
   const broken = snapshot.errors ?? [];
   if (broken.length) {
     const note = $('#structureNotice');
     note.hidden = false;
     note.textContent = broken.slice(0, 3).map((error) => `行 ${error.line ?? '?'}：${error.message}`).join(' · ');
   }
+}
+
+/**
+ * 旧 JSON 主稿的只读状态：顶部一条能读懂的说明，反馈入口收起，正文没有编辑面。
+ * 只读不是「先灰一下」——保存、派发、拖动都由服务端拒绝，界面只是把这件事说清楚。
+ */
+function renderReadonlyState() {
+  const readonly = snapshot?.readonly ?? null;
+  document.body.classList.toggle('is-readonly', Boolean(readonly));
+  const notice = $('#readonlyNotice');
+  if (!readonly) {
+    notice.hidden = true;
+    notice.textContent = '';
+    return;
+  }
+  const legacy = snapshot.legacy ?? {};
+  const contract = legacy.contract_version ? `当前文件：旧契约 ${legacy.contract_version}。` : '';
+  notice.hidden = false;
+  notice.textContent = `${readonly.message}${contract}`;
+  $('#docKind').textContent = '旧项目 · 只读';
+  document.title = `${snapshot.project ?? '旧 JSON 主稿'} · 只读`;
+  const feedback = $('#overallFeedback');
+  feedback.disabled = true;
+  feedback.hidden = true;
+  $('#overallMenu').hidden = true;
+  $('#selectionFeedback').hidden = true;
 }
 
 function currentEditable() {
@@ -403,6 +462,7 @@ function firstTargetNode() {
 
 function openComposer(anchors, { scope = 'blocks', page = null, label = '' } = {}) {
   if (!anchors.length) return;
+  if (snapshot?.readonly) { status('只读 · 旧 JSON 主稿不能派发反馈', true); return; }
   feedbackScope = scope;
   feedbackPage = page;
   setFeedbackTargets(anchors);
@@ -439,6 +499,7 @@ const showFeedbackError = (message) => {
 
 async function submitFeedback() {
   const text = $('#feedbackText').value.trim();
+  if (snapshot?.readonly) { showFeedbackError(snapshot.readonly.message); return; }
   if (!text) { showFeedbackError('先写下要模型改什么。'); return; }
   if (!feedbackTargets.length) { showFeedbackError('没有选中的块；重新选一段再提交。'); return; }
   const payload = { scope: feedbackScope, text };
@@ -460,7 +521,17 @@ async function submitFeedback() {
     }
     closeComposer();
     await syncTasks();
-    status(`已派发 · 将改 ${receipt.task.blocks.length} 块`);
+    // 派发不等于保存，也不等于批准：回执只说「交给谁、原文没动」，页面不把它显示成保存或批准。
+    const count = receipt.task.blocks.length;
+    if (receipt.dispatch?.error) {
+      status(`已建任务 · 派发失败（${receipt.dispatch.error}）· 原文未改`, true);
+    } else if (receipt.dispatch?.channel === 'inbox') {
+      status(`已派发 ${count} 块 · 已写入收件箱 · 原文未改，不算批准`);
+    } else if (receipt.dispatch?.channel === 'wake') {
+      status(`已派发 ${count} 块 · 已唤醒模型 · 原文未改，不算批准`);
+    } else {
+      status(`已派发 ${count} 块 · 原文未改，不算批准`);
+    }
   } catch (error) {
     showFeedbackError(error.message);
   } finally {
@@ -488,6 +559,7 @@ function updateSelectionTargets() {
   if (!$('#feedbackComposer').hidden) return; // 写反馈时不跟着选区跑，目标已定
   const button = $('#selectionFeedback');
   if (!button) return;
+  if (snapshot?.readonly) { button.hidden = true; setFeedbackTargets([]); return; }
   const selection = getSelection();
   if (!selection || !selection.rangeCount || selection.isCollapsed || inComposer(selection.anchorNode)) {
     button.hidden = true;
@@ -733,6 +805,10 @@ function enqueueSave(node) {
 async function persist(node) {
   const entry = blockByAnchor.get(node.dataset.anchor);
   if (!entry || !node.__compose) return;
+  if (snapshot?.readonly) {
+    status(`保存失败 · ${snapshot.readonly.message}`, true);
+    return;
+  }
   if (lockedAnchors.has(node.dataset.anchor)) {
     status('保存失败 · 模型正在改这一段', true);
     return;
@@ -804,6 +880,11 @@ async function boot() {
     if (!response.ok) throw Error(doc.error ?? `HTTP ${response.status}`);
     snapshot = doc;
     renderAll();
+    if (snapshot.readonly) {
+      // 只读挂载不轮询任务、不接编辑：它只是一份能看的旧主稿。
+      status('只读 · 旧 JSON 主稿（保存会被拒绝）');
+      return;
+    }
     await syncTasks();
     pollTasks();
     const broken = snapshot.errors ?? [];

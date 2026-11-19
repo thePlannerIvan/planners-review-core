@@ -130,6 +130,7 @@
   }
 
   function decorate(root, snapshot) {
+    if (snapshot.readonly) return; // 旧 JSON 主稿只读：目录照常，正文不给拖柄，也不接受重排
     const byAnchor = new Map(snapshot.blocks.map((block) => [block.anchor, block]));
     for (const node of root.querySelectorAll('.doc-block[data-anchor]')) {
       const entry = byAnchor.get(node.dataset.anchor);

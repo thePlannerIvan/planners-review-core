@@ -33,6 +33,21 @@ body { min-height: 100vh; }
   font-size: 12px; color: var(--danger); background: #fff6f5; border-bottom: 1px solid var(--line);
 }
 
+/* 旧 JSON 主稿：顶部说清楚为什么只读，正文没有编辑面、没有反馈与拖柄。 */
+.readonly-notice {
+  margin: 0; padding: 9px clamp(20px, 6vw, 96px);
+  font-size: 12px; line-height: 1.7; color: #6b4e00;
+  background: #fff8e1; border-bottom: 1px solid #ecd9a0;
+}
+body.is-readonly .doc-block:hover { background: transparent; }
+.doc-block.is-readonly { cursor: default; }
+.doc-block.is-readonly .block-text { color: var(--ink); }
+.legacy-page-job { flex-basis: 100%; margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+.legacy-block-list { flex-basis: 100%; margin: 4px 0 8px 18px; padding: 0; color: var(--muted); font-size: 13px; }
+body.is-readonly .block-feedback,
+body.is-readonly .block-handle,
+body.is-readonly .page-handle { display: none; }
+
 .workbench {
   display: flex; align-items: flex-start; gap: 8px;
   max-width: 1080px; margin: 0 auto;
