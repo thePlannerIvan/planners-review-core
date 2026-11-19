@@ -15,10 +15,16 @@
     <span class="save-state" id="saveState" role="status" aria-live="polite">正在打开…</span>
   </header>
   <p class="structure-notice" id="structureNotice" hidden></p>
-  <main class="doc" id="blocks" aria-label="文档正文"></main>
+  <div class="workbench">
+    <aside class="toc-panel" aria-label="目录">
+      <nav class="toc" id="toc"></nav>
+    </aside>
+    <main class="doc" id="blocks" aria-label="文档正文"></main>
+  </div>
   <div class="inline-toolbar" id="inlineToolbar" role="toolbar" aria-label="行内格式" hidden></div>
   <script src="/vendor/marked.js"></script>
   <script src="/doc-inline.js"></script>
+  <script src="/doc-drag.js"></script>
   <script src="/doc-workbench.js"></script>
 </body>
 </html>

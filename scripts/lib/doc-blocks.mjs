@@ -280,7 +280,7 @@ export function parseDocument(raw, options = {}) {
     }
     if (level === 2) {
       if (state.title === null) pushError('heading_order', '## 章节必须写在 # 文档标题之后', { line: lineNo });
-      state.chapter = { title, line: lineNo, pages: [] };
+      state.chapter = { title, line: lineNo, index: state.chapters.length + 1, pages: [] };
       state.chapters.push(state.chapter);
       state.page = null;
       return;
@@ -770,6 +770,197 @@ export function applyBlockContent(raw, anchor, content, options = {}) {
   const written = after.blocks.find((item) => item.anchor === anchor);
   if (!written || written.raw !== normalized) fail('block_structure', '写入后无法按同一块读回，已拒绝');
   return { raw: bom + next, block: written };
+}
+
+// ───────────── 重排：只挪位置，不换内容 ─────────────
+//
+// 编辑面（applyBlockContent）刻意不允许块类型与顺序变化。拖动、页重排是另一件事，
+// 所以走这里的两个显式操作：一次只挪一个块或一页，其余行原样保留，接缝处只补/并空行。
+// 两个操作都按锚点定位，拒绝任何会让页或章节变空的移动，并重解析验证结果。
+
+const reorderFail = (code, message) => { throw Object.assign(Error(message), { code }); };
+const isBlankLine = (line) => (line ?? '').trim() === '';
+
+/** 块占的最后一行（1 基）：独立块的锚点单独成行，写在元素下一行，也算块的一部分。 */
+function blockEndLine(block) {
+  return Math.max(block.endLine ?? block.startLine, block.anchorLine ?? block.endLine ?? block.startLine);
+}
+
+/** 页的行区间（0 基、半开）：`###` 标题行到最后一个块的最后一行（含独立锚点行）。 */
+function pageLineRange(page) {
+  let end = page.line;
+  for (const block of page.blocks) end = Math.max(end, blockEndLine(block));
+  return { start: page.line - 1, end };
+}
+
+/** 块的行区间（0 基、半开）；独立块的锚点行也算在块里。 */
+function blockLineRange(block) {
+  return { start: block.startLine - 1, end: blockEndLine(block) };
+}
+
+/**
+ * 把 [cutStart, cutEnd) 这几行剪下来，插到「原文第 gap 行之前」。
+ * 除了这段的位置，其他行一个字都不动；只在接缝处补一个空行或把两个空行并成一个。
+ */
+function spliceLines(lines, cutStart, cutEnd, gap) {
+  if (gap > cutStart && gap < cutEnd) {
+    reorderFail('reorder_target', '落点在被移动的那一段里，没有意义');
+  }
+  const chunk = lines.slice(cutStart, cutEnd);
+  const rest = lines.slice(0, cutStart).concat(lines.slice(cutEnd));
+  let at = gap >= cutEnd ? gap - (cutEnd - cutStart) : gap;
+  // 切口两侧原本各有一个空行，剪掉中间那块后会剩下两个；并成一个。
+  if (cutStart > 0 && cutStart < rest.length && isBlankLine(rest[cutStart - 1]) && isBlankLine(rest[cutStart])) {
+    rest.splice(cutStart, 1);
+    if (at > cutStart) at -= 1;
+  }
+  at = Math.max(0, Math.min(at, rest.length));
+  const insert = [];
+  if (at > 0 && !isBlankLine(rest[at - 1])) insert.push('');
+  insert.push(...chunk);
+  if (at < rest.length && !isBlankLine(rest[at])) insert.push('');
+  rest.splice(at, 0, ...insert);
+  return rest;
+}
+
+/** 按 `{chapter, index}`（都从 1 数）定位一页；页的「编号」由顺序决定，不写进正文。 */
+function locatePage(parsed, ref) {
+  if (!ref || typeof ref !== 'object') reorderFail('reorder_target', '目标页必须是 {chapter, index}');
+  const chapterIndex = Number(ref.chapter);
+  const pageIndex = Number(ref.index);
+  const chapter = Number.isInteger(chapterIndex) ? parsed.chapters[chapterIndex - 1] : null;
+  const page = Number.isInteger(pageIndex) ? chapter?.pages[pageIndex - 1] : null;
+  if (!page) reorderFail('page_missing', `找不到第 ${chapterIndex} 章第 ${pageIndex} 页`);
+  return page;
+}
+
+/** 把行数组拼回原文（保留 BOM 与 EOL 风格）。 */
+function joinDocument(raw, lines) {
+  const text = String(raw ?? '').replace(/^\uFEFF/, '');
+  const bom = String(raw ?? '').startsWith('\uFEFF') ? '\uFEFF' : '';
+  const eol = text.includes('\r\n') ? '\r\n' : '\n';
+  return bom + lines.join(eol);
+}
+
+const pageSignature = (page) => page.blocks[0]?.anchor ?? `#${page.title}`;
+
+/**
+ * 重排之后必须仍然是一份「同样的文档，只是顺序变了」：块的身份与 raw 一个不少，
+ * 页不再有空页，锚点不再重复。任何一条不成立就整体拒绝，不留半截写入。
+ */
+function verifyReorder(beforeParsed, raw, label) {
+  const after = parseDocument(raw, { checkImages: false });
+  if (after.blocks.length !== beforeParsed.blocks.length) {
+    reorderFail('reorder_verify', `${label}后块数量变了（${beforeParsed.blocks.length} → ${after.blocks.length}）`);
+  }
+  const afterByAnchor = new Map(after.blocks.filter((block) => block.anchor).map((block) => [block.anchor, block]));
+  const beforeByAnchor = new Map(beforeParsed.blocks.filter((block) => block.anchor).map((block) => [block.anchor, block]));
+  for (const [anchor, block] of beforeByAnchor) {
+    const other = afterByAnchor.get(anchor);
+    if (!other) reorderFail('reorder_verify', `重排后块 ${anchor} 不见了`);
+    if (other.raw !== block.raw) reorderFail('reorder_verify', `未参与重排的块 ${anchor} 的 raw 变了`);
+  }
+  for (const code of ['anchor_duplicate', 'anchor_orphan', 'page_empty', 'block_outside_page', 'block_nested']) {
+    const count = (document) => document.errors.filter((error) => error.code === code).length;
+    if (count(after) > count(beforeParsed)) reorderFail('reorder_verify', `重排引出了结构错误 ${code}`);
+  }
+  return after;
+}
+
+/**
+ * 移动一个块：剪下它的行，插到目标页的「某块之前」（`before: null` 表示该页末尾）。
+ *
+ * @param {string} raw 原文
+ * @param {{anchor:string, to:{chapter:number,index:number,before:string|null}}} move
+ * @returns {{raw:string, changed:boolean, moved:string, page:string}}
+ */
+export function moveBlock(raw, { anchor, to } = {}) {
+  if (typeof anchor !== 'string' || !anchor) reorderFail('reorder_anchor', '缺少要移动的块锚点');
+  const parsed = parseDocument(raw, { checkImages: false });
+  const block = parsed.blocks.find((item) => item.anchor === anchor);
+  if (!block) reorderFail('block_missing', `找不到锚点 ${anchor}；文档可能已被外部修改`);
+  if (!block.page) reorderFail('block_outside_page', '这一块不在任何页里，不能重排');
+  const target = locatePage(parsed, to);
+  let gap;
+  if (to.before === null || to.before === undefined) {
+    gap = pageLineRange(target).end;
+  } else {
+    const before = target.blocks.find((item) => item.anchor === to.before);
+    if (!before) reorderFail('reorder_target', `目标页里没有块 ${to.before}`);
+    gap = before.startLine - 1;
+  }
+  if (target === block.page) {
+    const self = target.blocks.indexOf(block);
+    const beforeIndex = to.before == null
+      ? target.blocks.length
+      : target.blocks.findIndex((item) => item.anchor === to.before);
+    // 落回原位（插在自己前面 / 自己后面）不是错误，也不是一次修改。
+    if (beforeIndex === self || beforeIndex === self + 1) {
+      return { raw: String(raw), changed: false, moved: anchor, page: `${target.chapter.index}-${target.index}` };
+    }
+  }
+  if (block.page.blocks.length === 1) {
+    reorderFail('page_would_be_empty', `页「${block.page.title}」只有这一块；移走会让页变空`);
+  }
+  const lines = spliceLines(String(raw).replace(/^\uFEFF/, '').split(/\r?\n/), blockLineRange(block).start, blockLineRange(block).end, gap);
+  const next = joinDocument(raw, lines);
+  const after = verifyReorder(parsed, next, '移动块');
+  const moved = after.blocks.find((item) => item.anchor === anchor);
+  // 块移动不改页序，所以「目标页」的章节号 / 页号在重排前后是同一个位置。
+  if (!moved?.page || moved.page.chapter?.index !== target.chapter.index || moved.page.index !== target.index) {
+    reorderFail('reorder_verify', '移动后的块没有落在目标页里');
+  }
+  return {
+    raw: next,
+    changed: true,
+    moved: anchor,
+    page: `${moved.page.chapter.index}-${moved.page.index}`,
+  };
+}
+
+/**
+ * 移动一整页（`###` 标题连同其下所有块）到另一页之前 / 之后。
+ * 页所属章节由落点决定：落在哪一章的页之间，就归哪一章。
+ *
+ * @param {string} raw 原文
+ * @param {{page:{chapter:number,index:number}, to:{chapter:number,index:number,position:'before'|'after'}}} move
+ */
+export function movePage(raw, { page, to } = {}) {
+  const parsed = parseDocument(raw, { checkImages: false });
+  const sourcePage = locatePage(parsed, page);
+  const targetPage = locatePage(parsed, to);
+  if (to.position !== 'before' && to.position !== 'after') {
+    reorderFail('reorder_position', '页的落点只接受 before / after');
+  }
+  if (!sourcePage.chapter) reorderFail('page_without_chapter', '这一页不在任何章节里，不能整页移动');
+  if (sourcePage.chapter !== targetPage.chapter && sourcePage.chapter.pages.length === 1) {
+    reorderFail('chapter_would_be_empty', `章节「${sourcePage.chapter.title}」只有这一页；移走会让章节变空`);
+  }
+  const from = parsed.pages.indexOf(sourcePage);
+  const targetIndex = parsed.pages.indexOf(targetPage) + (to.position === 'after' ? 1 : 0);
+  const insertAt = targetIndex > from ? targetIndex - 1 : targetIndex;
+  // 顺序没变、章节也没变才是空操作。跨过 ## 章节标题落在同一个文档位置时，
+  // 页序不变而归属变了——那是一次真实的移动（把页挪进相邻章节）。
+  if (insertAt === from && sourcePage.chapter === targetPage.chapter) {
+    return { raw: String(raw), changed: false, page: pageSignature(sourcePage) };
+  }
+  const cut = pageLineRange(sourcePage);
+  const gap = to.position === 'before' ? targetPage.line - 1 : pageLineRange(targetPage).end;
+  const lines = spliceLines(String(raw).replace(/^\uFEFF/, '').split(/\r?\n/), cut.start, cut.end, gap);
+  const next = joinDocument(raw, lines);
+  const after = verifyReorder(parsed, next, '移动页');
+  if (after.pages.length !== parsed.pages.length) reorderFail('reorder_verify', '移动页后页数量变了');
+  const expected = parsed.pages.map(pageSignature);
+  const [movedSignature] = expected.splice(from, 1);
+  expected.splice(insertAt, 0, movedSignature);
+  if (after.pages.map(pageSignature).join('\n') !== expected.join('\n')) {
+    reorderFail('reorder_verify', '移动页后的页序与落点不一致');
+  }
+  const movedPage = after.pages.find((item) => pageSignature(item) === movedSignature);
+  if (!movedPage || movedPage.chapter?.index !== targetPage.chapter.index) {
+    reorderFail('reorder_verify', '移动后的页没有归到目标章节');
+  }
+  return { raw: next, changed: true, page: movedSignature };
 }
 
 /** 读取块的编辑面：前缀（列表符号 / 引用符号 / 标题井号）与纯行内内容。 */

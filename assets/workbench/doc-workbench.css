@@ -33,11 +33,43 @@ body { min-height: 100vh; }
   font-size: 12px; color: var(--danger); background: #fff6f5; border-bottom: 1px solid var(--line);
 }
 
+.workbench {
+  display: flex; align-items: flex-start; gap: 8px;
+  max-width: 1080px; margin: 0 auto;
+}
+
+/* 左侧目录：章节 → 页，两级；页号来自当前顺序，不写进正文。 */
+.toc-panel {
+  position: sticky; top: 53px; flex: none;
+  width: 232px; max-height: calc(100vh - 61px); overflow-y: auto;
+  padding: 28px 8px 40px 20px;
+}
+.toc { display: flex; flex-direction: column; gap: 1px; font-size: 13px; }
+.toc-chapter {
+  margin: 14px 0 3px; padding: 0 8px;
+  font-size: 11px; letter-spacing: .08em; color: var(--muted);
+}
+.toc-chapter:first-child { margin-top: 0; }
+.toc-page {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 5px 8px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--ink);
+  font: inherit; text-align: left; cursor: pointer;
+}
+.toc-page:hover, .toc-page:focus-visible { background: var(--hover); outline: none; }
+.toc-page.is-current { background: #e9efe9; font-weight: 600; }
+.toc-page.is-current .toc-number { color: var(--accent); }
+.toc-number { flex: none; min-width: 12px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.toc-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toc-empty { margin: 0; padding: 0 8px; color: var(--muted); font-size: 12px; }
+
 .doc {
+  flex: 1; min-width: 0;
   max-width: 760px;
   margin: 0 auto;
   padding: 40px clamp(20px, 6vw, 96px) 160px;
 }
+.workbench .doc { margin: 0; padding: 36px clamp(16px, 4vw, 48px) 160px; }
 
 .page-divider { margin: 44px 0 6px; }
 .page-divider:first-child { margin-top: 0; }
@@ -99,4 +131,53 @@ body { min-height: 100vh; }
 @media (max-width: 640px) {
   .doc { padding-top: 24px; }
   .page-title { font-size: 22px; }
+}
+
+/* 六点句柄：块前缀与页标题各一个，悬停才显形，不挤占正文宽度。 */
+.block-handle, .page-handle {
+  position: absolute; display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 22px; padding: 0;
+  border: 0; border-radius: 4px; background: transparent; color: var(--muted);
+  opacity: 0; cursor: grab;
+  transition: opacity .12s ease;
+}
+.block-handle { left: -18px; top: 4px; }
+.page-handle { left: -22px; top: 8px; }
+.doc-block:hover > .block-handle, .block-handle:focus-visible,
+.page-divider:hover > .page-handle, .page-handle:focus-visible { opacity: 1; }
+.block-handle svg, .page-handle svg { fill: currentColor; }
+.block-handle:active, .page-handle:active { cursor: grabbing; }
+.page-divider { position: relative; }
+.page-title { cursor: grab; }
+
+.doc-block.is-dragging, .page-divider.is-dragging { opacity: .45; }
+body.is-reordering { cursor: grabbing; user-select: none; }
+
+/* 落点提示：一条线 + 一句「插到哪两块之间」。 */
+.drop-line {
+  position: absolute; z-index: 60; height: 2px;
+  background: var(--accent); pointer-events: none;
+  transform: translateY(-1px);
+}
+.drop-line[hidden] { display: none; }
+.drop-line::before {
+  content: ''; position: absolute; left: -3px; top: -2px;
+  width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
+}
+.drop-line.is-page { height: 3px; background: #b45309; }
+.drop-line.is-page::before { background: #b45309; }
+.drop-line .drop-label {
+  position: absolute; left: 0; top: -24px;
+  padding: 2px 8px; border-radius: 5px;
+  background: var(--accent); color: #fff;
+  font-size: 11px; line-height: 1.5; white-space: nowrap;
+}
+.drop-line.is-page .drop-label { background: #b45309; }
+
+@media (max-width: 900px) {
+  .toc-panel { width: 190px; }
+}
+@media (max-width: 720px) {
+  .toc-panel { display: none; }
+  .workbench .doc { padding-top: 24px; }
 }

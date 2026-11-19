@@ -44,9 +44,11 @@ const assetUrl = (path) => `/asset?path=${encodeURIComponent(path)}`;
 function pageHeading(block) {
   const node = document.createElement('div');
   node.className = 'page-divider';
+  node.dataset.pageKey = block.page.key ?? '';
   const chapter = document.createElement('span');
   chapter.className = 'page-chapter';
-  chapter.textContent = block.page.chapter ?? '';
+  // 页号由顺序决定、不写进正文，所以这里按当前位置算出「第 N 页」。
+  chapter.textContent = [block.page.chapter, `第 ${block.page.number ?? 1} 页`].filter(Boolean).join(' · ');
   const title = document.createElement('h2');
   title.className = 'page-title';
   title.textContent = block.page.title ?? '';
@@ -222,6 +224,7 @@ function renderBlock(block) {
 
 function renderDocument() {
   const root = $('#blocks');
+  blockByAnchor.clear();
   root.replaceChildren();
   let pageKey = null;
   for (const block of snapshot.blocks) {
@@ -232,6 +235,13 @@ function renderDocument() {
     }
     root.append(renderBlock(block));
   }
+  DocDrag.render(root, {
+    snapshot: () => snapshot,
+    apply: (next) => { snapshot = next; renderAll(); },
+    flush: flushSaves,
+    save: (node) => enqueueSave(node),
+    status,
+  });
   $('#projectName').textContent = snapshot.project ?? '未命名项目';
   $('#docKind').textContent = snapshot.doc === 'by-page' ? '逐页文案' : '主线';
   document.title = `${snapshot.project ?? '文字工作台'} · ${snapshot.doc === 'by-page' ? '逐页文案' : '主线'}`;
@@ -384,6 +394,25 @@ async function persist(node) {
   status('已自动保存');
 }
 
+/** 先把还没落盘的编辑排进队列，再等队列跑完；重排前必须先做这一步。 */
+async function flushSaves() {
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  for (const node of $$('.doc-block')) {
+    if (node.__dirty) enqueueSave(node);
+  }
+  await saveQueue;
+}
+
+/** 重画正文、目录与句柄：块内编辑的接线每次重画后都要重来。 */
+function renderAll() {
+  renderDocument();
+  for (const node of $$('.doc-block')) {
+    const entry = blockByAnchor.get(node.dataset.anchor);
+    if (entry && node.querySelector('[contenteditable="true"]')) wireEditable(node, entry.block);
+  }
+}
+
 async function boot() {
   wireToolbar();
   try {
@@ -391,11 +420,7 @@ async function boot() {
     const doc = await response.json();
     if (!response.ok) throw Error(doc.error ?? `HTTP ${response.status}`);
     snapshot = doc;
-    renderDocument();
-    for (const node of $$('.doc-block')) {
-      const entry = blockByAnchor.get(node.dataset.anchor);
-      if (entry && node.querySelector('[contenteditable="true"]')) wireEditable(node, entry.block);
-    }
+    renderAll();
     const broken = snapshot.errors ?? [];
     status(broken.length ? `已载入 · ${broken.length} 处结构问题按原文显示` : '已载入', broken.length > 0);
   } catch (error) {

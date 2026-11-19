@@ -8,16 +8,20 @@
  * 命令面（页面与 eval 共用同一个入口）：
  *   GET  /api/doc             打开文档（补齐缺失锚点、重建重复锚点）并返回块
  *   POST /api/block           改一块：{anchor, content, base_sha256}
+ *   POST /api/reorder         重排（一次一个动作），返回重排后的整份快照：
+ *                             {op:'move-block', anchor, to:{chapter,index,before}, base_sha256}
+ *                             {op:'move-page', page:{chapter,index},
+ *                              to:{chapter,index,position:'before'|'after'}, base_sha256}
  *
  * 块怎么切、锚点怎么补只有一份实现：`scripts/lib/doc-blocks.mjs`，
- * 与 `scripts/validate-doc.mjs` 共用。
+ * 与 `scripts/validate-doc.mjs` 共用。改内容与改顺序是两个显式操作，互不放宽。
  */
 import { closeSync, existsSync, fsyncSync, openSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
-import { applyBlockContent, assessBlock, blockPrefix, parseDocument, repairAnchors, tableModel } from './lib/doc-blocks.mjs';
+import { applyBlockContent, assessBlock, blockPrefix, moveBlock, movePage, parseDocument, repairAnchors, tableModel } from './lib/doc-blocks.mjs';
 import { sha256 } from './content-review-contract.mjs';
 
 const HERE = fileURLToPath(new URL('..', import.meta.url));
@@ -60,7 +64,9 @@ function viewBlock(block) {
     type: block.type,
     index: block.index,
     page: {
+      key: block.page ? `${block.page.chapter?.index ?? 0}-${block.page.index}` : null,
       chapter: block.page?.chapter?.title ?? null,
+      chapterIndex: block.page?.chapter?.index ?? null,
       number: block.page?.index ?? null,
       title: block.page?.title ?? null,
     },
@@ -77,6 +83,18 @@ function viewBlock(block) {
     degraded: verdict.degraded,
     reason: verdict.reason,
     ...(block.type === 'table' ? { table: tableModel(block) } : {}),
+  };
+}
+
+/** 目录用的页视图：页没有锚点，身份是「章节号 + 页号」，编号由顺序决定。 */
+function viewPage(page) {
+  return {
+    key: `${page.chapter?.index ?? 0}-${page.index}`,
+    chapter: page.chapter?.title ?? null,
+    chapterIndex: page.chapter?.index ?? null,
+    index: page.index,
+    title: page.title,
+    anchor: page.blocks[0]?.anchor ?? null,
   };
 }
 
@@ -113,6 +131,7 @@ function snapshotOf(docPath) {
     doc: parsed.front.doc ?? null,
     project: parsed.front.project ?? null,
     sha256: sha256(raw),
+    pages: parsed.pages.map(viewPage),
     blocks: parsed.blocks.map(viewBlock),
     repairs,
     errors: parsed.errors.map(({ code, message, line, block }) => ({ code, message, line, block })),
@@ -133,6 +152,28 @@ function saveBlock(docPath, payload) {
   const result = applyBlockContent(document.raw, anchor, content);
   atomicWrite(docPath, result.raw);
   return { ok: true, sha256: sha256(result.raw), block: viewBlock(result.block) };
+}
+
+/**
+ * 保存一次重排：只接受显式的 move-block / move-page，一次一个动作。
+ * 与改内容一样按 base_sha256 拒绝过期写入；成功后回整份快照，页面据此重画目录与正文。
+ */
+function reorderDocument(docPath, payload) {
+  if (!payload || typeof payload !== 'object') fail('reorder_request', '请求体必须是 JSON 对象');
+  const { op, base_sha256: baseSha } = payload;
+  if (op !== 'move-block' && op !== 'move-page') {
+    fail('reorder_op', '重排只接受 move-block（移块）或 move-page（移页）');
+  }
+  const document = readDocument(docPath);
+  if (typeof baseSha !== 'string' || baseSha !== sha256(document.raw)) {
+    fail('stale_document', '文档已在别处被修改；请刷新工作台后再拖动');
+  }
+  persistRepairs(docPath, document); // 基线对得上才把这次打开补的锚点落盘
+  const result = op === 'move-page'
+    ? movePage(document.raw, { page: payload.page, to: payload.to })
+    : moveBlock(document.raw, { anchor: payload.anchor, to: payload.to });
+  if (result.changed) atomicWrite(docPath, result.raw);
+  return { ok: true, changed: result.changed, ...snapshotOf(docPath) };
 }
 
 function readBody(request, limit = 2 * 1024 * 1024) {
@@ -187,8 +228,10 @@ export async function startDocWorkbench({ docPath, port = 0, host = '127.0.0.1' 
         if (request.method !== 'GET') return json(response, 405, { ok: false, code: 'method', error: '用 GET 打开文档' });
         return json(response, 200, snapshotOf(file));
       }
-      if (url.pathname === '/api/block') {
-        if (request.method !== 'POST') return json(response, 405, { ok: false, code: 'method', error: '用 POST 保存块' });
+      if (url.pathname === '/api/block' || url.pathname === '/api/reorder') {
+        const reorder = url.pathname === '/api/reorder';
+        const noun = reorder ? '重排' : '保存块';
+        if (request.method !== 'POST') return json(response, 405, { ok: false, code: 'method', error: `用 POST ${noun}` });
         // 只接受工作台页面自己的同源 JSON 请求：别的网页不能借浏览器改本地文档。
         const allowedOrigin = `http://${host}:${server.address().port}`;
         if (request.headers.host !== `${host}:${server.address().port}`
@@ -199,12 +242,13 @@ export async function startDocWorkbench({ docPath, port = 0, host = '127.0.0.1' 
           return json(response, 415, { ok: false, code: 'block_content_type', error: '保存请求必须是 application/json' });
         }
         const payload = JSON.parse((await readBody(request)) || '{}');
-        return json(response, 200, saveBlock(file, payload));
+        return json(response, 200, reorder ? reorderDocument(file, payload) : saveBlock(file, payload));
       }
       if (url.pathname === '/' || url.pathname === '/index.html') {
         return serveFile(response, join(ASSETS, 'doc-workbench.html'));
       }
-      if (url.pathname === '/doc-workbench.js' || url.pathname === '/doc-inline.js' || url.pathname === '/doc-workbench.css') {
+      if (url.pathname === '/doc-workbench.js' || url.pathname === '/doc-inline.js'
+        || url.pathname === '/doc-drag.js' || url.pathname === '/doc-workbench.css') {
         return serveFile(response, join(ASSETS, url.pathname.slice(1)));
       }
       if (url.pathname === '/vendor/marked.js') {
@@ -217,8 +261,9 @@ export async function startDocWorkbench({ docPath, port = 0, host = '127.0.0.1' 
       }
       json(response, 404, { ok: false, code: 'not_found', error: '没有这个入口' });
     } catch (error) {
-      const status = error?.code === 'block_request' ? 400 : 409;
-      json(response, status, { ok: false, code: error?.code ?? 'workbench', error: error?.message ?? String(error) });
+      const code = error?.code ?? 'workbench';
+      const status = /_request$|_op$/.test(code) ? 400 : 409;
+      json(response, status, { ok: false, code, error: error?.message ?? String(error) });
     }
   });
 
