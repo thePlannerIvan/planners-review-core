@@ -185,11 +185,18 @@ Proposal 与 By-page 调用 `scripts/render-content-review.mjs` 的 `renderConte
 | `evals/test_doc_assets.mjs` | 图块与资产回归（10 条）：位图 / SVG 加载与脚本隔离、未能加载文案、放大只读；清单派生 / 新增登记 / 换图留上一版；锁定图块拒绝替换；清单漂移四类；两份样例清单 |
 | `evals/test_doc_conflict.mjs` | 待核对与并发回归（5 条）：同块双改只锁该块其余落盘、裁决两个方向、跨块并发按块合并、journal 崩溃恢复、页面裁决入口 |
 | `evals/test_doc_dispatch.mjs` | 无插件派发与旧项目只读回归（5 条）：收件箱落盘 / 读回 / 重复写不重复、pending→processing、有插件与无插件同形、旧 JSON 只读拒绝且磁盘不变、界面状态如实 |
+| `evals/acceptance/run.mjs` | 验收（票 10）：十份真实语料往返零字节差异、块内中文输入 / 撤销 / 跨块选区、同块双改复跑两遍；生成 `REPORT.md` 与 `records/*.json`。需要本机 Playwright / Chromium，**不并进日常回归** |
 
 **跑测试要跑两条入口，只跑一条就等于没跑**（这里踩过：JS 绿而 Python 那条没跑）：
 
 ```
 node "<本模组>/evals/run.mjs"                                        # JS，75 条
 python3 -m unittest discover -s "<本模组>/evals" -p 'test_*.py'      # Python，11 条（生命周期）
+```
+
+验收另有一条独立入口，不该并进上面两条（更慢，且中文输入需要 Playwright）：
+
+```
+node "<本模组>/evals/acceptance/run.mjs"                             # 十份真实语料 + 中文输入 + 冲突演练
 ```
 | `GOTCHAS.md` | 候选经验 |

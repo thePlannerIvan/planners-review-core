@@ -1,0 +1,2691 @@
+{
+  "contract": "acceptance-record/1",
+  "ticket": "10 实测与验收",
+  "spec": "07-SkillLab/workbench-redesign/SPEC.md 第 12 节",
+  "generated_at": "2026-11-19T14:44:53.328Z",
+  "generated_at_local": "2026年11月19日星期四 22:44:53",
+  "git": {
+    "head": "aa867f2f28da1edf98300abb40b04525db4d2ace",
+    "branch": "ticket/10-acceptance",
+    "dirty": true
+  },
+  "environment": {
+    "node": "v22.22.2",
+    "platform": "darwin arm64",
+    "browser": "Playwright（全局安装）/ Chromium 147.0.7727.15"
+  },
+  "corpus": {
+    "documents": [
+      {
+        "id": "01-needscope",
+        "file": "01-needscope.md",
+        "source": {
+          "path": "01-projects/美津浓项目整理版/美津浓_NeedScope_报告.md",
+          "scope": "project",
+          "sha256": "1a62c35e93ce349552c216a2504c196e810c3a84a611890b8c4bf5d21a48fc65",
+          "bytes": 10783,
+          "lines": 189
+        },
+        "handling": "structural-adaptation",
+        "transformations": {
+          "hr": 4,
+          "headings": 19,
+          "nestedLists": 5,
+          "htmlEscaped": 0,
+          "insertedPages": 2
+        },
+        "output": {
+          "sha256": "b375d530583307cccc7f428fb5e2719954c300fdaf4ee6c898159b2ce41fb0ad",
+          "bytes": 10860,
+          "chapters": 5,
+          "pages": 15,
+          "blocks": 43,
+          "block_types": {
+            "paragraph": 9,
+            "code": 2,
+            "table": 4,
+            "list": 26,
+            "quote": 2
+          },
+          "tables": 4,
+          "images": 0,
+          "quotes": 2,
+          "code": 2,
+          "headings": 0,
+          "lists": 26
+        }
+      },
+      {
+        "id": "02-gwtb",
+        "file": "02-gwtb.md",
+        "source": {
+          "path": "01-projects/美津浓项目整理版/美津浓_GWTB_新Skill报告.md",
+          "scope": "project",
+          "sha256": "feb6d8e154fd6096186135a17a17dab457d35df8d8daa60831130fb6a7d4debc",
+          "bytes": 9941,
+          "lines": 209
+        },
+        "handling": "structural-adaptation",
+        "transformations": {
+          "hr": 6,
+          "headings": 23,
+          "nestedLists": 0,
+          "htmlEscaped": 0,
+          "insertedPages": 3
+        },
+        "output": {
+          "sha256": "a38b8a2a10740f0955b8f9d903c670b111389959462b28e489a5f2893c597b5f",
+          "bytes": 10025,
+          "chapters": 6,
+          "pages": 16,
+          "blocks": 52,
+          "block_types": {
+            "quote": 3,
+            "paragraph": 15,
+            "table": 6,
+            "code": 6,
+            "list": 19,
+            "heading": 3
+          },
+          "tables": 6,
+          "images": 0,
+          "quotes": 3,
+          "code": 6,
+          "headings": 3,
+          "lists": 19
+        }
+      },
+      {
+        "id": "03-annual-cycle",
+        "file": "03-annual-cycle.md",
+        "source": {
+          "path": "01-projects/美津浓项目整理版/04_分析结论与洞察报告/reports/美津浓_年度经营周期压缩版_2026-03-26.md",
+          "scope": "project",
+          "sha256": "3aa50c28a51a56a08f1c0c31c0825942ad24eba8ea69b3f1c3d0d31d0027c647",
+          "bytes": 3166,
+          "lines": 49
+        },
+        "handling": "structural-adaptation",
+        "transformations": {
+          "hr": 0,
+          "headings": 9,
+          "nestedLists": 0,
+          "htmlEscaped": 0,
+          "insertedPages": 3
+        },
+        "output": {
+          "sha256": "97e2d20b87625537c1be8e7b97c100374ab0c3a4f883aa493a2df27f93eb66fa",
+          "bytes": 3288,
+          "chapters": 4,
+          "pages": 7,
+          "blocks": 25,
+          "block_types": {
+            "list": 24,
+            "table": 1
+          },
+          "tables": 1,
+          "images": 0,
+          "quotes": 0,
+          "code": 0,
+          "headings": 0,
+          "lists": 24
+        }
+      },
+      {
+        "id": "04-model-scene-notes",
+        "file": "04-model-scene-notes.md",
+        "source": {
+          "path": "01-projects/美津浓项目整理版/04_分析结论与洞察报告/reports/美津浓_型号场景种草与人群洞察_2026-03-16.md",
+          "scope": "project",
+          "sha256": "d9f53b64e13f656f15e6c3b1c8437e29f3b2e34658ea4a008940af87af8e6211",
+          "bytes": 20656,
+          "lines": 228
+        },
+        "handling": "structural-adaptation",
+        "transformations": {
+          "hr": 1,
+          "headings": 24,
+          "nestedLists": 0,
+          "htmlEscaped": 0,
+          "insertedPages": 3
+        },
+        "output": {
+          "sha256": "3286f5f5c331f4c14208aff43e28d5ac0d5aae046d037fb75fcbba47b601d172",
+          "bytes": 20544,
+          "chapters": 7,
+          "pages": 19,
+          "blocks": 134,
+          "block_types": {
+            "paragraph": 15,
+            "list": 113,
+            "quote": 6
+          },
+          "tables": 0,
+          "images": 0,
+          "quotes": 6,
+          "code": 0,
+          "headings": 0,
+          "lists": 113
+        }
+      },
+      {
+        "id": "05-delivery-notes",
+        "file": "05-delivery-notes.md",
+        "source": {
+          "path": "07-SkillLab/AI能力体系与职场定位/成品/交付说明.md",
+          "scope": "project",
+          "sha256": "d4b4c68a38c6b359ff994ca0461ca6ebf5c703021c3c2553f1b1a921b25c847a",
+          "bytes": 1953,
+          "lines": 24
+        },
+        "handling": "structural-adaptation",
+        "transformations": {
+          "hr": 0,
+          "headings": 4,
+          "nestedLists": 0,
+          "htmlEscaped": 0,
+          "insertedPages": 3
+        },
+        "output": {
+          "sha256": "133b960264cddc7fa7f273a4472ac7f222e5e2b2f7eb749d140a294d71151f9d",
+          "bytes": 2069,
+          "chapters": 3,
+          "pages": 3,
+          "blocks": 9,
+          "block_types": {
+            "table": 1,
+            "list": 8
+          },
+          "tables": 1,
+          "images": 0,
+          "quotes": 0,
+          "code": 0,
+          "headings": 0,
+          "lists": 8
+        }
+      },
+      {
+        "id": "06-planners-form-compatibility",
+        "file": "06-planners-form-compatibility.md",
+        "source": {
+          "path": "01-projects/planners-form/COMPATIBILITY.md",
+          "scope": "project",
+          "sha256": "34178579900c174f0d0c40a5705614c4416c0331a0482ac54af53855698de8d1",
+          "bytes": 9578,
+          "lines": 89
+        },
+        "handling": "structural-adaptation",
+        "transformations": {
+          "hr": 0,
+          "headings": 9,
+          "nestedLists": 0,
+          "htmlEscaped": 0,
+          "insertedPages": 8
+        },
+        "output": {
+          "sha256": "50d5ed8533f5ab345e29c05507c4378780069b9568a9ca5654292c740682757f",
+          "bytes": 9761,
+          "chapters": 7,
+          "pages": 9,
+          "blocks": 26,
+          "block_types": {
+            "paragraph": 17,
+            "list": 6,
+            "table": 3
+          },
+          "tables": 3,
+          "images": 0,
+          "quotes": 0,
+          "code": 0,
+          "headings": 0,
+          "lists": 6
+        }
+      },
+      {
+        "id": "07-plugins-upstream-readme",
+        "file": "07-plugins-upstream-readme.md",
+        "source": {
+          "path": "01-projects/dsh-plugins-upstream/README.md",
+          "scope": "project",
+          "sha256": "7fbe1c2ebe59acbc54dd4122d64e49e4633d19736c959a21f88201352626cc86",
+          "bytes": 4499,
+          "lines": 72
+        },
+        "handling": "structural-adaptation",
+        "transformations": {
+          "hr": 0,
+          "headings": 7,
+          "nestedLists": 9,
+          "htmlEscaped": 0,
+          "insertedPages": 5
+        },
+        "output": {
+          "sha256": "e7c791e2dc9208199906ea47a40f97450043a8738a145fc7c75f5e438025eeb4",
+          "bytes": 4621,
+          "chapters": 5,
+          "pages": 6,
+          "blocks": 26,
+          "block_types": {
+            "paragraph": 4,
+            "table": 1,
+            "list": 19,
+            "quote": 1,
+            "code": 1
+          },
+          "tables": 1,
+          "images": 0,
+          "quotes": 1,
+          "code": 1,
+          "headings": 0,
+          "lists": 19
+        }
+      },
+      {
+        "id": "08-workbench-engineering",
+        "file": "08-workbench-engineering.md",
+        "source": {
+          "path": "07-SkillLab/workbench-redesign/ENGINEERING.md",
+          "scope": "project",
+          "sha256": "3d3ba0f9e34eb5fb87096e480f66dfa140a5b003332db0362779c55816140013",
+          "bytes": 3546,
+          "lines": 64
+        },
+        "handling": "structural-adaptation",
+        "transformations": {
+          "hr": 0,
+          "headings": 10,
+          "nestedLists": 0,
+          "htmlEscaped": 0,
+          "insertedPages": 11
+        },
+        "output": {
+          "sha256": "aa9d836e85bd04870f13344d964b57fbae41fa619b0988c9165a1deb76457138",
+          "bytes": 3769,
+          "chapters": 10,
+          "pages": 10,
+          "blocks": 34,
+          "block_types": {
+            "paragraph": 3,
+            "list": 31
+          },
+          "tables": 0,
+          "images": 0,
+          "quotes": 0,
+          "code": 0,
+          "headings": 0,
+          "lists": 31
+        }
+      },
+      {
+        "id": "09-storyline-example",
+        "file": "09-storyline-example.md",
+        "source": {
+          "path": "contracts/examples/storyline.md",
+          "scope": "repo",
+          "sha256": "0d8b8b0c0455668763107cfe9620613543ceb08ec94331da3fe60dd0c51b9fe1",
+          "bytes": 4586,
+          "lines": 104
+        },
+        "handling": "verbatim",
+        "transformations": null,
+        "output": {
+          "sha256": "0d8b8b0c0455668763107cfe9620613543ceb08ec94331da3fe60dd0c51b9fe1",
+          "bytes": 4586,
+          "chapters": 3,
+          "pages": 8,
+          "blocks": 48,
+          "block_types": {
+            "paragraph": 8,
+            "list": 29,
+            "heading": 8,
+            "quote": 2,
+            "image": 1
+          },
+          "tables": 0,
+          "images": 1,
+          "quotes": 2,
+          "code": 0,
+          "headings": 8,
+          "lists": 29
+        }
+      },
+      {
+        "id": "10-by-page-example",
+        "file": "10-by-page-example.md",
+        "source": {
+          "path": "contracts/examples/by-page.md",
+          "scope": "repo",
+          "sha256": "41f420ecfc890427452a33dee5541c6bf6f542da9b6a1795743e7ea86e56ec97",
+          "bytes": 3789,
+          "lines": 119
+        },
+        "handling": "verbatim",
+        "transformations": null,
+        "output": {
+          "sha256": "41f420ecfc890427452a33dee5541c6bf6f542da9b6a1795743e7ea86e56ec97",
+          "bytes": 3789,
+          "chapters": 2,
+          "pages": 6,
+          "blocks": 54,
+          "block_types": {
+            "heading": 24,
+            "paragraph": 12,
+            "list": 13,
+            "image": 1,
+            "table": 2,
+            "code": 1,
+            "quote": 1
+          },
+          "tables": 2,
+          "images": 1,
+          "quotes": 1,
+          "code": 1,
+          "headings": 24,
+          "lists": 13
+        }
+      }
+    ],
+    "totals": {
+      "documents": 10,
+      "tables": 18,
+      "images": 2,
+      "quotes": 15,
+      "code": 10,
+      "blocks": 451
+    },
+    "cases": [
+      {
+        "id": "corpus/integrity",
+        "ok": true,
+        "name": "语料文件与 manifest 的 sha256 一致",
+        "evidence": {
+          "mismatches": []
+        }
+      },
+      {
+        "id": "corpus/ten-real-docs",
+        "ok": true,
+        "name": "十份语料：至少 8 份真实项目文档 + 仓库样例补齐，不含生成假文",
+        "evidence": {
+          "total": 10,
+          "project": 8,
+          "repo": 2,
+          "sources": [
+            {
+              "file": "01-needscope.md",
+              "source": "01-projects/美津浓项目整理版/美津浓_NeedScope_报告.md",
+              "scope": "project"
+            },
+            {
+              "file": "02-gwtb.md",
+              "source": "01-projects/美津浓项目整理版/美津浓_GWTB_新Skill报告.md",
+              "scope": "project"
+            },
+            {
+              "file": "03-annual-cycle.md",
+              "source": "01-projects/美津浓项目整理版/04_分析结论与洞察报告/reports/美津浓_年度经营周期压缩版_2026-03-26.md",
+              "scope": "project"
+            },
+            {
+              "file": "04-model-scene-notes.md",
+              "source": "01-projects/美津浓项目整理版/04_分析结论与洞察报告/reports/美津浓_型号场景种草与人群洞察_2026-03-16.md",
+              "scope": "project"
+            },
+            {
+              "file": "05-delivery-notes.md",
+              "source": "07-SkillLab/AI能力体系与职场定位/成品/交付说明.md",
+              "scope": "project"
+            },
+            {
+              "file": "06-planners-form-compatibility.md",
+              "source": "01-projects/planners-form/COMPATIBILITY.md",
+              "scope": "project"
+            },
+            {
+              "file": "07-plugins-upstream-readme.md",
+              "source": "01-projects/dsh-plugins-upstream/README.md",
+              "scope": "project"
+            },
+            {
+              "file": "08-workbench-engineering.md",
+              "source": "07-SkillLab/workbench-redesign/ENGINEERING.md",
+              "scope": "project"
+            },
+            {
+              "file": "09-storyline-example.md",
+              "source": "contracts/examples/storyline.md",
+              "scope": "repo"
+            },
+            {
+              "file": "10-by-page-example.md",
+              "source": "contracts/examples/by-page.md",
+              "scope": "repo"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "partial": null,
+  "criteria": {
+    "roundtrip": {
+      "id": "roundtrip",
+      "title": "往返零字节差异",
+      "cases": [
+        {
+          "id": "corpus/integrity",
+          "ok": true,
+          "name": "语料文件与 manifest 的 sha256 一致",
+          "evidence": {
+            "mismatches": []
+          }
+        },
+        {
+          "id": "corpus/ten-real-docs",
+          "ok": true,
+          "name": "十份语料：至少 8 份真实项目文档 + 仓库样例补齐，不含生成假文",
+          "evidence": {
+            "total": 10,
+            "project": 8,
+            "repo": 2,
+            "sources": [
+              {
+                "file": "01-needscope.md",
+                "source": "01-projects/美津浓项目整理版/美津浓_NeedScope_报告.md",
+                "scope": "project"
+              },
+              {
+                "file": "02-gwtb.md",
+                "source": "01-projects/美津浓项目整理版/美津浓_GWTB_新Skill报告.md",
+                "scope": "project"
+              },
+              {
+                "file": "03-annual-cycle.md",
+                "source": "01-projects/美津浓项目整理版/04_分析结论与洞察报告/reports/美津浓_年度经营周期压缩版_2026-03-26.md",
+                "scope": "project"
+              },
+              {
+                "file": "04-model-scene-notes.md",
+                "source": "01-projects/美津浓项目整理版/04_分析结论与洞察报告/reports/美津浓_型号场景种草与人群洞察_2026-03-16.md",
+                "scope": "project"
+              },
+              {
+                "file": "05-delivery-notes.md",
+                "source": "07-SkillLab/AI能力体系与职场定位/成品/交付说明.md",
+                "scope": "project"
+              },
+              {
+                "file": "06-planners-form-compatibility.md",
+                "source": "01-projects/planners-form/COMPATIBILITY.md",
+                "scope": "project"
+              },
+              {
+                "file": "07-plugins-upstream-readme.md",
+                "source": "01-projects/dsh-plugins-upstream/README.md",
+                "scope": "project"
+              },
+              {
+                "file": "08-workbench-engineering.md",
+                "source": "07-SkillLab/workbench-redesign/ENGINEERING.md",
+                "scope": "project"
+              },
+              {
+                "file": "09-storyline-example.md",
+                "source": "contracts/examples/storyline.md",
+                "scope": "repo"
+              },
+              {
+                "file": "10-by-page-example.md",
+                "source": "contracts/examples/by-page.md",
+                "scope": "repo"
+              }
+            ]
+          }
+        },
+        {
+          "id": "roundtrip/01-needscope/noop",
+          "ok": true,
+          "name": "01-needscope：打开→不编辑→关闭，字节不变",
+          "evidence": {
+            "bytes": 11597,
+            "sha256_before": "aa89136b9b59953382b0483228e9685a202f59229634ff7511e0e1d7cbd9fa1d",
+            "sha256_after": "aa89136b9b59953382b0483228e9685a202f59229634ff7511e0e1d7cbd9fa1d",
+            "adoption_repairs": 43,
+            "second_open_repairs": 0
+          }
+        },
+        {
+          "id": "roundtrip/01-needscope/only-one-block",
+          "ok": true,
+          "name": "01-needscope：改一块后只有该块变",
+          "evidence": {
+            "anchor": "b:6338fe",
+            "changed_blocks": [
+              "b:6338fe"
+            ],
+            "unchanged_blocks": 42,
+            "total_blocks": 43
+          }
+        },
+        {
+          "id": "roundtrip/01-needscope/diff-bytes",
+          "ok": true,
+          "name": "01-needscope：字节差异落在目标块区间内",
+          "evidence": {
+            "diff_span": {
+              "prefix_bytes": 4652,
+              "suffix_bytes": 6945,
+              "start": 4652,
+              "end": 4682,
+              "before_bytes": 11597,
+              "after_bytes": 11627
+            },
+            "target_span_bytes": {
+              "start": 4433,
+              "end": 4699
+            }
+          }
+        },
+        {
+          "id": "roundtrip/01-needscope/readback",
+          "ok": true,
+          "name": "01-needscope：读回内容正确、锚点在、文档仍合规",
+          "evidence": {
+            "expected": "**这是美津浓最不可动摇的壁垒。** 消费者在\"舒服\"上的信任度极高，以至于：愿意容忍外观争议、主动向家人朋友推荐、产生品牌锁定效应（\"回不去其他牌子了\"）。（验收：只改这一块）",
+            "actual": "**这是美津浓最不可动摇的壁垒。** 消费者在\"舒服\"上的信任度极高，以至于：愿意容忍外观争议、主动向家人朋友推荐、产生品牌锁定效应（\"回不去其他牌子了\"）。（验收：只改这一块）",
+            "anchor": "b:6338fe",
+            "contract_errors": 0
+          }
+        },
+        {
+          "id": "roundtrip/02-gwtb/noop",
+          "ok": true,
+          "name": "02-gwtb：打开→不编辑→关闭，字节不变",
+          "evidence": {
+            "bytes": 10921,
+            "sha256_before": "cd3f43b461dd5a21e84d14dc2f2a3794789030e54dcb0f641a97dbe053c2b191",
+            "sha256_after": "cd3f43b461dd5a21e84d14dc2f2a3794789030e54dcb0f641a97dbe053c2b191",
+            "adoption_repairs": 52,
+            "second_open_repairs": 0
+          }
+        },
+        {
+          "id": "roundtrip/02-gwtb/only-one-block",
+          "ok": true,
+          "name": "02-gwtb：改一块后只有该块变",
+          "evidence": {
+            "anchor": "b:4a2565",
+            "changed_blocks": [
+              "b:4a2565"
+            ],
+            "unchanged_blocks": 51,
+            "total_blocks": 52
+          }
+        },
+        {
+          "id": "roundtrip/02-gwtb/diff-bytes",
+          "ok": true,
+          "name": "02-gwtb：字节差异落在目标块区间内",
+          "evidence": {
+            "diff_span": {
+              "prefix_bytes": 437,
+              "suffix_bytes": 10484,
+              "start": 437,
+              "end": 467,
+              "before_bytes": 10921,
+              "after_bytes": 10951
+            },
+            "target_span_bytes": {
+              "start": 408,
+              "end": 484
+            }
+          }
+        },
+        {
+          "id": "roundtrip/02-gwtb/readback",
+          "ok": true,
+          "name": "02-gwtb：读回内容正确、锚点在、文档仍合规",
+          "evidence": {
+            "expected": "**分析日期**：2026-05-30（验收：只改这一块）",
+            "actual": "**分析日期**：2026-05-30（验收：只改这一块）",
+            "anchor": "b:4a2565",
+            "contract_errors": 0
+          }
+        },
+        {
+          "id": "roundtrip/03-annual-cycle/noop",
+          "ok": true,
+          "name": "03-annual-cycle：打开→不编辑→关闭，字节不变",
+          "evidence": {
+            "bytes": 3714,
+            "sha256_before": "854b181ed626f33c32acbecebea9524a5ff5717a093971ac5c93e37d0c6d7ae2",
+            "sha256_after": "854b181ed626f33c32acbecebea9524a5ff5717a093971ac5c93e37d0c6d7ae2",
+            "adoption_repairs": 25,
+            "second_open_repairs": 0
+          }
+        },
+        {
+          "id": "roundtrip/03-annual-cycle/only-one-block",
+          "ok": true,
+          "name": "03-annual-cycle：改一块后只有该块变",
+          "evidence": {
+            "anchor": "b:dd07d3",
+            "changed_blocks": [
+              "b:dd07d3"
+            ],
+            "unchanged_blocks": 24,
+            "total_blocks": 25
+          }
+        },
+        {
+          "id": "roundtrip/03-annual-cycle/diff-bytes",
+          "ok": true,
+          "name": "03-annual-cycle：字节差异落在目标块区间内",
+          "evidence": {
+            "diff_span": {
+              "prefix_bytes": 234,
+              "suffix_bytes": 3480,
+              "start": 234,
+              "end": 264,
+              "before_bytes": 3714,
+              "after_bytes": 3744
+            },
+            "target_span_bytes": {
+              "start": 154,
+              "end": 281
+            }
+          }
+        },
+        {
+          "id": "roundtrip/03-annual-cycle/readback",
+          "ok": true,
+          "name": "03-annual-cycle：读回内容正确、锚点在、文档仍合规",
+          "evidence": {
+            "expected": "- 底层依据来自日数据后验切分，不预设蓄水、转化、长尾。（验收：只改这一块）",
+            "actual": "- 底层依据来自日数据后验切分，不预设蓄水、转化、长尾。（验收：只改这一块）",
+            "anchor": "b:dd07d3",
+            "contract_errors": 0
+          }
+        },
+        {
+          "id": "roundtrip/04-model-scene-notes/noop",
+          "ok": true,
+          "name": "04-model-scene-notes：打开→不编辑→关闭，字节不变",
+          "evidence": {
+            "bytes": 22822,
+            "sha256_before": "e0ee4be9da7cf49ba8d052c2240871bd209fc780272b41d1ead07b296423ab95",
+            "sha256_after": "e0ee4be9da7cf49ba8d052c2240871bd209fc780272b41d1ead07b296423ab95",
+            "adoption_repairs": 134,
+            "second_open_repairs": 0
+          }
+        },
+        {
+          "id": "roundtrip/04-model-scene-notes/only-one-block",
+          "ok": true,
+          "name": "04-model-scene-notes：改一块后只有该块变",
+          "evidence": {
+            "anchor": "b:631746",
+            "changed_blocks": [
+              "b:631746"
+            ],
+            "unchanged_blocks": 133,
+            "total_blocks": 134
+          }
+        },
+        {
+          "id": "roundtrip/04-model-scene-notes/diff-bytes",
+          "ok": true,
+          "name": "04-model-scene-notes：字节差异落在目标块区间内",
+          "evidence": {
+            "diff_span": {
+              "prefix_bytes": 6267,
+              "suffix_bytes": 16555,
+              "start": 6267,
+              "end": 6297,
+              "before_bytes": 22822,
+              "after_bytes": 22852
+            },
+            "target_span_bytes": {
+              "start": 6252,
+              "end": 6314
+            }
+          }
+        },
+        {
+          "id": "roundtrip/04-model-scene-notes/readback",
+          "ok": true,
+          "name": "04-model-scene-notes：读回内容正确、锚点在、文档仍合规",
+          "evidence": {
+            "expected": "**单品 GWTB**（验收：只改这一块）",
+            "actual": "**单品 GWTB**（验收：只改这一块）",
+            "anchor": "b:631746",
+            "contract_errors": 0
+          }
+        },
+        {
+          "id": "roundtrip/05-delivery-notes/noop",
+          "ok": true,
+          "name": "05-delivery-notes：打开→不编辑→关闭，字节不变",
+          "evidence": {
+            "bytes": 2223,
+            "sha256_before": "c1e395f8dee964e8c72ef6d4eee659229e798f20a7710d941e0a414f40b0f0c4",
+            "sha256_after": "c1e395f8dee964e8c72ef6d4eee659229e798f20a7710d941e0a414f40b0f0c4",
+            "adoption_repairs": 9,
+            "second_open_repairs": 0
+          }
+        },
+        {
+          "id": "roundtrip/05-delivery-notes/only-one-block",
+          "ok": true,
+          "name": "05-delivery-notes：改一块后只有该块变",
+          "evidence": {
+            "anchor": "b:a69186",
+            "changed_blocks": [
+              "b:a69186"
+            ],
+            "unchanged_blocks": 8,
+            "total_blocks": 9
+          }
+        },
+        {
+          "id": "roundtrip/05-delivery-notes/diff-bytes",
+          "ok": true,
+          "name": "05-delivery-notes：字节差异落在目标块区间内",
+          "evidence": {
+            "diff_span": {
+              "prefix_bytes": 814,
+              "suffix_bytes": 1409,
+              "start": 814,
+              "end": 844,
+              "before_bytes": 2223,
+              "after_bytes": 2253
+            },
+            "target_span_bytes": {
+              "start": 640,
+              "end": 861
+            }
+          }
+        },
+        {
+          "id": "roundtrip/05-delivery-notes/readback",
+          "ok": true,
+          "name": "05-delivery-notes：读回内容正确、锚点在、文档仍合规",
+          "evidence": {
+            "expected": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（验收：只改这一块）",
+            "actual": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（验收：只改这一块）",
+            "anchor": "b:a69186",
+            "contract_errors": 0
+          }
+        },
+        {
+          "id": "roundtrip/06-planners-form-compatibility/noop",
+          "ok": true,
+          "name": "06-planners-form-compatibility：打开→不编辑→关闭，字节不变",
+          "evidence": {
+            "bytes": 10206,
+            "sha256_before": "c8808b7a855898ef54c5f429bd72135aca223443881b8f08056f0acac9787fa9",
+            "sha256_after": "c8808b7a855898ef54c5f429bd72135aca223443881b8f08056f0acac9787fa9",
+            "adoption_repairs": 26,
+            "second_open_repairs": 0
+          }
+        },
+        {
+          "id": "roundtrip/06-planners-form-compatibility/only-one-block",
+          "ok": true,
+          "name": "06-planners-form-compatibility：改一块后只有该块变",
+          "evidence": {
+            "anchor": "b:8ba418",
+            "changed_blocks": [
+              "b:8ba418"
+            ],
+            "unchanged_blocks": 25,
+            "total_blocks": 26
+          }
+        },
+        {
+          "id": "roundtrip/06-planners-form-compatibility/diff-bytes",
+          "ok": true,
+          "name": "06-planners-form-compatibility：字节差异落在目标块区间内",
+          "evidence": {
+            "diff_span": {
+              "prefix_bytes": 154,
+              "suffix_bytes": 10052,
+              "start": 154,
+              "end": 184,
+              "before_bytes": 10206,
+              "after_bytes": 10236
+            },
+            "target_span_bytes": {
+              "start": 135,
+              "end": 201
+            }
+          }
+        },
+        {
+          "id": "roundtrip/06-planners-form-compatibility/readback",
+          "ok": true,
+          "name": "06-planners-form-compatibility：读回内容正确、锚点在、文档仍合规",
+          "evidence": {
+            "expected": "Checked: 2026-10-20（验收：只改这一块）",
+            "actual": "Checked: 2026-10-20（验收：只改这一块）",
+            "anchor": "b:8ba418",
+            "contract_errors": 0
+          }
+        },
+        {
+          "id": "roundtrip/07-plugins-upstream-readme/noop",
+          "ok": true,
+          "name": "07-plugins-upstream-readme：打开→不编辑→关闭，字节不变",
+          "evidence": {
+            "bytes": 5065,
+            "sha256_before": "8b1aac86fe2b242a137a39df3d40d67c3c4d69548e2aea564a5c3ca0749b589e",
+            "sha256_after": "8b1aac86fe2b242a137a39df3d40d67c3c4d69548e2aea564a5c3ca0749b589e",
+            "adoption_repairs": 26,
+            "second_open_repairs": 0
+          }
+        },
+        {
+          "id": "roundtrip/07-plugins-upstream-readme/only-one-block",
+          "ok": true,
+          "name": "07-plugins-upstream-readme：改一块后只有该块变",
+          "evidence": {
+            "anchor": "b:a45aef",
+            "changed_blocks": [
+              "b:a45aef"
+            ],
+            "unchanged_blocks": 25,
+            "total_blocks": 26
+          }
+        },
+        {
+          "id": "roundtrip/07-plugins-upstream-readme/diff-bytes",
+          "ok": true,
+          "name": "07-plugins-upstream-readme：字节差异落在目标块区间内",
+          "evidence": {
+            "diff_span": {
+              "prefix_bytes": 277,
+              "suffix_bytes": 4788,
+              "start": 277,
+              "end": 307,
+              "before_bytes": 5065,
+              "after_bytes": 5095
+            },
+            "target_span_bytes": {
+              "start": 153,
+              "end": 324
+            }
+          }
+        },
+        {
+          "id": "roundtrip/07-plugins-upstream-readme/readback",
+          "ok": true,
+          "name": "07-plugins-upstream-readme：读回内容正确、锚点在、文档仍合规",
+          "evidence": {
+            "expected": "这是给两个 DSH 社区插件做的新功能/修复，整理成标准 git 补丁，方便提交 Pull Request 回上游。（验收：只改这一块）",
+            "actual": "这是给两个 DSH 社区插件做的新功能/修复，整理成标准 git 补丁，方便提交 Pull Request 回上游。（验收：只改这一块）",
+            "anchor": "b:a45aef",
+            "contract_errors": 0
+          }
+        },
+        {
+          "id": "roundtrip/08-workbench-engineering/noop",
+          "ok": true,
+          "name": "08-workbench-engineering：打开→不编辑→关闭，字节不变",
+          "evidence": {
+            "bytes": 4347,
+            "sha256_before": "f5bce4a138d1fa7b17060091871d450fca8155bec7ebc6c09633026a0fa09105",
+            "sha256_after": "f5bce4a138d1fa7b17060091871d450fca8155bec7ebc6c09633026a0fa09105",
+            "adoption_repairs": 34,
+            "second_open_repairs": 0
+          }
+        },
+        {
+          "id": "roundtrip/08-workbench-engineering/only-one-block",
+          "ok": true,
+          "name": "08-workbench-engineering：改一块后只有该块变",
+          "evidence": {
+            "anchor": "b:4814c1",
+            "changed_blocks": [
+              "b:4814c1"
+            ],
+            "unchanged_blocks": 33,
+            "total_blocks": 34
+          }
+        },
+        {
+          "id": "roundtrip/08-workbench-engineering/diff-bytes",
+          "ok": true,
+          "name": "08-workbench-engineering：字节差异落在目标块区间内",
+          "evidence": {
+            "diff_span": {
+              "prefix_bytes": 262,
+              "suffix_bytes": 4085,
+              "start": 262,
+              "end": 292,
+              "before_bytes": 4347,
+              "after_bytes": 4377
+            },
+            "target_span_bytes": {
+              "start": 131,
+              "end": 309
+            }
+          }
+        },
+        {
+          "id": "roundtrip/08-workbench-engineering/readback",
+          "ok": true,
+          "name": "08-workbench-engineering：读回内容正确、锚点在、文档仍合规",
+          "evidence": {
+            "expected": "按「先改契约、再拿 Proposal 做样板、Bypage 跟随」推进。每一步都能单独验收，不通过不进下一步。（验收：只改这一块）",
+            "actual": "按「先改契约、再拿 Proposal 做样板、Bypage 跟随」推进。每一步都能单独验收，不通过不进下一步。（验收：只改这一块）",
+            "anchor": "b:4814c1",
+            "contract_errors": 0
+          }
+        },
+        {
+          "id": "roundtrip/09-storyline-example/noop",
+          "ok": true,
+          "name": "09-storyline-example：打开→不编辑→关闭，字节不变",
+          "evidence": {
+            "bytes": 4586,
+            "sha256_before": "0d8b8b0c0455668763107cfe9620613543ceb08ec94331da3fe60dd0c51b9fe1",
+            "sha256_after": "0d8b8b0c0455668763107cfe9620613543ceb08ec94331da3fe60dd0c51b9fe1",
+            "adoption_repairs": 0,
+            "second_open_repairs": 0
+          }
+        },
+        {
+          "id": "roundtrip/09-storyline-example/only-one-block",
+          "ok": true,
+          "name": "09-storyline-example：改一块后只有该块变",
+          "evidence": {
+            "anchor": "b:7b057d",
+            "changed_blocks": [
+              "b:7b057d"
+            ],
+            "unchanged_blocks": 47,
+            "total_blocks": 48
+          }
+        },
+        {
+          "id": "roundtrip/09-storyline-example/diff-bytes",
+          "ok": true,
+          "name": "09-storyline-example：字节差异落在目标块区间内",
+          "evidence": {
+            "diff_span": {
+              "prefix_bytes": 278,
+              "suffix_bytes": 4308,
+              "start": 278,
+              "end": 308,
+              "before_bytes": 4586,
+              "after_bytes": 4616
+            },
+            "target_span_bytes": {
+              "start": 180,
+              "end": 325
+            }
+          }
+        },
+        {
+          "id": "roundtrip/09-storyline-example/readback",
+          "ok": true,
+          "name": "09-storyline-example：读回内容正确、锚点在、文档仍合规",
+          "evidence": {
+            "expected": "主张：用 150ml 浓缩形态进入「状态调节」货架，不在 500ml 解渴池里比价。（验收：只改这一块）",
+            "actual": "主张：用 150ml 浓缩形态进入「状态调节」货架，不在 500ml 解渴池里比价。（验收：只改这一块）",
+            "anchor": "b:7b057d",
+            "contract_errors": 0
+          }
+        },
+        {
+          "id": "roundtrip/10-by-page-example/noop",
+          "ok": true,
+          "name": "10-by-page-example：打开→不编辑→关闭，字节不变",
+          "evidence": {
+            "bytes": 3789,
+            "sha256_before": "41f420ecfc890427452a33dee5541c6bf6f542da9b6a1795743e7ea86e56ec97",
+            "sha256_after": "41f420ecfc890427452a33dee5541c6bf6f542da9b6a1795743e7ea86e56ec97",
+            "adoption_repairs": 0,
+            "second_open_repairs": 0
+          }
+        },
+        {
+          "id": "roundtrip/10-by-page-example/only-one-block",
+          "ok": true,
+          "name": "10-by-page-example：改一块后只有该块变",
+          "evidence": {
+            "anchor": "b:718ded",
+            "changed_blocks": [
+              "b:718ded"
+            ],
+            "unchanged_blocks": 53,
+            "total_blocks": 54
+          }
+        },
+        {
+          "id": "roundtrip/10-by-page-example/diff-bytes",
+          "ok": true,
+          "name": "10-by-page-example：字节差异落在目标块区间内",
+          "evidence": {
+            "diff_span": {
+              "prefix_bytes": 275,
+              "suffix_bytes": 3514,
+              "start": 275,
+              "end": 305,
+              "before_bytes": 3789,
+              "after_bytes": 3819
+            },
+            "target_span_bytes": {
+              "start": 184,
+              "end": 322
+            }
+          }
+        },
+        {
+          "id": "roundtrip/10-by-page-example/readback",
+          "ok": true,
+          "name": "10-by-page-example：读回内容正确、锚点在、文档仍合规",
+          "evidence": {
+            "expected": "用一支 150ml 的植物节律液，把下午三点和睡前那一刻的状态调回来。（验收：只改这一块）",
+            "actual": "用一支 150ml 的植物节律液，把下午三点和睡前那一刻的状态调回来。（验收：只改这一块）",
+            "anchor": "b:718ded",
+            "contract_errors": 0
+          }
+        }
+      ],
+      "documents": [
+        {
+          "id": "01-needscope",
+          "file": "01-needscope.md",
+          "source": {
+            "path": "01-projects/美津浓项目整理版/美津浓_NeedScope_报告.md",
+            "scope": "project",
+            "sha256": "1a62c35e93ce349552c216a2504c196e810c3a84a611890b8c4bf5d21a48fc65",
+            "bytes": 10783,
+            "lines": 189
+          },
+          "handling": "structural-adaptation",
+          "output": {
+            "sha256": "b375d530583307cccc7f428fb5e2719954c300fdaf4ee6c898159b2ce41fb0ad",
+            "bytes": 10860,
+            "chapters": 5,
+            "pages": 15,
+            "blocks": 43,
+            "block_types": {
+              "paragraph": 9,
+              "code": 2,
+              "table": 4,
+              "list": 26,
+              "quote": 2
+            },
+            "tables": 4,
+            "images": 0,
+            "quotes": 2,
+            "code": 2,
+            "headings": 0,
+            "lists": 26
+          },
+          "adoption_repairs": 43,
+          "noop_equal": true,
+          "noop_sha256": "aa89136b9b59953382b0483228e9685a202f59229634ff7511e0e1d7cbd9fa1d",
+          "edited": {
+            "anchor": "b:6338fe",
+            "type": "paragraph",
+            "suffix": "（验收：只改这一块）",
+            "receipt_status": 200,
+            "receipt_ok": true,
+            "only_target_changed": true,
+            "changed": [
+              {
+                "index": 13,
+                "anchor_before": "b:6338fe",
+                "anchor_after": "b:6338fe",
+                "type_before": "paragraph",
+                "type_after": "paragraph"
+              }
+            ],
+            "untouched_blocks": 42,
+            "total_blocks": 43,
+            "diff_span": {
+              "prefix_bytes": 4652,
+              "suffix_bytes": 6945,
+              "start": 4652,
+              "end": 4682,
+              "before_bytes": 11597,
+              "after_bytes": 11627
+            },
+            "target_span_bytes": {
+              "start": 4433,
+              "end": 4699
+            },
+            "diff_inside_target": true,
+            "content_readback": "**这是美津浓最不可动摇的壁垒。** 消费者在\"舒服\"上的信任度极高，以至于：愿意容忍外观争议、主动向家人朋友推荐、产生品牌锁定效应（\"回不去其他牌子了\"）。（验收：只改这一块）",
+            "anchor_kept": true,
+            "sha256_after_edit": "e5d3107f141befcfd95623bc3c2a2784551a51616fa9ecde57995501280c8064"
+          },
+          "contract_errors_after_edit": [],
+          "baseline_sha256": "aa89136b9b59953382b0483228e9685a202f59229634ff7511e0e1d7cbd9fa1d",
+          "baseline_bytes": 11597,
+          "baseline_blocks": 43,
+          "baseline_tables": 4,
+          "baseline_images": 0,
+          "second_open_repairs": 0
+        },
+        {
+          "id": "02-gwtb",
+          "file": "02-gwtb.md",
+          "source": {
+            "path": "01-projects/美津浓项目整理版/美津浓_GWTB_新Skill报告.md",
+            "scope": "project",
+            "sha256": "feb6d8e154fd6096186135a17a17dab457d35df8d8daa60831130fb6a7d4debc",
+            "bytes": 9941,
+            "lines": 209
+          },
+          "handling": "structural-adaptation",
+          "output": {
+            "sha256": "a38b8a2a10740f0955b8f9d903c670b111389959462b28e489a5f2893c597b5f",
+            "bytes": 10025,
+            "chapters": 6,
+            "pages": 16,
+            "blocks": 52,
+            "block_types": {
+              "quote": 3,
+              "paragraph": 15,
+              "table": 6,
+              "code": 6,
+              "list": 19,
+              "heading": 3
+            },
+            "tables": 6,
+            "images": 0,
+            "quotes": 3,
+            "code": 6,
+            "headings": 3,
+            "lists": 19
+          },
+          "adoption_repairs": 52,
+          "noop_equal": true,
+          "noop_sha256": "cd3f43b461dd5a21e84d14dc2f2a3794789030e54dcb0f641a97dbe053c2b191",
+          "edited": {
+            "anchor": "b:4a2565",
+            "type": "paragraph",
+            "suffix": "（验收：只改这一块）",
+            "receipt_status": 200,
+            "receipt_ok": true,
+            "only_target_changed": true,
+            "changed": [
+              {
+                "index": 1,
+                "anchor_before": "b:4a2565",
+                "anchor_after": "b:4a2565",
+                "type_before": "paragraph",
+                "type_after": "paragraph"
+              }
+            ],
+            "untouched_blocks": 51,
+            "total_blocks": 52,
+            "diff_span": {
+              "prefix_bytes": 437,
+              "suffix_bytes": 10484,
+              "start": 437,
+              "end": 467,
+              "before_bytes": 10921,
+              "after_bytes": 10951
+            },
+            "target_span_bytes": {
+              "start": 408,
+              "end": 484
+            },
+            "diff_inside_target": true,
+            "content_readback": "**分析日期**：2026-05-30（验收：只改这一块）",
+            "anchor_kept": true,
+            "sha256_after_edit": "ae3b6a4450a5d0044a6b031af654016c05f728d1df0c2a1ba9260eddfa31c9b8"
+          },
+          "contract_errors_after_edit": [],
+          "baseline_sha256": "cd3f43b461dd5a21e84d14dc2f2a3794789030e54dcb0f641a97dbe053c2b191",
+          "baseline_bytes": 10921,
+          "baseline_blocks": 52,
+          "baseline_tables": 6,
+          "baseline_images": 0,
+          "second_open_repairs": 0
+        },
+        {
+          "id": "03-annual-cycle",
+          "file": "03-annual-cycle.md",
+          "source": {
+            "path": "01-projects/美津浓项目整理版/04_分析结论与洞察报告/reports/美津浓_年度经营周期压缩版_2026-03-26.md",
+            "scope": "project",
+            "sha256": "3aa50c28a51a56a08f1c0c31c0825942ad24eba8ea69b3f1c3d0d31d0027c647",
+            "bytes": 3166,
+            "lines": 49
+          },
+          "handling": "structural-adaptation",
+          "output": {
+            "sha256": "97e2d20b87625537c1be8e7b97c100374ab0c3a4f883aa493a2df27f93eb66fa",
+            "bytes": 3288,
+            "chapters": 4,
+            "pages": 7,
+            "blocks": 25,
+            "block_types": {
+              "list": 24,
+              "table": 1
+            },
+            "tables": 1,
+            "images": 0,
+            "quotes": 0,
+            "code": 0,
+            "headings": 0,
+            "lists": 24
+          },
+          "adoption_repairs": 25,
+          "noop_equal": true,
+          "noop_sha256": "854b181ed626f33c32acbecebea9524a5ff5717a093971ac5c93e37d0c6d7ae2",
+          "edited": {
+            "anchor": "b:dd07d3",
+            "type": "list",
+            "suffix": "（验收：只改这一块）",
+            "receipt_status": 200,
+            "receipt_ok": true,
+            "only_target_changed": true,
+            "changed": [
+              {
+                "index": 0,
+                "anchor_before": "b:dd07d3",
+                "anchor_after": "b:dd07d3",
+                "type_before": "list",
+                "type_after": "list"
+              }
+            ],
+            "untouched_blocks": 24,
+            "total_blocks": 25,
+            "diff_span": {
+              "prefix_bytes": 234,
+              "suffix_bytes": 3480,
+              "start": 234,
+              "end": 264,
+              "before_bytes": 3714,
+              "after_bytes": 3744
+            },
+            "target_span_bytes": {
+              "start": 154,
+              "end": 281
+            },
+            "diff_inside_target": true,
+            "content_readback": "- 底层依据来自日数据后验切分，不预设蓄水、转化、长尾。（验收：只改这一块）",
+            "anchor_kept": true,
+            "sha256_after_edit": "170241a466095aa005a484a838bb58d3bc9911c361c0aaf5dc4cac2346fd1750"
+          },
+          "contract_errors_after_edit": [],
+          "baseline_sha256": "854b181ed626f33c32acbecebea9524a5ff5717a093971ac5c93e37d0c6d7ae2",
+          "baseline_bytes": 3714,
+          "baseline_blocks": 25,
+          "baseline_tables": 1,
+          "baseline_images": 0,
+          "second_open_repairs": 0
+        },
+        {
+          "id": "04-model-scene-notes",
+          "file": "04-model-scene-notes.md",
+          "source": {
+            "path": "01-projects/美津浓项目整理版/04_分析结论与洞察报告/reports/美津浓_型号场景种草与人群洞察_2026-03-16.md",
+            "scope": "project",
+            "sha256": "d9f53b64e13f656f15e6c3b1c8437e29f3b2e34658ea4a008940af87af8e6211",
+            "bytes": 20656,
+            "lines": 228
+          },
+          "handling": "structural-adaptation",
+          "output": {
+            "sha256": "3286f5f5c331f4c14208aff43e28d5ac0d5aae046d037fb75fcbba47b601d172",
+            "bytes": 20544,
+            "chapters": 7,
+            "pages": 19,
+            "blocks": 134,
+            "block_types": {
+              "paragraph": 15,
+              "list": 113,
+              "quote": 6
+            },
+            "tables": 0,
+            "images": 0,
+            "quotes": 6,
+            "code": 0,
+            "headings": 0,
+            "lists": 113
+          },
+          "adoption_repairs": 134,
+          "noop_equal": true,
+          "noop_sha256": "e0ee4be9da7cf49ba8d052c2240871bd209fc780272b41d1ead07b296423ab95",
+          "edited": {
+            "anchor": "b:631746",
+            "type": "paragraph",
+            "suffix": "（验收：只改这一块）",
+            "receipt_status": 200,
+            "receipt_ok": true,
+            "only_target_changed": true,
+            "changed": [
+              {
+                "index": 30,
+                "anchor_before": "b:631746",
+                "anchor_after": "b:631746",
+                "type_before": "paragraph",
+                "type_after": "paragraph"
+              }
+            ],
+            "untouched_blocks": 133,
+            "total_blocks": 134,
+            "diff_span": {
+              "prefix_bytes": 6267,
+              "suffix_bytes": 16555,
+              "start": 6267,
+              "end": 6297,
+              "before_bytes": 22822,
+              "after_bytes": 22852
+            },
+            "target_span_bytes": {
+              "start": 6252,
+              "end": 6314
+            },
+            "diff_inside_target": true,
+            "content_readback": "**单品 GWTB**（验收：只改这一块）",
+            "anchor_kept": true,
+            "sha256_after_edit": "5d0571ae6a60ad1d71bc55e9356893e4f8d1a2f4187780fa42000da462f3ba31"
+          },
+          "contract_errors_after_edit": [],
+          "baseline_sha256": "e0ee4be9da7cf49ba8d052c2240871bd209fc780272b41d1ead07b296423ab95",
+          "baseline_bytes": 22822,
+          "baseline_blocks": 134,
+          "baseline_tables": 0,
+          "baseline_images": 0,
+          "second_open_repairs": 0
+        },
+        {
+          "id": "05-delivery-notes",
+          "file": "05-delivery-notes.md",
+          "source": {
+            "path": "07-SkillLab/AI能力体系与职场定位/成品/交付说明.md",
+            "scope": "project",
+            "sha256": "d4b4c68a38c6b359ff994ca0461ca6ebf5c703021c3c2553f1b1a921b25c847a",
+            "bytes": 1953,
+            "lines": 24
+          },
+          "handling": "structural-adaptation",
+          "output": {
+            "sha256": "133b960264cddc7fa7f273a4472ac7f222e5e2b2f7eb749d140a294d71151f9d",
+            "bytes": 2069,
+            "chapters": 3,
+            "pages": 3,
+            "blocks": 9,
+            "block_types": {
+              "table": 1,
+              "list": 8
+            },
+            "tables": 1,
+            "images": 0,
+            "quotes": 0,
+            "code": 0,
+            "headings": 0,
+            "lists": 8
+          },
+          "adoption_repairs": 9,
+          "noop_equal": true,
+          "noop_sha256": "c1e395f8dee964e8c72ef6d4eee659229e798f20a7710d941e0a414f40b0f0c4",
+          "edited": {
+            "anchor": "b:a69186",
+            "type": "list",
+            "suffix": "（验收：只改这一块）",
+            "receipt_status": 200,
+            "receipt_ok": true,
+            "only_target_changed": true,
+            "changed": [
+              {
+                "index": 1,
+                "anchor_before": "b:a69186",
+                "anchor_after": "b:a69186",
+                "type_before": "list",
+                "type_after": "list"
+              }
+            ],
+            "untouched_blocks": 8,
+            "total_blocks": 9,
+            "diff_span": {
+              "prefix_bytes": 814,
+              "suffix_bytes": 1409,
+              "start": 814,
+              "end": 844,
+              "before_bytes": 2223,
+              "after_bytes": 2253
+            },
+            "target_span_bytes": {
+              "start": 640,
+              "end": 861
+            },
+            "diff_inside_target": true,
+            "content_readback": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（验收：只改这一块）",
+            "anchor_kept": true,
+            "sha256_after_edit": "c903684e805ce6069bd591a12402954678182ef757ad6525573368269b8278c4"
+          },
+          "contract_errors_after_edit": [],
+          "baseline_sha256": "c1e395f8dee964e8c72ef6d4eee659229e798f20a7710d941e0a414f40b0f0c4",
+          "baseline_bytes": 2223,
+          "baseline_blocks": 9,
+          "baseline_tables": 1,
+          "baseline_images": 0,
+          "second_open_repairs": 0
+        },
+        {
+          "id": "06-planners-form-compatibility",
+          "file": "06-planners-form-compatibility.md",
+          "source": {
+            "path": "01-projects/planners-form/COMPATIBILITY.md",
+            "scope": "project",
+            "sha256": "34178579900c174f0d0c40a5705614c4416c0331a0482ac54af53855698de8d1",
+            "bytes": 9578,
+            "lines": 89
+          },
+          "handling": "structural-adaptation",
+          "output": {
+            "sha256": "50d5ed8533f5ab345e29c05507c4378780069b9568a9ca5654292c740682757f",
+            "bytes": 9761,
+            "chapters": 7,
+            "pages": 9,
+            "blocks": 26,
+            "block_types": {
+              "paragraph": 17,
+              "list": 6,
+              "table": 3
+            },
+            "tables": 3,
+            "images": 0,
+            "quotes": 0,
+            "code": 0,
+            "headings": 0,
+            "lists": 6
+          },
+          "adoption_repairs": 26,
+          "noop_equal": true,
+          "noop_sha256": "c8808b7a855898ef54c5f429bd72135aca223443881b8f08056f0acac9787fa9",
+          "edited": {
+            "anchor": "b:8ba418",
+            "type": "paragraph",
+            "suffix": "（验收：只改这一块）",
+            "receipt_status": 200,
+            "receipt_ok": true,
+            "only_target_changed": true,
+            "changed": [
+              {
+                "index": 0,
+                "anchor_before": "b:8ba418",
+                "anchor_after": "b:8ba418",
+                "type_before": "paragraph",
+                "type_after": "paragraph"
+              }
+            ],
+            "untouched_blocks": 25,
+            "total_blocks": 26,
+            "diff_span": {
+              "prefix_bytes": 154,
+              "suffix_bytes": 10052,
+              "start": 154,
+              "end": 184,
+              "before_bytes": 10206,
+              "after_bytes": 10236
+            },
+            "target_span_bytes": {
+              "start": 135,
+              "end": 201
+            },
+            "diff_inside_target": true,
+            "content_readback": "Checked: 2026-10-20（验收：只改这一块）",
+            "anchor_kept": true,
+            "sha256_after_edit": "7a1f99603d0d760d3585e5f15f39ec946f29074dc5e75f44ffa69e67311f04e1"
+          },
+          "contract_errors_after_edit": [],
+          "baseline_sha256": "c8808b7a855898ef54c5f429bd72135aca223443881b8f08056f0acac9787fa9",
+          "baseline_bytes": 10206,
+          "baseline_blocks": 26,
+          "baseline_tables": 3,
+          "baseline_images": 0,
+          "second_open_repairs": 0
+        },
+        {
+          "id": "07-plugins-upstream-readme",
+          "file": "07-plugins-upstream-readme.md",
+          "source": {
+            "path": "01-projects/dsh-plugins-upstream/README.md",
+            "scope": "project",
+            "sha256": "7fbe1c2ebe59acbc54dd4122d64e49e4633d19736c959a21f88201352626cc86",
+            "bytes": 4499,
+            "lines": 72
+          },
+          "handling": "structural-adaptation",
+          "output": {
+            "sha256": "e7c791e2dc9208199906ea47a40f97450043a8738a145fc7c75f5e438025eeb4",
+            "bytes": 4621,
+            "chapters": 5,
+            "pages": 6,
+            "blocks": 26,
+            "block_types": {
+              "paragraph": 4,
+              "table": 1,
+              "list": 19,
+              "quote": 1,
+              "code": 1
+            },
+            "tables": 1,
+            "images": 0,
+            "quotes": 1,
+            "code": 1,
+            "headings": 0,
+            "lists": 19
+          },
+          "adoption_repairs": 26,
+          "noop_equal": true,
+          "noop_sha256": "8b1aac86fe2b242a137a39df3d40d67c3c4d69548e2aea564a5c3ca0749b589e",
+          "edited": {
+            "anchor": "b:a45aef",
+            "type": "paragraph",
+            "suffix": "（验收：只改这一块）",
+            "receipt_status": 200,
+            "receipt_ok": true,
+            "only_target_changed": true,
+            "changed": [
+              {
+                "index": 0,
+                "anchor_before": "b:a45aef",
+                "anchor_after": "b:a45aef",
+                "type_before": "paragraph",
+                "type_after": "paragraph"
+              }
+            ],
+            "untouched_blocks": 25,
+            "total_blocks": 26,
+            "diff_span": {
+              "prefix_bytes": 277,
+              "suffix_bytes": 4788,
+              "start": 277,
+              "end": 307,
+              "before_bytes": 5065,
+              "after_bytes": 5095
+            },
+            "target_span_bytes": {
+              "start": 153,
+              "end": 324
+            },
+            "diff_inside_target": true,
+            "content_readback": "这是给两个 DSH 社区插件做的新功能/修复，整理成标准 git 补丁，方便提交 Pull Request 回上游。（验收：只改这一块）",
+            "anchor_kept": true,
+            "sha256_after_edit": "6b20f867908e77eaad34f5551740e15136110cccca2d2f9cac5e8b7c7ed1a070"
+          },
+          "contract_errors_after_edit": [],
+          "baseline_sha256": "8b1aac86fe2b242a137a39df3d40d67c3c4d69548e2aea564a5c3ca0749b589e",
+          "baseline_bytes": 5065,
+          "baseline_blocks": 26,
+          "baseline_tables": 1,
+          "baseline_images": 0,
+          "second_open_repairs": 0
+        },
+        {
+          "id": "08-workbench-engineering",
+          "file": "08-workbench-engineering.md",
+          "source": {
+            "path": "07-SkillLab/workbench-redesign/ENGINEERING.md",
+            "scope": "project",
+            "sha256": "3d3ba0f9e34eb5fb87096e480f66dfa140a5b003332db0362779c55816140013",
+            "bytes": 3546,
+            "lines": 64
+          },
+          "handling": "structural-adaptation",
+          "output": {
+            "sha256": "aa9d836e85bd04870f13344d964b57fbae41fa619b0988c9165a1deb76457138",
+            "bytes": 3769,
+            "chapters": 10,
+            "pages": 10,
+            "blocks": 34,
+            "block_types": {
+              "paragraph": 3,
+              "list": 31
+            },
+            "tables": 0,
+            "images": 0,
+            "quotes": 0,
+            "code": 0,
+            "headings": 0,
+            "lists": 31
+          },
+          "adoption_repairs": 34,
+          "noop_equal": true,
+          "noop_sha256": "f5bce4a138d1fa7b17060091871d450fca8155bec7ebc6c09633026a0fa09105",
+          "edited": {
+            "anchor": "b:4814c1",
+            "type": "paragraph",
+            "suffix": "（验收：只改这一块）",
+            "receipt_status": 200,
+            "receipt_ok": true,
+            "only_target_changed": true,
+            "changed": [
+              {
+                "index": 0,
+                "anchor_before": "b:4814c1",
+                "anchor_after": "b:4814c1",
+                "type_before": "paragraph",
+                "type_after": "paragraph"
+              }
+            ],
+            "untouched_blocks": 33,
+            "total_blocks": 34,
+            "diff_span": {
+              "prefix_bytes": 262,
+              "suffix_bytes": 4085,
+              "start": 262,
+              "end": 292,
+              "before_bytes": 4347,
+              "after_bytes": 4377
+            },
+            "target_span_bytes": {
+              "start": 131,
+              "end": 309
+            },
+            "diff_inside_target": true,
+            "content_readback": "按「先改契约、再拿 Proposal 做样板、Bypage 跟随」推进。每一步都能单独验收，不通过不进下一步。（验收：只改这一块）",
+            "anchor_kept": true,
+            "sha256_after_edit": "8d5dff7f4751025542134792f8d3b3148dc6761559c63b2d46ddd0761294a2bd"
+          },
+          "contract_errors_after_edit": [],
+          "baseline_sha256": "f5bce4a138d1fa7b17060091871d450fca8155bec7ebc6c09633026a0fa09105",
+          "baseline_bytes": 4347,
+          "baseline_blocks": 34,
+          "baseline_tables": 0,
+          "baseline_images": 0,
+          "second_open_repairs": 0
+        },
+        {
+          "id": "09-storyline-example",
+          "file": "09-storyline-example.md",
+          "source": {
+            "path": "contracts/examples/storyline.md",
+            "scope": "repo",
+            "sha256": "0d8b8b0c0455668763107cfe9620613543ceb08ec94331da3fe60dd0c51b9fe1",
+            "bytes": 4586,
+            "lines": 104
+          },
+          "handling": "verbatim",
+          "output": {
+            "sha256": "0d8b8b0c0455668763107cfe9620613543ceb08ec94331da3fe60dd0c51b9fe1",
+            "bytes": 4586,
+            "chapters": 3,
+            "pages": 8,
+            "blocks": 48,
+            "block_types": {
+              "paragraph": 8,
+              "list": 29,
+              "heading": 8,
+              "quote": 2,
+              "image": 1
+            },
+            "tables": 0,
+            "images": 1,
+            "quotes": 2,
+            "code": 0,
+            "headings": 8,
+            "lists": 29
+          },
+          "adoption_repairs": 0,
+          "noop_equal": true,
+          "noop_sha256": "0d8b8b0c0455668763107cfe9620613543ceb08ec94331da3fe60dd0c51b9fe1",
+          "edited": {
+            "anchor": "b:7b057d",
+            "type": "paragraph",
+            "suffix": "（验收：只改这一块）",
+            "receipt_status": 200,
+            "receipt_ok": true,
+            "only_target_changed": true,
+            "changed": [
+              {
+                "index": 0,
+                "anchor_before": "b:7b057d",
+                "anchor_after": "b:7b057d",
+                "type_before": "paragraph",
+                "type_after": "paragraph"
+              }
+            ],
+            "untouched_blocks": 47,
+            "total_blocks": 48,
+            "diff_span": {
+              "prefix_bytes": 278,
+              "suffix_bytes": 4308,
+              "start": 278,
+              "end": 308,
+              "before_bytes": 4586,
+              "after_bytes": 4616
+            },
+            "target_span_bytes": {
+              "start": 180,
+              "end": 325
+            },
+            "diff_inside_target": true,
+            "content_readback": "主张：用 150ml 浓缩形态进入「状态调节」货架，不在 500ml 解渴池里比价。（验收：只改这一块）",
+            "anchor_kept": true,
+            "sha256_after_edit": "ac9f2f769ae85e8e6be1242d0590aee1fde04fbfcc26b3d08449dd66e148a5a7"
+          },
+          "contract_errors_after_edit": [],
+          "baseline_sha256": "0d8b8b0c0455668763107cfe9620613543ceb08ec94331da3fe60dd0c51b9fe1",
+          "baseline_bytes": 4586,
+          "baseline_blocks": 48,
+          "baseline_tables": 0,
+          "baseline_images": 1,
+          "second_open_repairs": 0
+        },
+        {
+          "id": "10-by-page-example",
+          "file": "10-by-page-example.md",
+          "source": {
+            "path": "contracts/examples/by-page.md",
+            "scope": "repo",
+            "sha256": "41f420ecfc890427452a33dee5541c6bf6f542da9b6a1795743e7ea86e56ec97",
+            "bytes": 3789,
+            "lines": 119
+          },
+          "handling": "verbatim",
+          "output": {
+            "sha256": "41f420ecfc890427452a33dee5541c6bf6f542da9b6a1795743e7ea86e56ec97",
+            "bytes": 3789,
+            "chapters": 2,
+            "pages": 6,
+            "blocks": 54,
+            "block_types": {
+              "heading": 24,
+              "paragraph": 12,
+              "list": 13,
+              "image": 1,
+              "table": 2,
+              "code": 1,
+              "quote": 1
+            },
+            "tables": 2,
+            "images": 1,
+            "quotes": 1,
+            "code": 1,
+            "headings": 24,
+            "lists": 13
+          },
+          "adoption_repairs": 0,
+          "noop_equal": true,
+          "noop_sha256": "41f420ecfc890427452a33dee5541c6bf6f542da9b6a1795743e7ea86e56ec97",
+          "edited": {
+            "anchor": "b:718ded",
+            "type": "paragraph",
+            "suffix": "（验收：只改这一块）",
+            "receipt_status": 200,
+            "receipt_ok": true,
+            "only_target_changed": true,
+            "changed": [
+              {
+                "index": 1,
+                "anchor_before": "b:718ded",
+                "anchor_after": "b:718ded",
+                "type_before": "paragraph",
+                "type_after": "paragraph"
+              }
+            ],
+            "untouched_blocks": 53,
+            "total_blocks": 54,
+            "diff_span": {
+              "prefix_bytes": 275,
+              "suffix_bytes": 3514,
+              "start": 275,
+              "end": 305,
+              "before_bytes": 3789,
+              "after_bytes": 3819
+            },
+            "target_span_bytes": {
+              "start": 184,
+              "end": 322
+            },
+            "diff_inside_target": true,
+            "content_readback": "用一支 150ml 的植物节律液，把下午三点和睡前那一刻的状态调回来。（验收：只改这一块）",
+            "anchor_kept": true,
+            "sha256_after_edit": "da43f8b6a7f4fba4a5c770b79bde6bfff73c74b4de89946a9821c3116bbc77db"
+          },
+          "contract_errors_after_edit": [],
+          "baseline_sha256": "41f420ecfc890427452a33dee5541c6bf6f542da9b6a1795743e7ea86e56ec97",
+          "baseline_bytes": 3789,
+          "baseline_blocks": 54,
+          "baseline_tables": 2,
+          "baseline_images": 1,
+          "second_open_repairs": 0
+        }
+      ]
+    },
+    "typing": {
+      "id": "typing",
+      "title": "中文输入、跨块选区、撤销重做",
+      "blocked": false,
+      "cases": [
+        {
+          "id": "typing/render",
+          "ok": true,
+          "name": "打开后块内文本与磁盘 raw 一致（输入前基线）",
+          "evidence": {
+            "disk_raw": "证据：标题端内容母题高度分散，没有单一受众画像。评论端\"通勤\"\"暴走\"\"上班\"高频出现，说明实际购买者偏向实用场景。",
+            "dom_text": "证据：标题端内容母题高度分散，没有单一受众画像。评论端\"通勤\"\"暴走\"\"上班\"高频出现，说明实际购买者偏向实用场景。"
+          }
+        },
+        {
+          "id": "typing/no-loss",
+          "ok": true,
+          "name": "连续中文与标点：不丢字、不错位（DOM 与磁盘都等于原文+输入）",
+          "evidence": {
+            "expected_tail": "中文输入实测，标点：。！？「引号」；",
+            "expected_length": 76,
+            "dom_length": 76,
+            "saved_raw": "证据：标题端内容母题高度分散，没有单一受众画像。评论端\"通勤\"\"暴走\"\"上班\"高频出现，说明实际购买者偏向实用场景。中文输入实测，标点：。！？「引号」；",
+            "status": "已自动保存"
+          }
+        },
+        {
+          "id": "typing/only-one-block",
+          "ok": true,
+          "name": "只有被输入的这一块变，其余块不动",
+          "evidence": {
+            "saved_raw": "证据：标题端内容母题高度分散，没有单一受众画像。评论端\"通勤\"\"暴走\"\"上班\"高频出现，说明实际购买者偏向实用场景。中文输入实测，标点：。！？「引号」；"
+          }
+        },
+        {
+          "id": "typing/undo",
+          "ok": true,
+          "name": "撤销：磁盘回到输入前的正确文本",
+          "evidence": {
+            "expected_after_undo": "证据：标题端内容母题高度分散，没有单一受众画像。评论端\"通勤\"\"暴走\"\"上班\"高频出现，说明实际购买者偏向实用场景。中文输入实测，标点：。！？「引号」；",
+            "actual_after_undo": "证据：标题端内容母题高度分散，没有单一受众画像。评论端\"通勤\"\"暴走\"\"上班\"高频出现，说明实际购买者偏向实用场景。中文输入实测，标点：。！？「引号」；"
+          }
+        },
+        {
+          "id": "typing/redo",
+          "ok": true,
+          "name": "重做：磁盘恢复被撤销的输入",
+          "evidence": {
+            "expected_after_redo": "证据：标题端内容母题高度分散，没有单一受众画像。评论端\"通勤\"\"暴走\"\"上班\"高频出现，说明实际购买者偏向实用场景。中文输入实测，标点：。！？「引号」；撤销重做",
+            "actual_after_redo": "证据：标题端内容母题高度分散，没有单一受众画像。评论端\"通勤\"\"暴走\"\"上班\"高频出现，说明实际购买者偏向实用场景。中文输入实测，标点：。！？「引号」；撤销重做"
+          }
+        },
+        {
+          "id": "typing/newline",
+          "ok": false,
+          "name": "换行：保存后磁盘文本正确（含换行后的新文本）",
+          "evidence": {
+            "response_status": 409,
+            "receipt": {
+              "ok": false,
+              "code": "block_structure",
+              "error": "这次修改会改变文档的块结构（块类型、空行、标题或多个锚点），已拒绝"
+            },
+            "request_payload": {
+              "anchor": "b:756ced",
+              "content": "证据：标题端内容母题高度分散，没有单一受众画像。评论端\"通勤\"\"暴走\"\"上班\"高频出现，说明实际购买者偏向实用场景。中文输入实测，标点：。！？「引号」；撤销重做\n换行之后",
+              "base_sha256": "7f5aca24ab7431f5ee3de4620e64dc5922b4dc30e863f47e7f3d8924ab38b40c",
+              "base_block_sha256": "c7a9107e5b821c90ab70b7590d26a0c5795f0e167758e051129d7c613d669b7b"
+            },
+            "dom_contains_new_text": true,
+            "disk_contains_new_text": false,
+            "status_text": "保存失败 · 这次修改会改变文档的块结构（块类型、空行、标题或多个锚点），已拒绝"
+          }
+        },
+        {
+          "id": "typing/cross-block-selection",
+          "ok": true,
+          "name": "跨块选区吸附到三块整块（半句也吸）",
+          "evidence": {
+            "expected": [
+              "b:756ced",
+              "b:8df030",
+              "b:9d6fd3"
+            ],
+            "actual": [
+              "b:756ced",
+              "b:8df030",
+              "b:9d6fd3"
+            ]
+          }
+        },
+        {
+          "id": "typing/selection-feedback",
+          "ok": true,
+          "name": "跨块选区派发：回执绑定三块，原文未改",
+          "evidence": {
+            "note": "将改 3 块",
+            "feedback_status": 200,
+            "task_blocks": 3,
+            "dispatch_channel": "inbox",
+            "doc_sha_unchanged": true
+          }
+        }
+      ],
+      "details": {
+        "phases": {
+          "typing": {
+            "method": "CDP Input.imeSetComposition + Input.insertText + keyboard.insertText",
+            "composition_events": 3,
+            "typed": "中文输入实测，标点：。！？「引号」；",
+            "dom_after": "证据：标题端内容母题高度分散，没有单一受众画像。评论端\"通勤\"\"暴走\"\"上班\"高频出现，说明实际购买者偏向实用场景。中文输入实测，标点：。！？「引号」；",
+            "status": "已自动保存",
+            "saved_raw": "证据：标题端内容母题高度分散，没有单一受众画像。评论端\"通勤\"\"暴走\"\"上班\"高频出现，说明实际购买者偏向实用场景。中文输入实测，标点：。！？「引号」；",
+            "waited_ms": 656
+          },
+          "undo": {
+            "chunk": "撤销重做",
+            "typed_saved": "证据：标题端内容母题高度分散，没有单一受众画像。评论端\"通勤\"\"暴走\"\"上班\"高频出现，说明实际购买者偏向实用场景。中文输入实测，标点：。！？「引号」；撤销重做",
+            "after_undo": "证据：标题端内容母题高度分散，没有单一受众画像。评论端\"通勤\"\"暴走\"\"上班\"高频出现，说明实际购买者偏向实用场景。中文输入实测，标点：。！？「引号」；",
+            "after_redo": "证据：标题端内容母题高度分散，没有单一受众画像。评论端\"通勤\"\"暴走\"\"上班\"高频出现，说明实际购买者偏向实用场景。中文输入实测，标点：。！？「引号」；撤销重做",
+            "undo_status": "已自动保存"
+          },
+          "newline": {
+            "key": "Enter",
+            "inserted": "换行之后",
+            "response_status": 409,
+            "receipt": {
+              "ok": false,
+              "code": "block_structure",
+              "error": "这次修改会改变文档的块结构（块类型、空行、标题或多个锚点），已拒绝"
+            },
+            "request_payload": {
+              "anchor": "b:756ced",
+              "content": "证据：标题端内容母题高度分散，没有单一受众画像。评论端\"通勤\"\"暴走\"\"上班\"高频出现，说明实际购买者偏向实用场景。中文输入实测，标点：。！？「引号」；撤销重做\n换行之后",
+              "base_sha256": "7f5aca24ab7431f5ee3de4620e64dc5922b4dc30e863f47e7f3d8924ab38b40c",
+              "base_block_sha256": "c7a9107e5b821c90ab70b7590d26a0c5795f0e167758e051129d7c613d669b7b"
+            },
+            "status_text": "保存失败 · 这次修改会改变文档的块结构（块类型、空行、标题或多个锚点），已拒绝",
+            "dom_after": "证据：标题端内容母题高度分散，没有单一受众画像。评论端\"通勤\"\"暴走\"\"上班\"高频出现，说明实际购买者偏向实用场景。中文输入实测，标点：。！？「引号」；撤销重做\n换行之后",
+            "disk_raw": "证据：标题端内容母题高度分散，没有单一受众画像。评论端\"通勤\"\"暴走\"\"上班\"高频出现，说明实际购买者偏向实用场景。中文输入实测，标点：。！？「引号」；撤销重做"
+          },
+          "selection": {
+            "anchors": [
+              "b:756ced",
+              "b:8df030",
+              "b:9d6fd3"
+            ],
+            "highlighted": [
+              "b:756ced",
+              "b:8df030",
+              "b:9d6fd3"
+            ],
+            "button_visible": true,
+            "composer_visible": true,
+            "note": "将改 3 块",
+            "feedback_status": 200,
+            "feedback_receipt": {
+              "ok": true,
+              "task": {
+                "contract": "planners-doc-task/1",
+                "id": "t:381073b84a60",
+                "scope": "blocks",
+                "page": null,
+                "text": "这三块一起改：把结论提前。",
+                "doc": {
+                  "path": "<tmp>",
+                  "contract": "planners-doc/1",
+                  "doc": "storyline",
+                  "project": "美津浓 GWTB"
+                },
+                "blocks": [
+                  {
+                    "anchor": "b:756ced",
+                    "sha256": "c7a9107e5b821c90ab70b7590d26a0c5795f0e167758e051129d7c613d669b7b"
+                  },
+                  {
+                    "anchor": "b:8df030",
+                    "sha256": "115d71f0b084c3d5cff6ad44160744be4d68c645b44ad2574d86e7a688cfd60f"
+                  },
+                  {
+                    "anchor": "b:9d6fd3",
+                    "sha256": "c250b5e1b288dcaae9ffb01603f9b90914d644ad29709b6c21eb14c30a91033f"
+                  }
+                ],
+                "status": "pending",
+                "created_at": "2026-11-19T14:45:00.358Z",
+                "started_at": null,
+                "finished_at": null,
+                "locked_blocks": []
+              },
+              "dispatch": {
+                "channel": "inbox",
+                "task_id": "t:381073b84a60",
+                "status": "pending",
+                "path": "<tmp>"
+              }
+            },
+            "doc_sha_unchanged": true
+          }
+        },
+        "target": {
+          "anchor": "b:756ced",
+          "original_raw": "证据：标题端内容母题高度分散，没有单一受众画像。评论端\"通勤\"\"暴走\"\"上班\"高频出现，说明实际购买者偏向实用场景。",
+          "doc": "02-gwtb"
+        }
+      },
+      "environment": {
+        "playwright": "global",
+        "chromium_version": "147.0.7727.15"
+      }
+    },
+    "conflict": {
+      "id": "conflict",
+      "title": "同块双改只锁该块",
+      "cases": [
+        {
+          "id": "conflict/pass1/same-block-deferred",
+          "ok": true,
+          "name": "第 1 遍：同块双改只有 A 进待核对（其余块照常落盘）",
+          "evidence": {
+            "patch": {
+              "status": 200,
+              "ok": true,
+              "applied": [],
+              "deferred_blocks": [
+                {
+                  "anchor": "b:5b9ba4",
+                  "reason": "block_changed",
+                  "base_sha256": "28035c20ab2a733b55baa7b952b29afa920e09e6ba42574d82e2d63cc763f385",
+                  "disk_sha256": "9fe45e35ea036f287fdf298d48f622f7e7ecc14f46f597e5aa291a364a7b798d"
+                }
+              ],
+              "task_status": "review",
+              "sha256": "ffbf03cbe1b0c47fe24f63eb95f8a3e99e1dbd8a1eff0b3e0354d72d0e7224b8"
+            },
+            "conflicts": {
+              "count": 1,
+              "anchor": "b:5b9ba4",
+              "reason": "block_changed",
+              "disk_raw": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（人改：更短）",
+              "model_content": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（模型改：收紧表述）"
+            }
+          }
+        },
+        {
+          "id": "conflict/pass1/only-a-locked",
+          "ok": true,
+          "name": "第 1 遍：模型处理 A 时只有 A 锁，B 不锁",
+          "evidence": {
+            "lock_state": {
+              "a_locked": true,
+              "b_locked": false
+            },
+            "deferred_lock_state": {
+              "a_locked": true,
+              "b_locked": false
+            }
+          }
+        },
+        {
+          "id": "conflict/pass1/locked-block-rejects",
+          "ok": true,
+          "name": "第 1 遍：锁定块的编辑被拒且磁盘不变",
+          "evidence": {
+            "status": 409,
+            "code": "block_locked",
+            "error": "模型正在改这一段，等它完成后再编辑",
+            "disk_unchanged": true
+          }
+        },
+        {
+          "id": "conflict/pass1/other-block-editable",
+          "ok": true,
+          "name": "第 1 遍：B 在 A 锁定与待核对期间都能保存",
+          "evidence": {
+            "while_locked": {
+              "status": 200,
+              "ok": true,
+              "raw": "- **画面腿无声是设计要求**，不是缺陷。若有校验工具报\"成片没有音频流\"，对这条腿属预期结果。（人改 B：先改一版）"
+            },
+            "while_deferred": {
+              "status": 200,
+              "ok": true,
+              "raw": "- **画面腿无声是设计要求**，不是缺陷。若有校验工具报\"成片没有音频流\"，对这条腿属预期结果。（人改 B：先改一版）（人改 B：待核对期间再改）"
+            }
+          }
+        },
+        {
+          "id": "conflict/pass1/decision",
+          "ok": true,
+          "name": "第 1 遍：裁决 model 后 A 落模型版、B 保留人的版本",
+          "evidence": {
+            "decide": {
+              "status": 200,
+              "ok": true,
+              "decision": "model",
+              "written": true,
+              "raw": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（模型改：收紧表述）",
+              "deferred_blocks": []
+            },
+            "final": {
+              "a_raw": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（模型改：收紧表述）",
+              "b_raw": "- **画面腿无声是设计要求**，不是缺陷。若有校验工具报\"成片没有音频流\"，对这条腿属预期结果。（人改 B：先改一版）（人改 B：待核对期间再改）",
+              "changed_anchors": [
+                "b:5b9ba4",
+                "b:50f109"
+              ],
+              "untouched_blocks": 7,
+              "total_blocks": 9,
+              "contract_errors": 0
+            }
+          }
+        },
+        {
+          "id": "conflict/pass1/others-not-lost",
+          "ok": true,
+          "name": "第 1 遍：只有 A、B 两块变化，其余块逐字不动",
+          "evidence": {
+            "changed_anchors": [
+              "b:5b9ba4",
+              "b:50f109"
+            ],
+            "untouched_blocks": 7,
+            "total_blocks": 9,
+            "final_b": "- **画面腿无声是设计要求**，不是缺陷。若有校验工具报\"成片没有音频流\"，对这条腿属预期结果。（人改 B：先改一版）（人改 B：待核对期间再改）"
+          }
+        },
+        {
+          "id": "conflict/pass2/same-block-deferred",
+          "ok": true,
+          "name": "第 2 遍：同块双改只有 A 进待核对（其余块照常落盘）",
+          "evidence": {
+            "patch": {
+              "status": 200,
+              "ok": true,
+              "applied": [],
+              "deferred_blocks": [
+                {
+                  "anchor": "b:3a68e6",
+                  "reason": "block_changed",
+                  "base_sha256": "28035c20ab2a733b55baa7b952b29afa920e09e6ba42574d82e2d63cc763f385",
+                  "disk_sha256": "9fe45e35ea036f287fdf298d48f622f7e7ecc14f46f597e5aa291a364a7b798d"
+                }
+              ],
+              "task_status": "review",
+              "sha256": "1c849dc870ab6643ce3bd89becca33afd7eaa322aa6fb3010c619f00d535a2a9"
+            },
+            "conflicts": {
+              "count": 1,
+              "anchor": "b:3a68e6",
+              "reason": "block_changed",
+              "disk_raw": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（人改：更短）",
+              "model_content": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（模型改：收紧表述）"
+            }
+          }
+        },
+        {
+          "id": "conflict/pass2/only-a-locked",
+          "ok": true,
+          "name": "第 2 遍：模型处理 A 时只有 A 锁，B 不锁",
+          "evidence": {
+            "lock_state": {
+              "a_locked": true,
+              "b_locked": false
+            },
+            "deferred_lock_state": {
+              "a_locked": true,
+              "b_locked": false
+            }
+          }
+        },
+        {
+          "id": "conflict/pass2/locked-block-rejects",
+          "ok": true,
+          "name": "第 2 遍：锁定块的编辑被拒且磁盘不变",
+          "evidence": {
+            "status": 409,
+            "code": "block_locked",
+            "error": "模型正在改这一段，等它完成后再编辑",
+            "disk_unchanged": true
+          }
+        },
+        {
+          "id": "conflict/pass2/other-block-editable",
+          "ok": true,
+          "name": "第 2 遍：B 在 A 锁定与待核对期间都能保存",
+          "evidence": {
+            "while_locked": {
+              "status": 200,
+              "ok": true,
+              "raw": "- **画面腿无声是设计要求**，不是缺陷。若有校验工具报\"成片没有音频流\"，对这条腿属预期结果。（人改 B：先改一版）"
+            },
+            "while_deferred": {
+              "status": 200,
+              "ok": true,
+              "raw": "- **画面腿无声是设计要求**，不是缺陷。若有校验工具报\"成片没有音频流\"，对这条腿属预期结果。（人改 B：先改一版）（人改 B：待核对期间再改）"
+            }
+          }
+        },
+        {
+          "id": "conflict/pass2/decision",
+          "ok": true,
+          "name": "第 2 遍：裁决 model 后 A 落模型版、B 保留人的版本",
+          "evidence": {
+            "decide": {
+              "status": 200,
+              "ok": true,
+              "decision": "model",
+              "written": true,
+              "raw": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（模型改：收紧表述）",
+              "deferred_blocks": []
+            },
+            "final": {
+              "a_raw": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（模型改：收紧表述）",
+              "b_raw": "- **画面腿无声是设计要求**，不是缺陷。若有校验工具报\"成片没有音频流\"，对这条腿属预期结果。（人改 B：先改一版）（人改 B：待核对期间再改）",
+              "changed_anchors": [
+                "b:3a68e6",
+                "b:f26c98"
+              ],
+              "untouched_blocks": 7,
+              "total_blocks": 9,
+              "contract_errors": 0
+            }
+          }
+        },
+        {
+          "id": "conflict/pass2/others-not-lost",
+          "ok": true,
+          "name": "第 2 遍：只有 A、B 两块变化，其余块逐字不动",
+          "evidence": {
+            "changed_anchors": [
+              "b:3a68e6",
+              "b:f26c98"
+            ],
+            "untouched_blocks": 7,
+            "total_blocks": 9,
+            "final_b": "- **画面腿无声是设计要求**，不是缺陷。若有校验工具报\"成片没有音频流\"，对这条腿属预期结果。（人改 B：先改一版）（人改 B：待核对期间再改）"
+          }
+        },
+        {
+          "id": "conflict/repeatable",
+          "ok": true,
+          "name": "复跑两遍：结构性结论一致",
+          "evidence": {
+            "pass1": {
+              "only_a_locked": true,
+              "only_a_deferred": true,
+              "others_not_lost": true,
+              "final_a_is_model": true,
+              "final_b_is_human": true
+            },
+            "pass2": {
+              "only_a_locked": true,
+              "only_a_deferred": true,
+              "others_not_lost": true,
+              "final_a_is_model": true,
+              "final_b_is_human": true
+            }
+          }
+        }
+      ],
+      "passes": [
+        {
+          "doc": "05-delivery-notes.md",
+          "anchor_a": "b:5b9ba4",
+          "anchor_b": "b:50f109",
+          "page_a": {
+            "key": "2-1",
+            "chapter": "怎么叠",
+            "chapterIndex": 2,
+            "number": 1,
+            "title": "概览"
+          },
+          "page_b": {
+            "key": "3-1",
+            "chapter": "已知项（如实记录）",
+            "chapterIndex": 3,
+            "number": 1,
+            "title": "概览"
+          },
+          "baseline_a": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。",
+          "baseline_b": "- **画面腿无声是设计要求**，不是缺陷。若有校验工具报\"成片没有音频流\"，对这条腿属预期结果。",
+          "receipts": {
+            "feedback": {
+              "status": 200,
+              "ok": true,
+              "task_id": "t:62cf3e8a1404",
+              "task_status": "pending",
+              "baseline_sha256": "28035c20ab2a733b55baa7b952b29afa920e09e6ba42574d82e2d63cc763f385",
+              "dispatch": {
+                "channel": "inbox",
+                "task_id": "t:62cf3e8a1404",
+                "status": "pending",
+                "path": "<tmp>"
+              }
+            },
+            "human_edit_a": {
+              "status": 200,
+              "ok": true,
+              "raw": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（人改：更短）"
+            },
+            "claim": {
+              "status": 200,
+              "ok": true,
+              "task_status": "processing",
+              "locked_blocks": [
+                "b:5b9ba4"
+              ]
+            },
+            "blocked_edit_a": {
+              "status": 409,
+              "code": "block_locked",
+              "error": "模型正在改这一段，等它完成后再编辑",
+              "disk_unchanged": true
+            },
+            "edit_b_while_a_locked": {
+              "status": 200,
+              "ok": true,
+              "raw": "- **画面腿无声是设计要求**，不是缺陷。若有校验工具报\"成片没有音频流\"，对这条腿属预期结果。（人改 B：先改一版）"
+            },
+            "patch": {
+              "status": 200,
+              "ok": true,
+              "applied": [],
+              "deferred_blocks": [
+                {
+                  "anchor": "b:5b9ba4",
+                  "reason": "block_changed",
+                  "base_sha256": "28035c20ab2a733b55baa7b952b29afa920e09e6ba42574d82e2d63cc763f385",
+                  "disk_sha256": "9fe45e35ea036f287fdf298d48f622f7e7ecc14f46f597e5aa291a364a7b798d"
+                }
+              ],
+              "task_status": "review",
+              "sha256": "ffbf03cbe1b0c47fe24f63eb95f8a3e99e1dbd8a1eff0b3e0354d72d0e7224b8"
+            },
+            "conflicts": {
+              "status": 200,
+              "count": 1,
+              "only_a": true,
+              "anchor": "b:5b9ba4",
+              "reason": "block_changed",
+              "disk_raw": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（人改：更短）",
+              "model_content": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（模型改：收紧表述）"
+            },
+            "edit_b_while_a_deferred": {
+              "status": 200,
+              "ok": true,
+              "raw": "- **画面腿无声是设计要求**，不是缺陷。若有校验工具报\"成片没有音频流\"，对这条腿属预期结果。（人改 B：先改一版）（人改 B：待核对期间再改）"
+            },
+            "decide": {
+              "status": 200,
+              "ok": true,
+              "decision": "model",
+              "written": true,
+              "raw": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（模型改：收紧表述）",
+              "deferred_blocks": []
+            }
+          },
+          "disk": {
+            "after_human_a": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（人改：更短）",
+            "lock_state": {
+              "a_locked": true,
+              "b_locked": false
+            },
+            "after_patch_a": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（人改：更短）",
+            "after_patch_b": "- **画面腿无声是设计要求**，不是缺陷。若有校验工具报\"成片没有音频流\"，对这条腿属预期结果。（人改 B：先改一版）",
+            "deferred_lock_state": {
+              "a_locked": true,
+              "b_locked": false
+            },
+            "final": {
+              "a_raw": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（模型改：收紧表述）",
+              "b_raw": "- **画面腿无声是设计要求**，不是缺陷。若有校验工具报\"成片没有音频流\"，对这条腿属预期结果。（人改 B：先改一版）（人改 B：待核对期间再改）",
+              "changed_anchors": [
+                "b:5b9ba4",
+                "b:50f109"
+              ],
+              "untouched_blocks": 7,
+              "total_blocks": 9,
+              "contract_errors": 0
+            }
+          },
+          "assertions": {
+            "only_a_locked": true,
+            "only_a_deferred": true,
+            "others_not_lost": true,
+            "final_a_is_model": true,
+            "final_b_is_human": true
+          },
+          "pass": 1
+        },
+        {
+          "doc": "05-delivery-notes.md",
+          "anchor_a": "b:3a68e6",
+          "anchor_b": "b:f26c98",
+          "page_a": {
+            "key": "2-1",
+            "chapter": "怎么叠",
+            "chapterIndex": 2,
+            "number": 1,
+            "title": "概览"
+          },
+          "page_b": {
+            "key": "3-1",
+            "chapter": "已知项（如实记录）",
+            "chapterIndex": 3,
+            "number": 1,
+            "title": "概览"
+          },
+          "baseline_a": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。",
+          "baseline_b": "- **画面腿无声是设计要求**，不是缺陷。若有校验工具报\"成片没有音频流\"，对这条腿属预期结果。",
+          "receipts": {
+            "feedback": {
+              "status": 200,
+              "ok": true,
+              "task_id": "t:b83300934bb8",
+              "task_status": "pending",
+              "baseline_sha256": "28035c20ab2a733b55baa7b952b29afa920e09e6ba42574d82e2d63cc763f385",
+              "dispatch": {
+                "channel": "inbox",
+                "task_id": "t:b83300934bb8",
+                "status": "pending",
+                "path": "<tmp>"
+              }
+            },
+            "human_edit_a": {
+              "status": 200,
+              "ok": true,
+              "raw": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（人改：更短）"
+            },
+            "claim": {
+              "status": 200,
+              "ok": true,
+              "task_status": "processing",
+              "locked_blocks": [
+                "b:3a68e6"
+              ]
+            },
+            "blocked_edit_a": {
+              "status": 409,
+              "code": "block_locked",
+              "error": "模型正在改这一段，等它完成后再编辑",
+              "disk_unchanged": true
+            },
+            "edit_b_while_a_locked": {
+              "status": 200,
+              "ok": true,
+              "raw": "- **画面腿无声是设计要求**，不是缺陷。若有校验工具报\"成片没有音频流\"，对这条腿属预期结果。（人改 B：先改一版）"
+            },
+            "patch": {
+              "status": 200,
+              "ok": true,
+              "applied": [],
+              "deferred_blocks": [
+                {
+                  "anchor": "b:3a68e6",
+                  "reason": "block_changed",
+                  "base_sha256": "28035c20ab2a733b55baa7b952b29afa920e09e6ba42574d82e2d63cc763f385",
+                  "disk_sha256": "9fe45e35ea036f287fdf298d48f622f7e7ecc14f46f597e5aa291a364a7b798d"
+                }
+              ],
+              "task_status": "review",
+              "sha256": "1c849dc870ab6643ce3bd89becca33afd7eaa322aa6fb3010c619f00d535a2a9"
+            },
+            "conflicts": {
+              "status": 200,
+              "count": 1,
+              "only_a": true,
+              "anchor": "b:3a68e6",
+              "reason": "block_changed",
+              "disk_raw": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（人改：更短）",
+              "model_content": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（模型改：收紧表述）"
+            },
+            "edit_b_while_a_deferred": {
+              "status": 200,
+              "ok": true,
+              "raw": "- **画面腿无声是设计要求**，不是缺陷。若有校验工具报\"成片没有音频流\"，对这条腿属预期结果。（人改 B：先改一版）（人改 B：待核对期间再改）"
+            },
+            "decide": {
+              "status": 200,
+              "ok": true,
+              "decision": "model",
+              "written": true,
+              "raw": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（模型改：收紧表述）",
+              "deferred_blocks": []
+            }
+          },
+          "disk": {
+            "after_human_a": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（人改：更短）",
+            "lock_state": {
+              "a_locked": true,
+              "b_locked": false
+            },
+            "after_patch_a": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（人改：更短）",
+            "after_patch_b": "- **画面腿无声是设计要求**，不是缺陷。若有校验工具报\"成片没有音频流\"，对这条腿属预期结果。（人改 B：先改一版）",
+            "deferred_lock_state": {
+              "a_locked": true,
+              "b_locked": false
+            },
+            "final": {
+              "a_raw": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（模型改：收紧表述）",
+              "b_raw": "- **画面腿无声是设计要求**，不是缺陷。若有校验工具报\"成片没有音频流\"，对这条腿属预期结果。（人改 B：先改一版）（人改 B：待核对期间再改）",
+              "changed_anchors": [
+                "b:3a68e6",
+                "b:f26c98"
+              ],
+              "untouched_blocks": 7,
+              "total_blocks": 9,
+              "contract_errors": 0
+            }
+          },
+          "assertions": {
+            "only_a_locked": true,
+            "only_a_deferred": true,
+            "others_not_lost": true,
+            "final_a_is_model": true,
+            "final_b_is_human": true
+          },
+          "pass": 2
+        }
+      ]
+    },
+    "record": {
+      "id": "record",
+      "title": "验收记录落进仓库",
+      "cases": [
+        {
+          "id": "record/report-sections",
+          "ok": true,
+          "name": "报告含四条判据、语料与回退段",
+          "evidence": {
+            "report_path": "<repo>/evals/acceptance/REPORT.md",
+            "record_path": "<repo>/evals/acceptance/records/2026-11-19T14-44-53Z.json"
+          }
+        },
+        {
+          "id": "record/run-time",
+          "ok": true,
+          "name": "报告含本次运行时间",
+          "evidence": {
+            "report_path": "<repo>/evals/acceptance/REPORT.md",
+            "record_path": "<repo>/evals/acceptance/records/2026-11-19T14-44-53Z.json"
+          }
+        },
+        {
+          "id": "record/corpus-10",
+          "ok": true,
+          "name": "报告列出十份语料",
+          "evidence": {
+            "report_path": "<repo>/evals/acceptance/REPORT.md",
+            "record_path": "<repo>/evals/acceptance/records/2026-11-19T14-44-53Z.json"
+          }
+        }
+      ]
+    }
+  },
+  "failures": [
+    {
+      "criterion": "typing",
+      "id": "typing/newline",
+      "name": "换行：保存后磁盘文本正确（含换行后的新文本）",
+      "summary": "Enter 后自动保存返回 HTTP 409（block_structure），换行后的文字没有落盘",
+      "fallback": {
+        "ticket": 3,
+        "title": "02 打开文档、就地编辑、只改一块",
+        "why": "块内换行落盘被块结构校验拒绝；同一处 Enter 的行为也与 SPEC 第 4 节「回车分块」不一致。"
+      }
+    }
+  ],
+  "unverified": [],
+  "summary": {
+    "statuses": {
+      "roundtrip": "pass",
+      "typing": "fail",
+      "conflict": "pass",
+      "record": "pass"
+    },
+    "overall": "fail",
+    "counts": {
+      "roundtrip": {
+        "status": "pass",
+        "total": 42,
+        "passed": 42,
+        "failed": 0,
+        "blocked": 0,
+        "failed_cases": [],
+        "blocked_cases": []
+      },
+      "typing": {
+        "status": "fail",
+        "total": 8,
+        "passed": 7,
+        "failed": 1,
+        "blocked": 0,
+        "failed_cases": [
+          {
+            "id": "typing/newline",
+            "ok": false,
+            "name": "换行：保存后磁盘文本正确（含换行后的新文本）",
+            "evidence": {
+              "response_status": 409,
+              "receipt": {
+                "ok": false,
+                "code": "block_structure",
+                "error": "这次修改会改变文档的块结构（块类型、空行、标题或多个锚点），已拒绝"
+              },
+              "request_payload": {
+                "anchor": "b:756ced",
+                "content": "证据：标题端内容母题高度分散，没有单一受众画像。评论端\"通勤\"\"暴走\"\"上班\"高频出现，说明实际购买者偏向实用场景。中文输入实测，标点：。！？「引号」；撤销重做\n换行之后",
+                "base_sha256": "7f5aca24ab7431f5ee3de4620e64dc5922b4dc30e863f47e7f3d8924ab38b40c",
+                "base_block_sha256": "c7a9107e5b821c90ab70b7590d26a0c5795f0e167758e051129d7c613d669b7b"
+              },
+              "dom_contains_new_text": true,
+              "disk_contains_new_text": false,
+              "status_text": "保存失败 · 这次修改会改变文档的块结构（块类型、空行、标题或多个锚点），已拒绝"
+            }
+          }
+        ],
+        "blocked_cases": []
+      },
+      "conflict": {
+        "status": "pass",
+        "total": 13,
+        "passed": 13,
+        "failed": 0,
+        "blocked": 0,
+        "failed_cases": [],
+        "blocked_cases": []
+      }
+    }
+  },
+  "record_path": "evals/acceptance/records/2026-11-19T14-44-53Z.json"
+}

@@ -132,6 +132,11 @@ node scripts/doc-inbox.mjs take path/to/.planners/storyline.md          # pendin
   node evals/run.mjs                                     # JS 校验器、本地宿主、线协议与桥回归
   python3 -m unittest discover -s evals -p 'test_*.py'   # Python 传输层与宿主生命周期回归
   ```
+- **验收（票 10，独立入口）**：
+  ```bash
+  node evals/acceptance/run.mjs                          # 十份真实语料往返、块内中文输入、同块双改
+  ```
+  它不并进上面两条回归：更慢，中文输入那一项还需要本机 Playwright 的 Chromium（没有就记「无法验证」，不伪造通过）。做法、语料来源与最近一次记录见 [`evals/acceptance/README.md`](evals/acceptance/README.md) 与 [`evals/acceptance/REPORT.md`](evals/acceptance/REPORT.md)。
 
 ### 目录结构
 
