@@ -536,7 +536,7 @@ function reorderDocument(docPath, payload, board, conflicts, faults) {
  * 所以换文件在结构上就不可能改掉正文引用。锁定的块先拒，再按 base_sha256 拒过期写入。
  * 清单跟着新指纹同步（`replaced_from_sha256` 记下上一版），正文一个字节都不写。
  */
-function replaceImageAsset(docPath, payload, board) {
+function replaceImageAsset(docPath, payload, board, conflicts) {
   if (!payload || typeof payload !== 'object') fail('asset_request', '请求体必须是 JSON 对象');
   const { anchor, content_base64: encoded, base_sha256: baseSha } = payload;
   if (typeof anchor !== 'string' || !/^b:[0-9a-f]{6,12}$/.test(anchor)) fail('asset_request', '锚点形状不对');
@@ -550,6 +550,8 @@ function replaceImageAsset(docPath, payload, board) {
 
   const owner = board.lockOf(anchor);
   if (owner) fail('block_locked', '模型正在改这一块，等它完成后再换图');
+  // 待核对也是锁着：人和模型都改过这一块，先裁决再换图，别把两个版本的问题叠到文件上。
+  if (conflicts?.get(anchor)) fail('block_locked', '这一块正在待核对，先裁决再换图');
   const document = readDocument(docPath);
   if (typeof baseSha !== 'string' || baseSha !== sha256(document.raw)) {
     fail('stale_document', '文档已在别处被修改；请刷新工作台后再换图');
@@ -692,7 +694,7 @@ export async function startDocWorkbench({
         if (request.method !== 'POST') return json(response, 405, { ok: false, code: 'method', error: '用 POST 换图' });
         if (!allowWrite(request, response, server, host, 'asset')) return;
         const payload = JSON.parse((await readBody(request, 20 * 1024 * 1024)) || '{}');
-        return json(response, 200, replaceImageAsset(file, payload, board));
+        return json(response, 200, replaceImageAsset(file, payload, board, conflicts));
       }
       if (url.pathname === '/api/reorder') {
         if (request.method !== 'POST') return json(response, 405, { ok: false, code: 'method', error: '用 POST 重排' });
