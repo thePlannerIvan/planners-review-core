@@ -10,11 +10,10 @@
  * 这里只回答「文档里的图现在是什么字节」，不评价、不选材。字段名只沿用含义相同的
  * `path` / `kind` / `sha256`（原名 `source_sha256`）/ `bytes`，其余都是文档侧新增。
  */
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import {
   closeSync, existsSync, fsyncSync, openSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync,
 } from 'node:fs';
-import { randomBytes } from 'node:crypto';
 import { basename, dirname, extname, resolve, sep } from 'node:path';
 import { imageReferences, parseDocument } from './doc-blocks.mjs';
 
@@ -82,7 +81,7 @@ export function documentImageRefs(parsed) {
     if (block.type === 'code') continue;
     for (const reference of imageReferences(block.raw)) {
       const entry = byPath.get(reference.path)
-        ?? { path: reference.path, anchors: [], alt: '', blockType: block.type };
+        ?? { path: reference.path, anchors: [], alt: '' };
       if (!entry.alt && reference.alt) entry.alt = reference.alt;
       if (block.anchor && !entry.anchors.includes(block.anchor)) entry.anchors.push(block.anchor);
       byPath.set(reference.path, entry);
