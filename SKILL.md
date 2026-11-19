@@ -156,6 +156,20 @@ Proposal 与 By-page 调用 `scripts/render-content-review.mjs` 的 `renderConte
 | 路径 | 用途 |
 |---|---|
 | `contracts/review-surface.schema.json` | `review-surface/2.0.0` 契约（**唯一真相源**；含可选的 `annotate` 开关） |
+| `contracts/planners-doc.md` | `planners-doc/1` 文档契约：文档头、层级、七种块、锚点、页为空、图片；样例在 `contracts/examples/` |
+| `contracts/planners-doc-task.md` | `planners-doc-task/1` 块级反馈任务：只带块身份与内容指纹、任务状态机、锁、模型写回 / 待核对 / journal 判据；无插件派发的本地收件箱与旧 JSON 只读也在这里 |
+| `contracts/doc-assets.md` | `doc-assets/1` 图资产清单：正文派生、同名清单、换文件留上一版指纹；不碰 bypage 的素材取舍 |
+| `scripts/doc-inbox.mjs` | 模型侧收件箱命令：`list` 未处理任务（块身份 + 指纹 + 意见），`take` 把 pending 标成 processing |
+| `scripts/doc-surface.mjs` | 为一份 `planners-doc/1` 工作稿生成侧栏 `review-surface`（`doc-workbench/1`）与自包含入口；同 id 再开 = 刷新 |
+| `scripts/doc-command.mjs` | 侧栏命令后端（保存 / 派发 / 裁决 / 看锁）与模型侧 CLI（`tasks` / `claim` / `complete` / `patch` / `conflicts`），共用 `lib/doc-session.mjs` |
+| `scripts/lib/doc-session.mjs` | 两个入口共用的块级内核：解析、块级写、journal、锁与待核对的唯一实现 |
+| `scripts/lib/doc-boards.mjs` | 任务板与待核对的落盘（`.doc-workbench/state/`），让本地页 / 侧栏 / 模型 CLI 跨进程看到同一组锁 |
+| `scripts/lib/doc-history.mjs` | 历史版本：每次写盘前存上一版，按文档分桶；列出与按档恢复（恢复也是一次新编辑） |
+| `scripts/lib/doc-io.mjs` | 旁路目录与原子写（fsync + rename）的唯一实现；journal / 任务板 / 收件箱 / 资产清单 / 历史共用 |
+| `assets/workbench/doc-transport.js` | 页面到存储的唯一通道：侧栏走 `review.command` / `review.wake` / `review.asset`，无插件走 `/api/*` |
+| `scripts/validate-doc-assets.mjs` | `doc-assets/1` 唯一校验器：正文引用、清单、磁盘三边对得上（哈希 / 字节 / 类型 / 锚点 / 上一版） |
+| `scripts/lib/doc-assets.mjs` | 清单派生与同步、换文件字节守卫（扩展名 + 真签名、SVG 结构）——工作台与校验器共用 |
+| `scripts/validate-doc.mjs` | `planners-doc/1` 唯一校验器：结构 + 锚点唯一 + 块白名单 + 图片可解析，错误带行号与块身份 |
 | `scripts/open-artifact.mjs` | 给已有 HTML 产物一条命令做出 surface（`annotate: true` + feedback/draft + 校验），产物不用改 |
 | `scripts/validate-surface.mjs` | 唯一校验器：结构 + 路径包含性 + 注入点形态 |
 | `assets/review-bridge.js` | 桥。**由宿主注入**（页面只留 `{{REVIEW_BRIDGE}}` 注入点），所以不存在副本漂移 |
@@ -172,11 +186,25 @@ Proposal 与 By-page 调用 `scripts/render-content-review.mjs` 的 `renderConte
 | `evals/review-host-example.mjs` | 最小示例：**纯 Node、不碰 python** 走完 `write → validate → start → alive → stop`（bypage 那类调用方的用法） |
 | `references/architecture.md` | module 表、缝、DSH 侧的接入要求 |
 | `evals/run.mjs` | 回归（JS；条数以脚本实际输出为准，当前 75 条）：校验器 + 宿主 + 第二形状 + 线协议 + 轮询 + 桥 |
+| `evals/test_doc_contract.mjs` | `planners-doc/1` 文档契约回归（13 条）：两份样例通过 + 锚点重复 / 块类型越界 / 图片缺失 / 页为空四类拒绝 |
+| `evals/test_doc_workbench.mjs` | 文字工作台回归（27 条）：只改一块、未编辑块逐字不动、补锚点幂等、退化显示、行内序列化；页内 / 跨页移动块、整页重排、拒绝空页空章节、锁定 / 待核对块不可拖动、历史按次存档与恢复、落点算法与目录 / 句柄接线、一处事实一个来源 |
+| `evals/test_doc_feedback.mjs` | 块级反馈与派发回归（6 条）：任务只带块身份与指纹、整页 / 整份范围、锁定期间改别的块、完成后解锁、任务状态机、半句吸成整块 |
+| `evals/test_doc_assets.mjs` | 图块与资产回归（10 条）：位图 / SVG 加载与脚本隔离、未能加载文案、放大只读；清单派生 / 新增登记 / 换图留上一版；锁定图块拒绝替换；清单漂移四类；两份样例清单 |
+| `evals/test_doc_conflict.mjs` | 待核对与并发回归（5 条）：同块双改只锁该块其余落盘、裁决两个方向、跨块并发按块合并、journal 崩溃恢复、页面裁决入口 |
+| `evals/test_doc_dispatch.mjs` | 无插件派发与旧项目只读回归（5 条）：收件箱落盘 / 读回 / 重复写不重复、pending→processing、有插件与无插件同形、旧 JSON 只读拒绝且磁盘不变、界面状态如实 |
+| `evals/test_sidebar_surface.mjs` | 侧栏接入回归（8 条）：侧栏通道只改被编辑块的字节、同 id 刷新、派发两通道同形、模型 CLI 跨进程 claim/patch 与侧栏裁决、侧栏历史列出与恢复、页面源码只有一条 transport、无插件宿主直接打开生成的 surface、transport 的 command/wake 映射 |
+| `evals/acceptance/run.mjs` | 验收（票 10）：十份真实语料往返零字节差异、块内中文输入 / 撤销 / 跨块选区、同块双改复跑两遍；生成 `REPORT.md` 与 `records/*.json`。需要本机 Playwright / Chromium，**不并进日常回归** |
 
 **跑测试要跑两条入口，只跑一条就等于没跑**（这里踩过：JS 绿而 Python 那条没跑）：
 
 ```
 node "<本模组>/evals/run.mjs"                                        # JS，75 条
 python3 -m unittest discover -s "<本模组>/evals" -p 'test_*.py'      # Python，11 条（生命周期）
+```
+
+验收另有一条独立入口，不该并进上面两条（更慢，且中文输入需要 Playwright）：
+
+```
+node "<本模组>/evals/acceptance/run.mjs"                             # 十份真实语料 + 中文输入 + 冲突演练
 ```
 | `GOTCHAS.md` | 候选经验 |

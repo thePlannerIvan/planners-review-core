@@ -1,0 +1,375 @@
+{
+  "contract": "acceptance-corpus/1",
+  "note": "语料来源清单。前 8 份是 01-projects / 07-SkillLab 下的真实 Markdown；后 2 份是仓库内的契约样例（含图片语法）。build-corpus.mjs 按此清单生成 planners-doc/1 语料：原文文字逐行保留，只改结构（分隔线、嵌套缩进、标题层级）。",
+  "generated_by": "evals/acceptance/corpus/build-corpus.mjs",
+  "documents": [
+    {
+      "id": "01-needscope",
+      "file": "01-needscope.md",
+      "source": {
+        "path": "01-projects/美津浓项目整理版/美津浓_NeedScope_报告.md",
+        "scope": "project",
+        "sha256": "1a62c35e93ce349552c216a2504c196e810c3a84a611890b8c4bf5d21a48fc65",
+        "bytes": 10783,
+        "lines": 189
+      },
+      "handling": "structural-adaptation",
+      "transformations": {
+        "hr": 4,
+        "headings": 19,
+        "nestedLists": 5,
+        "htmlEscaped": 0,
+        "insertedPages": 2
+      },
+      "output": {
+        "sha256": "b375d530583307cccc7f428fb5e2719954c300fdaf4ee6c898159b2ce41fb0ad",
+        "bytes": 10860,
+        "chapters": 5,
+        "pages": 15,
+        "blocks": 43,
+        "block_types": {
+          "paragraph": 9,
+          "code": 2,
+          "table": 4,
+          "list": 26,
+          "quote": 2
+        },
+        "tables": 4,
+        "images": 0,
+        "quotes": 2,
+        "code": 2,
+        "headings": 0,
+        "lists": 26
+      }
+    },
+    {
+      "id": "02-gwtb",
+      "file": "02-gwtb.md",
+      "source": {
+        "path": "01-projects/美津浓项目整理版/美津浓_GWTB_新Skill报告.md",
+        "scope": "project",
+        "sha256": "feb6d8e154fd6096186135a17a17dab457d35df8d8daa60831130fb6a7d4debc",
+        "bytes": 9941,
+        "lines": 209
+      },
+      "handling": "structural-adaptation",
+      "transformations": {
+        "hr": 6,
+        "headings": 23,
+        "nestedLists": 0,
+        "htmlEscaped": 0,
+        "insertedPages": 3
+      },
+      "output": {
+        "sha256": "a38b8a2a10740f0955b8f9d903c670b111389959462b28e489a5f2893c597b5f",
+        "bytes": 10025,
+        "chapters": 6,
+        "pages": 16,
+        "blocks": 52,
+        "block_types": {
+          "quote": 3,
+          "paragraph": 15,
+          "table": 6,
+          "code": 6,
+          "list": 19,
+          "heading": 3
+        },
+        "tables": 6,
+        "images": 0,
+        "quotes": 3,
+        "code": 6,
+        "headings": 3,
+        "lists": 19
+      }
+    },
+    {
+      "id": "03-annual-cycle",
+      "file": "03-annual-cycle.md",
+      "source": {
+        "path": "01-projects/美津浓项目整理版/04_分析结论与洞察报告/reports/美津浓_年度经营周期压缩版_2026-03-26.md",
+        "scope": "project",
+        "sha256": "3aa50c28a51a56a08f1c0c31c0825942ad24eba8ea69b3f1c3d0d31d0027c647",
+        "bytes": 3166,
+        "lines": 49
+      },
+      "handling": "structural-adaptation",
+      "transformations": {
+        "hr": 0,
+        "headings": 9,
+        "nestedLists": 0,
+        "htmlEscaped": 0,
+        "insertedPages": 3
+      },
+      "output": {
+        "sha256": "97e2d20b87625537c1be8e7b97c100374ab0c3a4f883aa493a2df27f93eb66fa",
+        "bytes": 3288,
+        "chapters": 4,
+        "pages": 7,
+        "blocks": 25,
+        "block_types": {
+          "list": 24,
+          "table": 1
+        },
+        "tables": 1,
+        "images": 0,
+        "quotes": 0,
+        "code": 0,
+        "headings": 0,
+        "lists": 24
+      }
+    },
+    {
+      "id": "04-model-scene-notes",
+      "file": "04-model-scene-notes.md",
+      "source": {
+        "path": "01-projects/美津浓项目整理版/04_分析结论与洞察报告/reports/美津浓_型号场景种草与人群洞察_2026-03-16.md",
+        "scope": "project",
+        "sha256": "d9f53b64e13f656f15e6c3b1c8437e29f3b2e34658ea4a008940af87af8e6211",
+        "bytes": 20656,
+        "lines": 228
+      },
+      "handling": "structural-adaptation",
+      "transformations": {
+        "hr": 1,
+        "headings": 24,
+        "nestedLists": 0,
+        "htmlEscaped": 0,
+        "insertedPages": 3
+      },
+      "output": {
+        "sha256": "3286f5f5c331f4c14208aff43e28d5ac0d5aae046d037fb75fcbba47b601d172",
+        "bytes": 20544,
+        "chapters": 7,
+        "pages": 19,
+        "blocks": 134,
+        "block_types": {
+          "paragraph": 15,
+          "list": 113,
+          "quote": 6
+        },
+        "tables": 0,
+        "images": 0,
+        "quotes": 6,
+        "code": 0,
+        "headings": 0,
+        "lists": 113
+      }
+    },
+    {
+      "id": "05-delivery-notes",
+      "file": "05-delivery-notes.md",
+      "source": {
+        "path": "07-SkillLab/AI能力体系与职场定位/成品/交付说明.md",
+        "scope": "project",
+        "sha256": "d4b4c68a38c6b359ff994ca0461ca6ebf5c703021c3c2553f1b1a921b25c847a",
+        "bytes": 1953,
+        "lines": 24
+      },
+      "handling": "structural-adaptation",
+      "transformations": {
+        "hr": 0,
+        "headings": 4,
+        "nestedLists": 0,
+        "htmlEscaped": 0,
+        "insertedPages": 3
+      },
+      "output": {
+        "sha256": "133b960264cddc7fa7f273a4472ac7f222e5e2b2f7eb749d140a294d71151f9d",
+        "bytes": 2069,
+        "chapters": 3,
+        "pages": 3,
+        "blocks": 9,
+        "block_types": {
+          "table": 1,
+          "list": 8
+        },
+        "tables": 1,
+        "images": 0,
+        "quotes": 0,
+        "code": 0,
+        "headings": 0,
+        "lists": 8
+      }
+    },
+    {
+      "id": "06-planners-form-compatibility",
+      "file": "06-planners-form-compatibility.md",
+      "source": {
+        "path": "01-projects/planners-form/COMPATIBILITY.md",
+        "scope": "project",
+        "sha256": "34178579900c174f0d0c40a5705614c4416c0331a0482ac54af53855698de8d1",
+        "bytes": 9578,
+        "lines": 89
+      },
+      "handling": "structural-adaptation",
+      "transformations": {
+        "hr": 0,
+        "headings": 9,
+        "nestedLists": 0,
+        "htmlEscaped": 0,
+        "insertedPages": 8
+      },
+      "output": {
+        "sha256": "50d5ed8533f5ab345e29c05507c4378780069b9568a9ca5654292c740682757f",
+        "bytes": 9761,
+        "chapters": 7,
+        "pages": 9,
+        "blocks": 26,
+        "block_types": {
+          "paragraph": 17,
+          "list": 6,
+          "table": 3
+        },
+        "tables": 3,
+        "images": 0,
+        "quotes": 0,
+        "code": 0,
+        "headings": 0,
+        "lists": 6
+      }
+    },
+    {
+      "id": "07-plugins-upstream-readme",
+      "file": "07-plugins-upstream-readme.md",
+      "source": {
+        "path": "01-projects/dsh-plugins-upstream/README.md",
+        "scope": "project",
+        "sha256": "7fbe1c2ebe59acbc54dd4122d64e49e4633d19736c959a21f88201352626cc86",
+        "bytes": 4499,
+        "lines": 72
+      },
+      "handling": "structural-adaptation",
+      "transformations": {
+        "hr": 0,
+        "headings": 7,
+        "nestedLists": 9,
+        "htmlEscaped": 0,
+        "insertedPages": 5
+      },
+      "output": {
+        "sha256": "e7c791e2dc9208199906ea47a40f97450043a8738a145fc7c75f5e438025eeb4",
+        "bytes": 4621,
+        "chapters": 5,
+        "pages": 6,
+        "blocks": 26,
+        "block_types": {
+          "paragraph": 4,
+          "table": 1,
+          "list": 19,
+          "quote": 1,
+          "code": 1
+        },
+        "tables": 1,
+        "images": 0,
+        "quotes": 1,
+        "code": 1,
+        "headings": 0,
+        "lists": 19
+      }
+    },
+    {
+      "id": "08-workbench-engineering",
+      "file": "08-workbench-engineering.md",
+      "source": {
+        "path": "07-SkillLab/workbench-redesign/ENGINEERING.md",
+        "scope": "project",
+        "sha256": "3d3ba0f9e34eb5fb87096e480f66dfa140a5b003332db0362779c55816140013",
+        "bytes": 3546,
+        "lines": 64
+      },
+      "handling": "structural-adaptation",
+      "transformations": {
+        "hr": 0,
+        "headings": 10,
+        "nestedLists": 0,
+        "htmlEscaped": 0,
+        "insertedPages": 11
+      },
+      "output": {
+        "sha256": "aa9d836e85bd04870f13344d964b57fbae41fa619b0988c9165a1deb76457138",
+        "bytes": 3769,
+        "chapters": 10,
+        "pages": 10,
+        "blocks": 34,
+        "block_types": {
+          "paragraph": 3,
+          "list": 31
+        },
+        "tables": 0,
+        "images": 0,
+        "quotes": 0,
+        "code": 0,
+        "headings": 0,
+        "lists": 31
+      }
+    },
+    {
+      "id": "09-storyline-example",
+      "file": "09-storyline-example.md",
+      "source": {
+        "path": "contracts/examples/storyline.md",
+        "scope": "repo",
+        "sha256": "0d8b8b0c0455668763107cfe9620613543ceb08ec94331da3fe60dd0c51b9fe1",
+        "bytes": 4586,
+        "lines": 104
+      },
+      "handling": "verbatim",
+      "transformations": null,
+      "output": {
+        "sha256": "0d8b8b0c0455668763107cfe9620613543ceb08ec94331da3fe60dd0c51b9fe1",
+        "bytes": 4586,
+        "chapters": 3,
+        "pages": 8,
+        "blocks": 48,
+        "block_types": {
+          "paragraph": 8,
+          "list": 29,
+          "heading": 8,
+          "quote": 2,
+          "image": 1
+        },
+        "tables": 0,
+        "images": 1,
+        "quotes": 2,
+        "code": 0,
+        "headings": 8,
+        "lists": 29
+      }
+    },
+    {
+      "id": "10-by-page-example",
+      "file": "10-by-page-example.md",
+      "source": {
+        "path": "contracts/examples/by-page.md",
+        "scope": "repo",
+        "sha256": "41f420ecfc890427452a33dee5541c6bf6f542da9b6a1795743e7ea86e56ec97",
+        "bytes": 3789,
+        "lines": 119
+      },
+      "handling": "verbatim",
+      "transformations": null,
+      "output": {
+        "sha256": "41f420ecfc890427452a33dee5541c6bf6f542da9b6a1795743e7ea86e56ec97",
+        "bytes": 3789,
+        "chapters": 2,
+        "pages": 6,
+        "blocks": 54,
+        "block_types": {
+          "heading": 24,
+          "paragraph": 12,
+          "list": 13,
+          "image": 1,
+          "table": 2,
+          "code": 1,
+          "quote": 1
+        },
+        "tables": 2,
+        "images": 1,
+        "quotes": 1,
+        "code": 1,
+        "headings": 24,
+        "lists": 13
+      }
+    }
+  ]
+}

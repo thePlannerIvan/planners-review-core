@@ -1,0 +1,16 @@
+{
+  "contract": "doc-assets/1",
+  "doc": "storyline.md",
+  "assets": [
+    {
+      "path": "assets/positioning-map.svg",
+      "kind": "svg",
+      "sha256": "231f8db54ebe03d3a9cad3d731bf37d698a312ad8e33f871206ef94fcdacb897",
+      "bytes": 2253,
+      "anchors": [
+        "b:e3d281"
+      ],
+      "alt": "剂量与场景的竞争空白"
+    }
+  ]
+}

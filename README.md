@@ -66,6 +66,57 @@ node scripts/review-host.mjs start path/to/review-surface.json
 
 ---
 
+## 单独使用：打开一份工作稿
+
+`planners-doc/1` 工作稿（`.planners/storyline.md`、`.planners/by-page.md`）可以直接用工作台打开：
+
+```bash
+node scripts/doc-workbench.mjs path/to/.planners/storyline.md --open
+```
+
+按块渲染，点进任意块就地改；加粗、斜体、行内代码、链接在块内直接排版。保存自动发生，磁盘上只替换被编辑的那一块，其余块逐字不动。缺锚点会在打开时补写，重复锚点会重建；超出七种块或行内子集的写法按原文显示，不静默改写。
+
+要模型改哪里就选哪里：选中半句也会吸成整块，提交前高亮「将改的块」；块尾有反馈按钮，顶部「整体反馈」可发起整页或整份反馈。派发出去的任务只带块身份与 `sha256(block.raw)`，不带全文；模型处理中的块显示「模型正在改这一段」并锁定，其余块照常可写，完成后自动解锁。
+
+模型一次写回多块（`POST /api/patch`）。服务端按块比对任务提交时的指纹与磁盘当前版本：没变过的块直接落盘并解锁；在这之后被人改过的那一块只标「待核对」、保持锁定、磁盘不动，其余块照常落盘。人可以选择「保留我的」「用模型版」或「放弃该块」，裁决后解锁。两个人改不同块时按块合并，同一块才会被拒绝。所有写盘走 journal，进程在两次 rename 之间被打断，重启时能恢复未提交的改动，也不会多出幽灵块。任务形状、回执与 journal 判据见 [`planners-doc-task/1`](contracts/planners-doc-task.md)。
+
+图片按正文里的 `![说明](相对路径)` 就地显示，点开是只读放大层（滚轮 / 按钮缩放，可切「适应窗口」与「1:1」看裁切）；文件取不到时块内标「未能加载 · 路径」，不画占位图。SVG 与位图一样只经 `<img>` 加载，`/asset` 只发图片 MIME 并给 SVG 带 `sandbox; script-src 'none'` 的 CSP，图里的脚本不执行。换图只换文件字节：`POST /api/asset/replace` 的请求里没有路径，用哪张图始终由正文引用决定；锁定的图块会被拒绝，正文与其他块一个字节都不动。文档引用的图登记在同名清单（`storyline.md` → `storyline.assets.json`，`doc-assets/1`），打开时按正文与磁盘重建，换过文件会留下 `replaced_from_sha256`；`node scripts/validate-doc-assets.mjs <doc>` 独立核对三边是否一致。
+
+左侧目录按「章节 → 页」两级列出，点页跳转，滚动时高亮当前页。块前缀的六点句柄可拖，落点用一条提示线说明「插到哪两块之间」；拖页标题移动整页（连同其下所有块），页号随新顺序重排；`Alt+↑↓` 移动光标所在的块。拖动与页重排走同一个显式重排操作 `POST /api/reorder`（`move-block` / `move-page`），未参与重排的块逐字不动。锁定（模型正在改）与待核对的块不是可编辑块：不给拖柄，`Alt+↑↓` 也不动；页里只要有一块被占住，整页也不能拖，服务端同样按 `block_locked` 拒绝。
+
+历史按次记录：每次写盘前把上一版整份存进 `.doc-workbench/history/<文档文件名>/`，顶部「历史」列出时间、操作、指纹与摘要；「恢复这一版」把旧档作为一次新的编辑落盘，恢复前的那一版也会再存一档，旧记录一个不删。接口是 `GET /api/history` 与 `POST /api/history/restore`（`{id, base_sha256}`）。
+
+**没有侧栏插件时**，派发不丢：同一条任务会落进文档同目录的 `.doc-workbench/inbox/t-<任务 id>.json`，等人说一声「去看看」，模型用一条命令读回块身份、提交时的指纹与意见原文，再把它标记为已取走。有插件时同一条任务交给唤醒；两条路径消费同一个任务形状。派发不写正文，也不等于批准。
+
+```bash
+node scripts/doc-inbox.mjs list path/to/.planners/storyline.md          # 未处理任务
+node scripts/doc-inbox.mjs take path/to/.planners/storyline.md          # pending → processing
+```
+
+### 同一个工作台挂进 DSH 侧栏
+
+同一份工作稿也能生成一个审阅面，直接挂进 DSH 侧栏；保存、重排、派发、锁与待核对的行为与本地页一致：
+
+```bash
+node scripts/doc-surface.mjs path/to/.planners/storyline.md
+```
+
+生成 `.doc-workbench/review-surface.json`（`command_backend: "doc-workbench/1"`）与一份自包含入口，用它走 `review_open` 即可。侧栏宿主只 serve 静态文件、不转发页面的 `/api/*`，所以页面把每次写入都交给桥的 `command(...)`；命令后端与本地页共用 `scripts/lib/doc-session.mjs`（解析、块级写、journal、锁判定只有一份），页面本身也共用 `assets/workbench/` 下同一批文件。同一个 surface `id` 再次打开就是刷新那一个标签。
+
+派发按宿主分流：有插件时页面拿回执里的文案调用 `review.wake(...)` 唤醒模型；没有插件（本地宿主）同一条任务落本地收件箱，页面状态如实写明「已写入收件箱」。任务、锁与待核对落在 `.doc-workbench/state/`，所以侧栏命令、本地页与模型侧的下一条命令即使不在一个进程里，也看到同一组锁：
+
+```bash
+node scripts/doc-command.mjs path/to/.planners/.doc-workbench/review-surface.json tasks
+node scripts/doc-command.mjs path/to/.planners/.doc-workbench/review-surface.json claim <任务 id>
+echo '{"task_id":"<任务 id>","patches":[{"anchor":"b:7b057d","content":"新的一版。"}]}' \
+  | node scripts/doc-command.mjs path/to/.planners/.doc-workbench/review-surface.json patch
+```
+
+旧的 `.proposal-work/page-architecture.json` / `.bypage-work/page-architecture.json` 也能打开，但**只读**：页面顶部写明原因，保存、重排、派发都被拒绝，磁盘一个字节都不动。旧项目不迁移，新的工作稿要按 `planners-doc/1` 重建。
+
+
+---
+
 <details>
 <summary>Skill 开发者说明：`review-surface/2.0.0` 契约、桥 API、命令通道与回归测试</summary>
 
@@ -74,7 +125,7 @@ node scripts/review-host.mjs start path/to/review-surface.json
 1. **准备审阅页面目录**：入口 HTML 推荐保留裸标记 `{{REVIEW_BRIDGE}}` 独占一行（允许省略以兼容普通 HTML 产物——两个宿主都会兜底追加到 `</body>` 前，仅校验器给出 `bridge_placeholder_absent` 警告；不要写进 `<script src>` 或 `<script>` 标签内，免得替换嵌套破损）。也不要在页面目录复制 `review-bridge.js`。
 2. **编写 `review-surface.json`**：遵循 `contracts/review-surface.schema.json`（**7 个必填字段 + 7 个可选字段**，宿主只读契约字段，不解释任何业务审阅语义）：
    - **必填 7 项**：`contract_version`（`"review-surface/2.0.0"`）、`id`（`<skill>/<面>`，同一对话按 `id` 复用/刷新标签）、`title`、`project_root`、`dir`、`entry`、`wake`（`mode`: `queue | steer` + `text`）。
-   - **可选 7 项**：`description`、`feedback`（提交落盘路径，省略则只靠 `wake` 回传）、`draft`（未提交草稿恢复文件）、`watch`（监听元数据变更推 `review/changed`）、`annotate`（`true` 时注入 `assets/annotate/annotate.js` 产 `artifact-annotations/1`）、`command_backend`（`svg-workbench/1` 或 `content-workbench/1`）、`capabilities`。
+   - **可选 7 项**：`description`、`feedback`（提交落盘路径，省略则只靠 `wake` 回传）、`draft`（未提交草稿恢复文件）、`watch`（监听元数据变更推 `review/changed`）、`annotate`（`true` 时注入 `assets/annotate/annotate.js` 产 `artifact-annotations/1`）、`command_backend`（`svg-workbench/1`、`content-workbench/1` 或 `doc-workbench/1`）、`capabilities`。
 3. **页面调用桥接口**：
    ```js
    const review = await ReviewBridge.connect()
@@ -102,6 +153,11 @@ node scripts/review-host.mjs start path/to/review-surface.json
   node evals/run.mjs                                     # JS 校验器、本地宿主、线协议与桥回归
   python3 -m unittest discover -s evals -p 'test_*.py'   # Python 传输层与宿主生命周期回归
   ```
+- **验收（票 10，独立入口）**：
+  ```bash
+  node evals/acceptance/run.mjs                          # 十份真实语料往返、块内中文输入、同块双改
+  ```
+  它不并进上面两条回归：更慢，中文输入那一项还需要本机 Playwright 的 Chromium（没有就记「无法验证」，不伪造通过）。做法、语料来源与最近一次记录见 [`evals/acceptance/README.md`](evals/acceptance/README.md) 与 [`evals/acceptance/REPORT.md`](evals/acceptance/REPORT.md)。
 
 ### 目录结构
 
@@ -111,17 +167,40 @@ planners-review-core/
 ├── GOTCHAS.md
 ├── SECURITY.md
 ├── contracts/
-│   └── review-surface.schema.json      # review-surface/2.0.0 权威契约
+│   ├── review-surface.schema.json      # review-surface/2.0.0 权威契约
+│   ├── planners-doc.md                 # planners-doc/1 文档契约（工作稿结构）
+│   ├── doc-assets.md                   # doc-assets/1 图资产清单契约（派生索引）
+│   ├── planners-doc-task.md            # planners-doc-task/1 块级反馈任务形状
+│   └── examples/                       # 两份真实样例：storyline / by-page
 ├── assets/
 │   ├── review-bridge.js                # 双宿主运行时桥
 │   ├── dsh-tokens.css                  # DSH 共享视觉令牌唯一源
+│   ├── workbench/                      # 文字工作台页面、transport 与行内格式序列化
 │   └── annotate/                       # 无依赖 HTML 产物批注层
 ├── scripts/
 │   ├── open-artifact.mjs               # 任意 HTML 一键建批注面入口
 │   ├── validate-surface.mjs            # surface 结构与包含性校验器
+│   ├── validate-doc.mjs                # planners-doc/1 文档校验器
+│   ├── validate-doc-assets.mjs         # doc-assets/1 资产清单校验器
 │   ├── review-host.mjs                 # 本地宿主生命周期唯一 CLI
 │   ├── serve-review.mjs                # 无 DSH 插件时的本地浏览器宿主
 │   ├── content-workbench.mjs           # 通用内容/结构审阅工作台后端
+│   ├── doc-workbench.mjs               # 本地页入口：HTTP 路由，块级逻辑在 lib/doc-session
+│   ├── doc-surface.mjs                 # 为工作稿生成侧栏 review-surface 与自包含入口
+│   ├── doc-command.mjs                 # doc-workbench/1 命令后端；同时是模型侧 tasks/claim/patch CLI
+│   ├── doc-inbox.mjs                   # 模型侧读收件箱：list 未处理任务 / take 取走任务
+│   ├── lib/doc-session.mjs             # 两个入口共用的块级内核：解析、写盘、journal、锁、裁决
+│   ├── lib/doc-boards.mjs              # 任务板与待核对的落盘（本地页 / 侧栏 / 模型 CLI 共享）
+│   ├── lib/doc-blocks.mjs              # 文档切块/锚点修补唯一实现（校验器共用）
+│   ├── lib/doc-assets.mjs              # 图资产清单：派生、换文件守卫与三边校验
+│   ├── lib/doc-history.mjs             # 每次写盘前存上一版；列出与按档恢复
+│   ├── lib/doc-io.mjs                  # 旁路目录与原子写（fsync + rename）唯一实现
+│   ├── lib/doc-tasks.mjs               # 块级反馈任务与块锁
+│   ├── lib/doc-inbox.mjs               # 无插件派发的本地收件箱（一条任务一个文件）
+│   ├── lib/doc-dispatch.mjs            # 派发唯一出口：有插件唤醒 / 无插件落收件箱
+│   ├── lib/doc-legacy.mjs              # 旧 JSON 主稿的只读快照，不进入新契约的读写
+│   ├── lib/doc-conflicts.mjs           # 同块双改的待核对队列（两个版本 + 裁决）
+│   ├── lib/doc-journal.mjs             # 写盘 journal、跨进程写锁与崩溃恢复
 │   └── lib/review_host.py              # Python 侧宿主传输封装
 ├── evals/                              # JS + Python 回归测试集
 └── references/                         # 接缝架构、Workbench 与批注规范

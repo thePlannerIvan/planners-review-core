@@ -83,7 +83,7 @@ if (doc !== null) {
     err('annotate_shape', `annotate 只能是 true / false，实际 ${JSON.stringify(doc.annotate)}`);
   }
   const KNOWN_CAPABILITIES = ['asset-upload', 'draft', 'command'];
-  if (doc.command_backend !== undefined && !['svg-workbench/1', 'content-workbench/1'].includes(doc.command_backend)) {
+  if (doc.command_backend !== undefined && !['svg-workbench/1', 'content-workbench/1', 'doc-workbench/1'].includes(doc.command_backend)) {
     err('command_backend', 'command_backend must be an allowlisted workbench identifier');
   }
   if (Array.isArray(doc.capabilities) && doc.capabilities.includes('command') && doc.command_backend === undefined) {

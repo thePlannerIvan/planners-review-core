@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>文字工作台</title>
+  <link rel="stylesheet" href="/doc-workbench.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="doc-meta">
+      <strong id="projectName">工作稿</strong>
+      <span id="docKind"></span>
+    </div>
+    <div class="top-actions">
+      <button type="button" class="history-open" id="historyOpen" aria-haspopup="dialog" aria-controls="historyPanel">历史</button>
+      <button type="button" class="overall-feedback" id="overallFeedback" aria-haspopup="menu" aria-expanded="false">整体反馈</button>
+      <div class="overall-menu" id="overallMenu" role="menu" hidden>
+        <button type="button" role="menuitem" data-overall="page">反馈这一页</button>
+        <button type="button" role="menuitem" data-overall="doc">反馈整份</button>
+      </div>
+      <span class="save-state" id="saveState" role="status" aria-live="polite">正在打开…</span>
+    </div>
+  </header>
+  <div class="history-panel" id="historyPanel" role="dialog" aria-label="历史版本" hidden>
+    <div class="history-head">
+      <strong>历史版本</strong>
+      <button type="button" class="history-close" id="historyClose">关闭</button>
+    </div>
+    <p class="history-note" id="historyNote"></p>
+    <ul class="history-list" id="historyList"></ul>
+  </div>
+  <p class="structure-notice" id="structureNotice" hidden></p>
+  <p class="readonly-notice" id="readonlyNotice" role="status" hidden></p>
+  <div class="workbench">
+    <aside class="toc-panel" aria-label="目录">
+      <nav class="toc" id="toc"></nav>
+    </aside>
+    <main class="doc" id="blocks" aria-label="文档正文"></main>
+  </div>
+  <div class="inline-toolbar" id="inlineToolbar" role="toolbar" aria-label="行内格式" hidden></div>
+  <button type="button" class="selection-feedback" id="selectionFeedback" data-feedback-selection hidden>反馈</button>
+  <div class="feedback-composer" id="feedbackComposer" role="dialog" aria-label="块级反馈" hidden>
+    <p class="feedback-target" id="feedbackTargetNote"></p>
+    <textarea id="feedbackText" rows="3" placeholder="要模型改什么？只改高亮的这几块。"></textarea>
+    <p class="feedback-error" id="feedbackError" hidden></p>
+    <div class="feedback-actions">
+      <button type="button" class="feedback-cancel" id="feedbackCancel">取消</button>
+      <button type="button" class="feedback-submit" id="feedbackSubmit">提交反馈</button>
+    </div>
+  </div>
+  <script src="/vendor/marked.js"></script>
+  <script src="/doc-transport.js"></script>
+  <script src="/doc-inline.js"></script>
+  <script src="/doc-drag.js"></script>
+  <script src="/doc-feedback.js"></script>
+  <script src="/doc-images.js"></script>
+  <script src="/doc-workbench.js"></script>
+</body>
+</html>

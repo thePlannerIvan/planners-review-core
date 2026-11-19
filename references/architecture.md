@@ -26,6 +26,24 @@ review-bridge.js ──┘
 | `scripts/review-host.mjs` | **宿主的生命周期，唯一实现**（Node CLI） | 写/校验 surface、起/复用宿主、判死活与**身份**、停干净、找 node、解析启动自证、越界出声 | `write` / `validate` / `state` / `alive` / `start` / `stop` / `open` ＋ `pid` / `report` / `match` / `constants`；入参是**一个 surface 路径** | **不认识任何 Skill 的业务**：不解释审的是什么，也不需要在替谁干活；文档内容由各家的 `surface_document()` 建 |
 | `scripts/lib/review_host.py` | **只是传输层**（Python） | spawn `review-host.mjs` + 解析 JSON + 映射名字 | 同名函数给 Python 调用方；只有 `node_binary()` 留在这一侧（怎么启动 CLI）；**开浏览器也归实现侧**（`launchBrowser()` / `--no-open`） | **判据一条都没有** —— 僵尸、身份、越界、日志解析全在 Node 侧（上面那一行） |
 
+### 文字工作台：两个入口、一个内核
+
+块级工作稿有两个入口，但只有一份写盘逻辑：
+
+| 层 | 本地页 | DSH 侧栏 |
+|---|---|---|
+| 页面 | `assets/workbench/*.html/js`（`/api/*`） | 同一批文件，由 `scripts/doc-surface.mjs` 内联成自包含入口；宿主注入桥 |
+| 传输 | `doc-transport.js` 的 local 段 | 同一文件的 sidebar 段 → `review.command` / `review.wake` / `review.asset` |
+| 入口适配 | `scripts/doc-workbench.mjs`（HTTP 路由） | `scripts/doc-command.mjs`（`doc-workbench/1` 命令后端） |
+| 内核 | `scripts/lib/doc-session.mjs`（解析、块级写、journal、锁、裁决） | **同一个** |
+| 旁路状态 | `scripts/lib/doc-boards.mjs` → `.doc-workbench/state/` | **同一份**（模型 CLI 跨进程可见） |
+
+侧栏不允许页面自己拼第二套写盘：命令后端只接受页面操作的白名单（`open` / `block` /
+`split` / `merge` / `reorder` / `asset_replace` / `feedback` / `tasks` / `conflicts` /
+`decide` / `history` / `restore`），`claim` / `complete` / `patch` 只能从模型侧
+`doc-command.mjs` CLI 进来。白名单只在 `doc-command.mjs` 定义一次，
+`lib/review-command.mjs` 直接引用它。
+
 ### 为什么生命周期是 Node，而不是 Python
 
 缝的四块里三块本来就是 Node（契约 JSON、`validate-surface.mjs`、`serve-review.mjs`、桥），而

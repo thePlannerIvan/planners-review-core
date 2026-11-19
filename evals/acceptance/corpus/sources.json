@@ -1,0 +1,65 @@
+{
+  "note": "语料来源清单。前 8 份是 01-projects / 07-SkillLab 下的真实 Markdown；后 2 份是仓库内的契约样例（含图片语法）。build-corpus.mjs 按此清单生成 planners-doc/1 语料：原文文字逐行保留，只改结构（分隔线、嵌套缩进、标题层级）。",
+  "sources": [
+    {
+      "out": "01-needscope.md",
+      "source": "01-projects/美津浓项目整理版/美津浓_NeedScope_报告.md",
+      "project": "美津浓 NeedScope",
+      "doc": "storyline"
+    },
+    {
+      "out": "02-gwtb.md",
+      "source": "01-projects/美津浓项目整理版/美津浓_GWTB_新Skill报告.md",
+      "project": "美津浓 GWTB",
+      "doc": "storyline"
+    },
+    {
+      "out": "03-annual-cycle.md",
+      "source": "01-projects/美津浓项目整理版/04_分析结论与洞察报告/reports/美津浓_年度经营周期压缩版_2026-03-26.md",
+      "project": "美津浓年度经营周期",
+      "doc": "storyline"
+    },
+    {
+      "out": "04-model-scene-notes.md",
+      "source": "01-projects/美津浓项目整理版/04_分析结论与洞察报告/reports/美津浓_型号场景种草与人群洞察_2026-03-16.md",
+      "project": "美津浓型号场景洞察",
+      "doc": "storyline"
+    },
+    {
+      "out": "05-delivery-notes.md",
+      "source": "07-SkillLab/AI能力体系与职场定位/成品/交付说明.md",
+      "project": "AI 像素工厂交付",
+      "doc": "storyline"
+    },
+    {
+      "out": "06-planners-form-compatibility.md",
+      "source": "01-projects/planners-form/COMPATIBILITY.md",
+      "project": "planners-form 兼容性",
+      "doc": "storyline"
+    },
+    {
+      "out": "07-plugins-upstream-readme.md",
+      "source": "01-projects/dsh-plugins-upstream/README.md",
+      "project": "DSH 插件上游",
+      "doc": "storyline"
+    },
+    {
+      "out": "08-workbench-engineering.md",
+      "source": "07-SkillLab/workbench-redesign/ENGINEERING.md",
+      "project": "文字工作台工程拆解",
+      "doc": "storyline"
+    },
+    {
+      "out": "09-storyline-example.md",
+      "source": "contracts/examples/storyline.md",
+      "project": "朗标笔试案",
+      "doc": "storyline"
+    },
+    {
+      "out": "10-by-page-example.md",
+      "source": "contracts/examples/by-page.md",
+      "project": "朗标笔试案",
+      "doc": "by-page"
+    }
+  ]
+}
