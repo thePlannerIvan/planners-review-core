@@ -14,7 +14,7 @@
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { atomicWrite, stateDirFor } from './doc-journal.mjs';
+import { atomicWrite, stateDirFor } from './doc-io.mjs';
 
 export const INBOX_CONTRACT = 'planners-doc-task/1';
 export const INBOX_DIRNAME = 'inbox';

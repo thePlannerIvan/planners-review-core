@@ -443,3 +443,49 @@ test('侧栏 transport 把页面动作映射成 bridge 的 command 与 wake', as
   const DisabledTransport = new Function('window', 'globalThis', `${source}\nreturn window.DocTransport;`)(disabled, disabled);
   await assert.rejects(DisabledTransport.connect(), /doc-workbench\/1/);
 });
+
+// ── 历史：侧栏命令通道与本地页共用同一份存档与恢复 ──────────────────────────
+test('侧栏命令通道也能列出与恢复历史：恢复是一次新编辑，旧档不删', async (t) => {
+  const { path } = sandboxExample();
+  const original = readFileSync(path, 'utf8');
+  const { buildDocSurface } = await import('../scripts/doc-surface.mjs');
+  const built = buildDocSurface({ docPath: path });
+  const surface = loadSurface(built.surfacePath);
+
+  const opened = await command(surface, { op: 'open' });
+  assert.equal(opened.ok, true, JSON.stringify(opened));
+  const target = opened.blocks.find((block) => block.type === 'paragraph' && block.editable);
+  assert.ok(target, '样例里应有一块可编辑段落');
+  const saved = await command(surface, {
+    op: 'block',
+    anchor: target.anchor,
+    content: '侧栏改过的这一段。',
+    base_sha256: opened.sha256,
+    base_block_sha256: target.sha256,
+  });
+  assert.equal(saved.ok, true, JSON.stringify(saved));
+
+  const listed = await command(surface, { op: 'history' });
+  assert.equal(listed.ok, true, JSON.stringify(listed));
+  assert.equal(listed.contract, 'planners-doc-history/1');
+  assert.equal(listed.versions.length, 1, '保存前的原稿已经存档');
+  assert.equal(listed.versions[0].sha256, sha256(original));
+
+  const restored = await command(surface, {
+    op: 'restore',
+    id: listed.versions[0].id,
+    base_sha256: saved.sha256,
+  });
+  assert.equal(restored.ok, true, JSON.stringify(restored));
+  assert.equal(restored.changed, true, '恢复也要真的落盘');
+  assert.equal(readFileSync(path, 'utf8'), original, '侧栏恢复把稿子带回原稿');
+
+  const after = await command(surface, { op: 'history' });
+  assert.equal(after.versions.length, 2, '恢复本身又存了一档');
+  assert.equal(after.versions[0].operation, 'restore');
+  assert.ok(after.versions.some((version) => version.id === listed.versions[0].id), '旧档不删');
+
+  const modelOnly = await command(surface, { op: 'claim', task_id: 't:abcdefabcdef' });
+  assert.equal(modelOnly.ok, false);
+  assert.equal(modelOnly.code, 'command_operation', '模型侧动作仍然不能从浏览器进来');
+});

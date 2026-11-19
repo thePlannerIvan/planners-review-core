@@ -10,7 +10,7 @@
  */
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { atomicWrite, stateDirFor } from './doc-journal.mjs';
+import { atomicWrite, stateDirFor } from './doc-io.mjs';
 
 export const BOARD_CONTRACT = 'planners-doc-board/1';
 

@@ -10,12 +10,11 @@
  * 这里只回答「文档里的图现在是什么字节」，不评价、不选材。字段名只沿用含义相同的
  * `path` / `kind` / `sha256`（原名 `source_sha256`）/ `bytes`，其余都是文档侧新增。
  */
-import { createHash, randomBytes } from 'node:crypto';
-import {
-  closeSync, existsSync, fsyncSync, openSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync,
-} from 'node:fs';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { basename, dirname, extname, resolve, sep } from 'node:path';
 import { imageReferences, parseDocument } from './doc-blocks.mjs';
+import { atomicWrite } from './doc-io.mjs';
+import { sha256 } from '../content-review-contract.mjs';
 
 export const ASSET_CONTRACT = 'doc-assets/1';
 
@@ -69,8 +68,6 @@ export function resolveInside(docPath, relative) {
   return target;
 }
 
-const sha256Of = (bytes) => createHash('sha256').update(bytes).digest('hex');
-
 /**
  * 正文里所有图片引用（图块与段落里的行内图都算），按出现顺序、按路径去重。
  * 每条带上它所在块的锚点：清单借此把「文件」绑到「块身份」上。
@@ -111,39 +108,25 @@ export function buildManifest(docPath, parsed, previous = null) {
     if (!file || !existsSync(file) || !statSync(file).isFile()) continue;
     if (!realPathInside(docPath, file)) continue; // 符号链接指到目录外：不登记、不发布
     const bytes = readFileSync(file);
-    const sha256 = sha256Of(bytes);
+    const digest = sha256(bytes);
     const prior = previousByPath.get(reference.path);
     const asset = {
       path: reference.path,
       kind: assetKind(reference.path),
-      sha256,
+      sha256: digest,
       bytes: bytes.length,
       anchors: reference.anchors,
       alt: reference.alt,
     };
     // 换过文件就留下「上一版的指纹」；只换一次与连续换都只记紧邻的上一版。
-    if (prior && typeof prior.sha256 === 'string' && prior.sha256 !== sha256) {
+    if (prior && typeof prior.sha256 === 'string' && prior.sha256 !== digest) {
       asset.replaced_from_sha256 = prior.sha256;
-    } else if (prior && typeof prior.replaced_from_sha256 === 'string' && prior.replaced_from_sha256 !== sha256) {
+    } else if (prior && typeof prior.replaced_from_sha256 === 'string' && prior.replaced_from_sha256 !== digest) {
       asset.replaced_from_sha256 = prior.replaced_from_sha256;
     }
     assets.push(asset);
   }
   return { contract: ASSET_CONTRACT, doc: basename(docPath), assets };
-}
-
-export function writeAtomicFile(path, data, mode = null) {
-  const targetMode = mode ?? (existsSync(path) ? statSync(path).mode & 0o777 : 0o644);
-  const temp = `${path}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
-  if (existsSync(temp)) unlinkSync(temp);
-  const descriptor = openSync(temp, 'wx', targetMode);
-  try {
-    writeFileSync(descriptor, data);
-    fsyncSync(descriptor);
-  } finally {
-    closeSync(descriptor);
-  }
-  renameSync(temp, path);
 }
 
 /** 打开文档时顺带同步清单。没变化就不写盘；写失败由调用方决定要不要出声。 */
@@ -153,7 +136,7 @@ export function syncManifest(docPath, parsed) {
   const manifest = buildManifest(docPath, parsed, previous);
   const text = `${JSON.stringify(manifest, null, 2)}\n`;
   const changed = !existsSync(path) || readFileSync(path, 'utf8') !== text;
-  if (changed) writeAtomicFile(path, text);
+  if (changed) atomicWrite(path, text);
   return { path, manifest, changed };
 }
 
@@ -250,7 +233,7 @@ export function validateManifest(docPath, manifestPath = manifestPathFor(docPath
     if (asset.kind !== assetKind(path)) {
       push('asset_kind', `${path} 的 kind 应为 ${assetKind(path)}，实际 ${JSON.stringify(asset.kind ?? null)}`, { path, index });
     }
-    if (asset.sha256 !== sha256Of(bytes)) {
+    if (asset.sha256 !== sha256(bytes)) {
       push('asset_hash_mismatch', `${path} 的 sha256 与磁盘文件不一致；文件被换过或清单过期`, { path, index });
     }
     if (asset.bytes !== bytes.length) {

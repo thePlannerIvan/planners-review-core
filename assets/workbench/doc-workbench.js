@@ -338,6 +338,8 @@ function renderReadonlyState() {
   feedback.hidden = true;
   $('#overallMenu').hidden = true;
   $('#selectionFeedback').hidden = true;
+  $('#historyOpen').hidden = true;
+  $('#historyPanel').hidden = true;
 }
 
 function currentEditable() {
@@ -671,6 +673,99 @@ function wireOverallFeedback() {
   });
 }
 
+// ── 历史：每次写盘前存上一版；恢复当一次新编辑保存，旧记录不删 ────────────────
+const OPERATION_LABELS = {
+  block: '人改块',
+  split: '回车分块',
+  merge: '删空合并',
+  reorder: '重排',
+  patch: '模型写回',
+  conflict: '裁决待核对',
+  repair: '补锚点',
+  restore: '恢复旧版',
+  recover: '崩溃恢复',
+};
+
+function historyItem(version) {
+  const item = document.createElement('li');
+  item.className = 'history-item';
+  const head = document.createElement('div');
+  head.className = 'history-meta';
+  const time = document.createElement('span');
+  time.textContent = new Date(version.archived_at).toLocaleString();
+  const label = document.createElement('span');
+  label.textContent = OPERATION_LABELS[version.operation] ?? version.operation;
+  const size = document.createElement('span');
+  size.textContent = `${Math.max(1, Math.round(version.bytes / 1024))} KB`;
+  head.append(time, label, size);
+  const preview = document.createElement('p');
+  preview.className = 'history-preview';
+  preview.textContent = version.preview || '（空内容）';
+  const restore = document.createElement('button');
+  restore.type = 'button';
+  restore.className = 'history-restore';
+  restore.textContent = '恢复这一版';
+  restore.addEventListener('click', () => { void restoreHistory(version.id, restore); });
+  item.append(head, preview, restore);
+  return item;
+}
+
+async function loadHistory() {
+  const list = $('#historyList');
+  const note = $('#historyNote');
+  list.replaceChildren();
+  note.textContent = '正在读取历史…';
+  let receipt;
+  try {
+    receipt = await transport.history();
+  } catch (error) {
+    note.textContent = `读不到历史：${error.message}`;
+    return;
+  }
+  if (!receipt.ok) {
+    note.textContent = `读不到历史：${receipt.error ?? receipt.status ?? '未知错误'}`;
+    return;
+  }
+  const versions = receipt.versions ?? [];
+  if (!versions.length) {
+    note.textContent = '还没有历史版本：第一次保存后，上一版会出现在这里。';
+    return;
+  }
+  note.textContent = `共 ${versions.length} 版 · 新的在前；恢复会作为一次新编辑保存，旧版本不删。`;
+  if (receipt.errors?.length) note.textContent += ` · ${receipt.errors.length} 个条目读不出来`;
+  for (const version of versions) list.append(historyItem(version));
+}
+
+async function openHistory() {
+  if (snapshot?.readonly) { status('只读 · 旧 JSON 主稿没有历史可恢复', true); return; }
+  $('#historyPanel').hidden = false;
+  await loadHistory();
+}
+
+async function restoreHistory(id, button) {
+  button.disabled = true;
+  await flushSaves();
+  try {
+    const receipt = await transport.restore({ id, base_sha256: snapshot.sha256 });
+    if (!receipt.ok) {
+      status(`恢复失败 · ${receipt.error ?? receipt.status ?? '未知错误'}`, true);
+      button.disabled = false;
+      return;
+    }
+    applySnapshot(receipt);
+    $('#historyPanel').hidden = true;
+    status(receipt.changed ? '已恢复旧版 · 这是一次新的编辑，旧版本仍在历史里' : '这一版与当前内容相同');
+  } catch (error) {
+    status(`恢复失败 · ${error.message}`, true);
+    button.disabled = false;
+  }
+}
+
+function wireHistory() {
+  $('#historyOpen').addEventListener('click', () => { void openHistory(); });
+  $('#historyClose').addEventListener('click', () => { $('#historyPanel').hidden = true; });
+}
+
 // ── 锁与待核对：处理中的块不可编辑；待核对块继续锁着，等人裁决 ────────────────
 const LOCKED_TASK_STATES = new Set(['processing', 'review']);
 
@@ -716,6 +811,8 @@ function applyLocks(locks) {
     if (owner) lockBlock(node, owner);
     else unlockBlock(node);
   }
+  // 锁定 / 解锁都改变「能不能拖」：只重算句柄，不重画正文。
+  DocDrag.refresh();
 }
 
 async function syncTasks() {
@@ -779,6 +876,7 @@ async function syncConflicts() {
       if (conflict) renderDeferred(node, conflict);
       else clearDeferred(node);
     }
+    DocDrag.refresh();
   } catch {
     // 待核对同步失败不打断编辑：保存路径仍会拒绝锁定块。
   }
@@ -1162,6 +1260,7 @@ function renderAll() {
 
 async function boot() {
   wireToolbar();
+  wireHistory();
   wireComposer();
   wireSelectionFeedback();
   wireOverallFeedback();

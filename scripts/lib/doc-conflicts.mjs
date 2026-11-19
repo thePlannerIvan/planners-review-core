@@ -2,8 +2,9 @@
  * 待核对队列：同一块在任务提交之后被人改过，模型写回时不能静默覆盖。
  *
  * 一条记录同时装两个版本——磁盘上人的版本（disk_raw）与模型的版本（model_content），
- * 人也需要看到它们才能裁决。队列只在工作台进程里存在，和任务、块锁一样；
- * 落盘恢复只负责「一次写盘被中断」，不负责把待核对带过重启。
+ * 人也需要看到它们才能裁决。队列和任务、块锁一样落在文档同目录的
+ * `.doc-workbench/state/conflicts.json`（`doc-boards.mjs` 写入），本地页、侧栏命令与
+ * 模型侧 CLI 跨进程看到同一份；journal 的恢复只管「一次写盘被中断」，不碰待核对。
  */
 export const CONFLICT_CONTRACT = 'planners-doc-conflict/1';
 export const CONFLICT_DECISIONS = ['mine', 'model', 'discard'];

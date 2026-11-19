@@ -164,6 +164,8 @@ Proposal 与 By-page 调用 `scripts/render-content-review.mjs` 的 `renderConte
 | `scripts/doc-command.mjs` | 侧栏命令后端（保存 / 派发 / 裁决 / 看锁）与模型侧 CLI（`tasks` / `claim` / `complete` / `patch` / `conflicts`），共用 `lib/doc-session.mjs` |
 | `scripts/lib/doc-session.mjs` | 两个入口共用的块级内核：解析、块级写、journal、锁与待核对的唯一实现 |
 | `scripts/lib/doc-boards.mjs` | 任务板与待核对的落盘（`.doc-workbench/state/`），让本地页 / 侧栏 / 模型 CLI 跨进程看到同一组锁 |
+| `scripts/lib/doc-history.mjs` | 历史版本：每次写盘前存上一版，按文档分桶；列出与按档恢复（恢复也是一次新编辑） |
+| `scripts/lib/doc-io.mjs` | 旁路目录与原子写（fsync + rename）的唯一实现；journal / 任务板 / 收件箱 / 资产清单 / 历史共用 |
 | `assets/workbench/doc-transport.js` | 页面到存储的唯一通道：侧栏走 `review.command` / `review.wake` / `review.asset`，无插件走 `/api/*` |
 | `scripts/validate-doc-assets.mjs` | `doc-assets/1` 唯一校验器：正文引用、清单、磁盘三边对得上（哈希 / 字节 / 类型 / 锚点 / 上一版） |
 | `scripts/lib/doc-assets.mjs` | 清单派生与同步、换文件字节守卫（扩展名 + 真签名、SVG 结构）——工作台与校验器共用 |
@@ -185,12 +187,12 @@ Proposal 与 By-page 调用 `scripts/render-content-review.mjs` 的 `renderConte
 | `references/architecture.md` | module 表、缝、DSH 侧的接入要求 |
 | `evals/run.mjs` | 回归（JS；条数以脚本实际输出为准，当前 75 条）：校验器 + 宿主 + 第二形状 + 线协议 + 轮询 + 桥 |
 | `evals/test_doc_contract.mjs` | `planners-doc/1` 文档契约回归（13 条）：两份样例通过 + 锚点重复 / 块类型越界 / 图片缺失 / 页为空四类拒绝 |
-| `evals/test_doc_workbench.mjs` | 文字工作台回归（18 条）：只改一块、未编辑块逐字不动、补锚点幂等、退化显示、行内序列化；页内 / 跨页移动块、整页重排、拒绝空页空章节、落点算法与目录 / 句柄接线 |
+| `evals/test_doc_workbench.mjs` | 文字工作台回归（27 条）：只改一块、未编辑块逐字不动、补锚点幂等、退化显示、行内序列化；页内 / 跨页移动块、整页重排、拒绝空页空章节、锁定 / 待核对块不可拖动、历史按次存档与恢复、落点算法与目录 / 句柄接线、一处事实一个来源 |
 | `evals/test_doc_feedback.mjs` | 块级反馈与派发回归（6 条）：任务只带块身份与指纹、整页 / 整份范围、锁定期间改别的块、完成后解锁、任务状态机、半句吸成整块 |
 | `evals/test_doc_assets.mjs` | 图块与资产回归（10 条）：位图 / SVG 加载与脚本隔离、未能加载文案、放大只读；清单派生 / 新增登记 / 换图留上一版；锁定图块拒绝替换；清单漂移四类；两份样例清单 |
 | `evals/test_doc_conflict.mjs` | 待核对与并发回归（5 条）：同块双改只锁该块其余落盘、裁决两个方向、跨块并发按块合并、journal 崩溃恢复、页面裁决入口 |
 | `evals/test_doc_dispatch.mjs` | 无插件派发与旧项目只读回归（5 条）：收件箱落盘 / 读回 / 重复写不重复、pending→processing、有插件与无插件同形、旧 JSON 只读拒绝且磁盘不变、界面状态如实 |
-| `evals/test_sidebar_surface.mjs` | 侧栏接入回归（7 条）：侧栏通道只改被编辑块的字节、同 id 刷新、派发两通道同形、模型 CLI 跨进程 claim/patch 与侧栏裁决、页面源码只有一条 transport、无插件宿主直接打开生成的 surface、transport 的 command/wake 映射 |
+| `evals/test_sidebar_surface.mjs` | 侧栏接入回归（8 条）：侧栏通道只改被编辑块的字节、同 id 刷新、派发两通道同形、模型 CLI 跨进程 claim/patch 与侧栏裁决、侧栏历史列出与恢复、页面源码只有一条 transport、无插件宿主直接打开生成的 surface、transport 的 command/wake 映射 |
 | `evals/acceptance/run.mjs` | 验收（票 10）：十份真实语料往返零字节差异、块内中文输入 / 撤销 / 跨块选区、同块双改复跑两遍；生成 `REPORT.md` 与 `records/*.json`。需要本机 Playwright / Chromium，**不并进日常回归** |
 
 **跑测试要跑两条入口，只跑一条就等于没跑**（这里踩过：JS 绿而 Python 那条没跑）：

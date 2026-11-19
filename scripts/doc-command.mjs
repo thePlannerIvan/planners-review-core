@@ -18,7 +18,8 @@
  *   node scripts/doc-command.mjs <review-surface.json> conflicts
  *
  * 浏览器只能做页面真正需要的事（open/block/split/merge/reorder/asset_replace/feedback/
- * tasks/conflicts/decide）；claim / patch / complete 是模型侧动作，从浏览器调用一律拒绝。
+ * tasks/conflicts/decide/history/restore）；claim / patch / complete 是模型侧动作，从浏览器
+ * 调用一律拒绝。这里导出的白名单也是 `review-command.mjs` 唯一使用的来源。
  */
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
@@ -32,6 +33,7 @@ export const DOC_BINDING_CONTRACT = 'doc-surface/1';
 /** 页面（浏览器）真正需要的操作：保存、派发、裁决、看锁与待核对。 */
 export const DOC_BROWSER_OPERATIONS = new Set([
   'open', 'block', 'split', 'merge', 'reorder', 'asset_replace', 'feedback', 'tasks', 'conflicts', 'decide',
+  'history', 'restore',
 ]);
 /** 模型侧动作：不在浏览器白名单里。 */
 export const DOC_MODEL_OPERATIONS = new Set(['tasks', 'claim', 'complete', 'patch', 'conflicts']);
@@ -165,6 +167,10 @@ export async function runDocCommand(surface, payload, { browser = true } = {}) {
         return session.conflicts();
       case 'decide':
         return session.decide(payload);
+      case 'history':
+        return session.history();
+      case 'restore':
+        return session.restore(payload);
       default:
         return fail('command_operation', 'Unknown doc-workbench operation');
     }

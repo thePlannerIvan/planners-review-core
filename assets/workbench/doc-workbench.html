@@ -13,6 +13,7 @@
       <span id="docKind"></span>
     </div>
     <div class="top-actions">
+      <button type="button" class="history-open" id="historyOpen" aria-haspopup="dialog" aria-controls="historyPanel">历史</button>
       <button type="button" class="overall-feedback" id="overallFeedback" aria-haspopup="menu" aria-expanded="false">整体反馈</button>
       <div class="overall-menu" id="overallMenu" role="menu" hidden>
         <button type="button" role="menuitem" data-overall="page">反馈这一页</button>
@@ -21,6 +22,14 @@
       <span class="save-state" id="saveState" role="status" aria-live="polite">正在打开…</span>
     </div>
   </header>
+  <div class="history-panel" id="historyPanel" role="dialog" aria-label="历史版本" hidden>
+    <div class="history-head">
+      <strong>历史版本</strong>
+      <button type="button" class="history-close" id="historyClose">关闭</button>
+    </div>
+    <p class="history-note" id="historyNote"></p>
+    <ul class="history-list" id="historyList"></ul>
+  </div>
   <p class="structure-notice" id="structureNotice" hidden></p>
   <p class="readonly-notice" id="readonlyNotice" role="status" hidden></p>
   <div class="workbench">

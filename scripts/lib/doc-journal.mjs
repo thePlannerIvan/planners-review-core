@@ -15,21 +15,16 @@
  * 文档（storyline / by-page）各有自己的 journal；写盘用 `save.lock` 串行化。
  */
 import {
-  closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync,
-  statSync, unlinkSync, writeFileSync,
+  closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync,
 } from 'node:fs';
-import { randomBytes } from 'node:crypto';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { sha256 } from '../content-review-contract.mjs';
+import { archiveVersion } from './doc-history.mjs';
+import { atomicWrite, stateDirFor } from './doc-io.mjs';
 
 export const JOURNAL_CONTRACT = 'planners-doc-journal/1';
 
 const fail = (code, message) => { throw Object.assign(Error(message), { code }); };
-
-/** 文档同目录下的工作台旁路目录：journal、save.lock 都放这里，不混进正文目录。 */
-export function stateDirFor(docPath) {
-  return join(dirname(resolve(docPath)), '.doc-workbench');
-}
 
 export function journalPathFor(docPath) {
   return join(stateDirFor(docPath), `${basename(docPath)}.journal.json`);
@@ -37,21 +32,6 @@ export function journalPathFor(docPath) {
 
 export function lockPathFor(docPath) {
   return join(stateDirFor(docPath), 'save.lock');
-}
-
-/** 原子写：临时文件 fsync 后 rename。模式跟目标文件，新文件默认 0600。 */
-export function atomicWrite(path, text, mode) {
-  const targetMode = mode ?? (existsSync(path) ? statSync(path).mode & 0o777 : 0o600);
-  const temp = `${path}.${process.pid}.${randomBytes(3).toString('hex')}.tmp`;
-  if (existsSync(temp)) unlinkSync(temp);
-  const fd = openSync(temp, 'wx', targetMode);
-  try {
-    writeFileSync(fd, text, 'utf8');
-    fsyncSync(fd);
-  } finally {
-    closeSync(fd);
-  }
-  renameSync(temp, path);
 }
 
 /**
@@ -118,6 +98,8 @@ export function commitDocument(docPath, { oldRaw, raw, applied, operation, fault
   if (oldRaw === raw) return { written: false, sha256: sha256(raw), journal: journalPathFor(docPath) };
   const journal = journalPathFor(docPath);
   const record = journalRecord(docPath, { oldRaw, raw, applied, operation });
+  // 先留上一版，再动盘：从这一行起，这次写入之后的任何结果都能从历史里找回来。
+  archiveVersion(docPath, { raw: oldRaw, operation });
   atomicWrite(journal, `${JSON.stringify(record, null, 2)}\n`);
   faults?.beforeCommit?.({ journal, doc: resolve(docPath), record });
   atomicWrite(docPath, raw);
@@ -153,6 +135,8 @@ export function recoverJournal(docPath) {
     renameSync(journal, target);
     return { state: 'orphaned', journal: target, sha256: hash };
   }
+  // 恢复也是一次写盘：先存恢复前的现场，旧内容不会因为「恢复成功」而消失。
+  archiveVersion(docPath, { raw: current, operation: 'recover' });
   atomicWrite(docPath, record.raw);
   unlinkSync(journal);
   return { state: 'applied', journal, sha256: record.new_sha256, applied: record.applied ?? [] };

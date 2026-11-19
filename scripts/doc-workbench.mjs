@@ -22,6 +22,8 @@
  *   POST /api/patch              模型一次写回多块：{task_id, patches:[{anchor, content}]}
  *   GET  /api/conflicts          人读待核对：磁盘版本 + 模型版
  *   POST /api/conflict/decide    裁决一块：{anchor, decision: mine|model|discard}
+ *   GET  /api/history            列出历史版本（每次写盘前存上一版，新的在前）
+ *   POST /api/history/restore    恢复一版：{id, base_sha256}（恢复也是一次新编辑）
  *
  * 没有侧栏插件时，派发把同一条任务落进文档同目录的 `.doc-workbench/inbox/`，
  * 模型用 `scripts/doc-inbox.mjs list|take` 读；有插件（onTask）时同一条任务交给它唤醒。
@@ -33,7 +35,7 @@ import { createServer } from 'node:http';
 import { extname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
-import { imageMime, realPathInside } from './lib/doc-assets.mjs';
+import { imageMime, realPathInside, resolveInside } from './lib/doc-assets.mjs';
 import { createTaskDispatcher } from './lib/doc-dispatch.mjs';
 import { createDocSession } from './lib/doc-session.mjs';
 
@@ -60,6 +62,7 @@ const BAD_REQUEST_CODES = new Set([
   'patch_request', 'patch_blocks', 'conflict_request', 'conflict_decision', 'conflict_anchor',
   'reorder_request', 'reorder_op',
   'asset_request', 'asset_type', 'asset_content',
+  'history_request', 'history_id',
 ]);
 
 /** 只接受工作台页面自己的同源 JSON 写入：别的网页不能借浏览器改本地文档或派发任务。 */
@@ -108,10 +111,9 @@ function serveFile(response, file, type) {
 /** 文档旁边的图片：只放行文档目录内的普通**图片**文件，不接受绝对路径与跨目录。 */
 function assetFile(docPath, url) {
   const requested = new URL(url, 'http://127.0.0.1').searchParams.get('path') ?? '';
-  if (!requested || /^(?:[a-zA-Z][a-zA-Z0-9+.-]*:|\/|~)/.test(requested)) return null;
-  const root = resolve(docPath, '..');
-  const file = resolve(root, requested);
-  if (!file.startsWith(root + '/')) return null;
+  // 包含性只认 doc-assets 的实现：字符串前缀 + realpath 各写一遍就是两份会漂移的判据。
+  const file = resolveInside(docPath, requested);
+  if (!file) return null;
   if (!imageMime(file)) return null; // 同源 /asset 不能把 HTML / JS 当资产发出去
   if (!existsSync(file) || !statSync(file).isFile()) return null;
   if (!realPathInside(docPath, file)) return null; // 符号链接指到文档目录外也不算资产
@@ -236,6 +238,16 @@ export async function startDocWorkbench({
         if (!allowWrite(request, response, server, host, 'conflict')) return;
         const payload = JSON.parse((await readBody(request)) || '{}');
         return json(response, 200, session.decide(payload));
+      }
+      if (url.pathname === '/api/history') {
+        if (request.method !== 'GET') return json(response, 405, { ok: false, code: 'method', error: '用 GET 读取历史版本' });
+        return json(response, 200, session.history());
+      }
+      if (url.pathname === '/api/history/restore') {
+        if (request.method !== 'POST') return json(response, 405, { ok: false, code: 'method', error: '用 POST 恢复历史版本' });
+        if (!allowWrite(request, response, server, host, 'history')) return;
+        const payload = JSON.parse((await readBody(request)) || '{}');
+        return json(response, 200, session.restore(payload));
       }
       if (url.pathname === '/' || url.pathname === '/index.html') {
         return serveFile(response, join(ASSETS, 'doc-workbench.html'));

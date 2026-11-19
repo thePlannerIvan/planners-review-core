@@ -13,17 +13,19 @@
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import {
-  BLOCK_TYPES, applyBlockContent, assessBlock, blockPrefix, imageReference, mergeBlockContent,
+  BLOCK_ANCHOR_RE, BLOCK_TYPES, applyBlockContent, assessBlock, blockPrefix, imageReference, mergeBlockContent,
   moveBlock, movePage, parseDocument, repairAnchors, splitBlockContent, tableModel,
 } from './doc-blocks.mjs';
 import {
   assertImageBytes, buildManifest, imageMime, manifestPathFor, realPathInside, resolveInside,
-  syncManifest, writeAtomicFile,
+  syncManifest,
 } from './doc-assets.mjs';
-import { TASK_CONTRACT, createTaskBoard } from './doc-tasks.mjs';
+import { TASK_CONTRACT, TASK_SCOPES, createTaskBoard } from './doc-tasks.mjs';
 import { CONFLICT_CONTRACT, CONFLICT_DECISIONS, createConflictBoard } from './doc-conflicts.mjs';
 import { commitDocument, journalPathFor, recoverJournal, withWriteLock } from './doc-journal.mjs';
 import { createFileBoardStores } from './doc-boards.mjs';
+import { HISTORY_CONTRACT, listVersions, readVersion } from './doc-history.mjs';
+import { atomicWrite } from './doc-io.mjs';
 import { LEGACY_READONLY_MESSAGE, legacySnapshot, readLegacyMaster } from './doc-legacy.mjs';
 import { sha256 } from '../content-review-contract.mjs';
 
@@ -168,7 +170,7 @@ function blockAt(document, anchor) {
 function saveBlock(docPath, payload, board, faults) {
   if (!payload || typeof payload !== 'object') fail('block_request', '请求体必须是 JSON 对象');
   const { anchor, content, base_sha256: baseSha, base_block_sha256: baseBlockSha } = payload;
-  if (typeof anchor !== 'string' || !/^b:[0-9a-f]{6,12}$/.test(anchor)) fail('block_anchor', '锚点形状不对');
+  if (typeof anchor !== 'string' || !BLOCK_ANCHOR_RE.test(anchor)) fail('block_anchor', '锚点形状不对');
   if (typeof content !== 'string') fail('block_content', '块内容必须是文本');
   return withWriteLock(docPath, () => {
     // 锁可能来自另一个进程（模型 CLI / 另一个工作台）：以磁盘上的任务板为准再判一次。
@@ -210,7 +212,7 @@ function saveBlock(docPath, payload, board, faults) {
 function splitBlock(docPath, payload, board, conflicts, faults) {
   if (!payload || typeof payload !== 'object') fail('block_request', '请求体必须是 JSON 对象');
   const { anchor, before, after, keep, base_sha256: baseSha } = payload;
-  if (typeof anchor !== 'string' || !/^b:[0-9a-f]{6,12}$/.test(anchor)) fail('block_anchor', '锚点形状不对');
+  if (typeof anchor !== 'string' || !BLOCK_ANCHOR_RE.test(anchor)) fail('block_anchor', '锚点形状不对');
   if (typeof before !== 'string' || typeof after !== 'string') fail('block_content', '拆分的前后两半都必须是文本');
   return withWriteLock(docPath, () => {
     board.refresh();
@@ -247,7 +249,7 @@ function splitBlock(docPath, payload, board, conflicts, faults) {
 function mergeBlocks(docPath, payload, board, conflicts, faults) {
   if (!payload || typeof payload !== 'object') fail('block_request', '请求体必须是 JSON 对象');
   const { anchor, previous, content, base_sha256: baseSha } = payload;
-  if (typeof anchor !== 'string' || !/^b:[0-9a-f]{6,12}$/.test(anchor)) fail('block_anchor', '锚点形状不对');
+  if (typeof anchor !== 'string' || !BLOCK_ANCHOR_RE.test(anchor)) fail('block_anchor', '锚点形状不对');
   return withWriteLock(docPath, () => {
     board.refresh();
     conflicts.refresh();
@@ -291,7 +293,7 @@ function samePage(block, page) {
 function feedbackTargets(document, payload) {
   const blocks = document.parsed.blocks.filter((block) => block.anchor && BLOCK_TYPES.has(block.type));
   const scope = payload.scope ?? 'blocks';
-  if (!['blocks', 'page', 'doc'].includes(scope)) fail('feedback_scope', '反馈范围只能是 blocks / page / doc');
+  if (!TASK_SCOPES.includes(scope)) fail('feedback_scope', `反馈范围只能是 ${TASK_SCOPES.join(' / ')}`);
 
   if (scope === 'doc') return { scope, page: null, blocks };
 
@@ -308,7 +310,7 @@ function feedbackTargets(document, payload) {
 
   const anchors = Array.isArray(payload.anchors) ? payload.anchors : [];
   if (!anchors.length) fail('feedback_anchor', '请先选中要改的块');
-  if (anchors.some((anchor) => typeof anchor !== 'string' || !/^b:[0-9a-f]{6,12}$/.test(anchor))) {
+  if (anchors.some((anchor) => typeof anchor !== 'string' || !BLOCK_ANCHOR_RE.test(anchor))) {
     fail('feedback_anchor', '块身份形状不对');
   }
   if (new Set(anchors).size !== anchors.length) fail('feedback_anchor', '同一块被选了两次');
@@ -403,7 +405,7 @@ function patchTask(docPath, payload, board, conflicts, faults) {
     const anchors = new Set();
     for (const patch of patches) {
       if (!patch || typeof patch !== 'object') fail('patch_blocks', '每块 patch 必须是对象');
-      if (typeof patch.anchor !== 'string' || !/^b:[0-9a-f]{6,12}$/.test(patch.anchor)) fail('patch_anchor', '锚点形状不对');
+      if (typeof patch.anchor !== 'string' || !BLOCK_ANCHOR_RE.test(patch.anchor)) fail('patch_anchor', '锚点形状不对');
       if (!task.blocks.some((block) => block.anchor === patch.anchor)) {
         fail('patch_anchor', `${patch.anchor} 不在这条任务里；模型只能改任务绑定的块`);
       }
@@ -475,7 +477,7 @@ function patchTask(docPath, payload, board, conflicts, faults) {
 function decideConflict(docPath, payload, board, conflicts, faults) {
   if (!payload || typeof payload !== 'object') fail('conflict_request', '请求体必须是 JSON 对象');
   const { anchor, decision } = payload;
-  if (typeof anchor !== 'string' || !/^b:[0-9a-f]{6,12}$/.test(anchor)) fail('conflict_anchor', '锚点形状不对');
+  if (typeof anchor !== 'string' || !BLOCK_ANCHOR_RE.test(anchor)) fail('conflict_anchor', '锚点形状不对');
   if (!CONFLICT_DECISIONS.includes(decision)) fail('conflict_decision', '裁决只能是 mine / model / discard');
 
   return withWriteLock(docPath, () => {
@@ -536,7 +538,19 @@ function reorderDocument(docPath, payload, board, conflicts, faults) {
   }
   return withWriteLock(docPath, () => {
     board.refresh();
+    conflicts.refresh();
     const document = readDocument(docPath);
+    // 锁定与待核对的块不可编辑（SPEC 第 5 节）：重排也是一次编辑，先拒再谈落点。
+    // 整页移动会带着页内所有块一起走，所以页里只要有一块被占住就整页拒绝。
+    const held = op === 'move-page'
+      ? document.parsed.blocks.filter((block) => block.anchor && block.page
+        && block.page.chapter?.index === payload.page?.chapter && block.page.index === payload.page?.index
+        && (board.lockOf(block.anchor) || conflicts.get(block.anchor)))
+      : (board.lockOf(payload.anchor) || conflicts.get(payload.anchor) ? [payload.anchor] : []);
+    if (held.length) {
+      const anchors = held.map((block) => block.anchor ?? block).join('、');
+      fail('block_locked', `这些块正被模型处理或待核对，先处理完再拖动：${anchors}`);
+    }
     if (typeof baseSha !== 'string' || baseSha !== sha256(document.raw)) {
       fail('stale_document', '文档已在别处被修改；请刷新工作台后再拖动');
     }
@@ -565,7 +579,7 @@ function reorderDocument(docPath, payload, board, conflicts, faults) {
 function replaceImageAsset(docPath, payload, board, conflicts) {
   if (!payload || typeof payload !== 'object') fail('asset_request', '请求体必须是 JSON 对象');
   const { anchor, content_base64: encoded, base_sha256: baseSha } = payload;
-  if (typeof anchor !== 'string' || !/^b:[0-9a-f]{6,12}$/.test(anchor)) fail('asset_request', '锚点形状不对');
+  if (typeof anchor !== 'string' || !BLOCK_ANCHOR_RE.test(anchor)) fail('asset_request', '锚点形状不对');
   if (typeof encoded !== 'string' || !encoded.trim()) fail('asset_request', '需要 content_base64（图文件字节）');
   const compact = encoded.replace(/\s+/g, '');
   if (!/^[A-Za-z0-9+/]*={0,2}$/.test(compact) || compact.length % 4 !== 0) {
@@ -594,7 +608,7 @@ function replaceImageAsset(docPath, payload, board, conflicts) {
   if (!existsSync(target) || !statSync(target).isFile()) fail('asset_path', `图文件不存在：${image.path}`);
   if (!realPathInside(docPath, target)) fail('asset_path', `图片指向文档目录之外：${image.path}`);
   assertImageBytes(image.path, bytes);
-  writeAtomicFile(target, bytes);
+  atomicWrite(target, bytes);
   // 文件已经换好；清单同步失败不该把这次替换说成失败，但要如实带出原因。
   const manifestPath = manifestPathFor(docPath);
   let manifest = buildManifest(docPath, document.parsed);
@@ -611,6 +625,54 @@ function replaceImageAsset(docPath, payload, board, conflicts) {
     assets_manifest: basename(manifestPath),
     ...(assetsError ? { assets_error: assetsError } : {}),
   };
+}
+
+/**
+ * 历史版本：只读列出；恢复把旧档当目标全文，走同一个 `commitDocument`。
+ *
+ * 因此恢复本身也是一次正常编辑：写前会把当前版本再存一档，旧档一个都不删
+ * （SPEC 第 4 节）。整份恢复会覆盖所有块，锁与待核对的判据和块级编辑一致，
+ * 有块被占住时先拒。
+ */
+function historyOf(docPath) {
+  return { ok: true, contract: HISTORY_CONTRACT, ...listVersions(docPath) };
+}
+
+function restoreVersion(docPath, payload, board, conflicts, faults) {
+  if (!payload || typeof payload !== 'object') fail('history_request', '请求体必须是 JSON 对象');
+  if (typeof payload.id !== 'string' || !payload.id) fail('history_id', '需要历史版本 id');
+  const archived = readVersion(docPath, payload.id);
+  return withWriteLock(docPath, () => {
+    board.refresh();
+    conflicts.refresh();
+    const document = readDocument(docPath);
+    const held = document.parsed.blocks.filter((block) => block.anchor
+      && (board.lockOf(block.anchor) || conflicts.get(block.anchor)));
+    if (held.length) {
+      fail('block_locked', `有块正被模型处理或待核对，先处理完再恢复：${held.map((block) => block.anchor).join('、')}`);
+    }
+    if (typeof payload.base_sha256 !== 'string' || payload.base_sha256 !== sha256(document.raw)) {
+      fail('stale_document', '文档已在别处被修改；请刷新工作台后再恢复');
+    }
+    const repaired = persistRepairs(docPath, document, faults);
+    // 旧档也按当前契约补锚点：恢复后磁盘与回执里的快照必须是同一份全文。
+    const target = repairAnchors(archived.raw);
+    const receipt = commitDocument(docPath, {
+      oldRaw: repaired.raw,
+      raw: target.raw,
+      applied: [],
+      operation: 'restore',
+      faults,
+    });
+    return {
+      ok: true,
+      contract: HISTORY_CONTRACT,
+      restored: payload.id,
+      restored_sha256: archived.sha256,
+      changed: receipt.written,
+      ...snapshotFrom(readDocument(docPath), docPath, board, conflicts),
+    };
+  });
 }
 
 /** 启动要拿写锁；另一个工作台正在写盘时等它一下，而不是把这次打开直接判死。 */
@@ -677,6 +739,8 @@ export async function createDocSession({ docPath, faults = null, persistent = tr
     mergeBlocks: (payload) => guarded(() => mergeBlocks(file, payload, board, conflicts, faults)),
     reorder: (payload) => guarded(() => reorderDocument(file, payload, board, conflicts, faults)),
     replaceAsset: (payload) => guarded(() => replaceImageAsset(file, payload, board, conflicts)),
+    history: () => historyOf(file),
+    restore: (payload) => guarded(() => restoreVersion(file, payload, board, conflicts, faults)),
     submitFeedback: (payload) => guarded(() => submitFeedback(file, payload, board)),
     // 侧栏每 3 秒轮询一次锁：读之前先读回磁盘，模型 CLI 在另一个进程里加的锁才看得见。
     tasks: () => { board.refresh(); return { ok: true, contract: TASK_CONTRACT, tasks: board.list() }; },

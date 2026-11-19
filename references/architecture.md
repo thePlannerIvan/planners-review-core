@@ -39,8 +39,10 @@ review-bridge.js ──┘
 | 旁路状态 | `scripts/lib/doc-boards.mjs` → `.doc-workbench/state/` | **同一份**（模型 CLI 跨进程可见） |
 
 侧栏不允许页面自己拼第二套写盘：命令后端只接受页面操作的白名单（`open` / `block` /
-`reorder` / `asset_replace` / `feedback` / `tasks` / `conflicts` / `decide`），
-`claim` / `complete` / `patch` 只能从模型侧 `doc-command.mjs` CLI 进来。
+`split` / `merge` / `reorder` / `asset_replace` / `feedback` / `tasks` / `conflicts` /
+`decide` / `history` / `restore`），`claim` / `complete` / `patch` 只能从模型侧
+`doc-command.mjs` CLI 进来。白名单只在 `doc-command.mjs` 定义一次，
+`lib/review-command.mjs` 直接引用它。
 
 ### 为什么生命周期是 Node，而不是 Python
 

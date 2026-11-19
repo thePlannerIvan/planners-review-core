@@ -2,9 +2,11 @@
  * 块级反馈任务的形状与「哪块正被模型处理」的锁。
  *
  * 任务只装「哪几块 + 提交时的内容指纹」，不装正文：模型拿到任务后按 doc.path 读工作稿，
- * 按 anchor 定位，用 sha256 判断这块还是不是提交时那一版。任务和锁都只在内存里——
- * 无插件派发的落盘副本在 `doc-inbox.mjs`（同一个 task 形状），有插件时的唤醒由
- * `doc-dispatch.mjs` 转交；同块双改的待核对属于 04（doc-conflicts），它们从这里接：
+ * 按 anchor 定位，用 sha256 判断这块还是不是提交时那一版。任务与锁落在文档同目录的
+ * `.doc-workbench/state/tasks.json`（`doc-boards.mjs` 写入），所以本地页、侧栏命令与
+ * 模型侧 CLI 即使不在同一个进程里，看到的也是同一组任务与锁；无插件派发另有一份
+ * 收件箱副本（`doc-inbox.mjs`，同一个 task 形状），有插件时的唤醒由 `doc-dispatch.mjs`
+ * 转交。同块双改的待核对属于 04（doc-conflicts），它们从这里接：
  *
  *   · 07：`GET /api/tasks` / board.list() 拿任务，写本地文件或唤醒模型；
  *   · 04：task.blocks[].sha256 是提交时的基线，board.lockOf(anchor) 给出占锁的任务；

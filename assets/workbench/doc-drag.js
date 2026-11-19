@@ -131,12 +131,22 @@
     return line;
   }
 
+  /** 锁定（模型正在改）与待核对（等裁决）的块都不是可编辑块：不给拖柄，也不给整页拖柄。 */
+  function blockedNode(node, entry) {
+    return node.classList.contains('is-locked') || node.classList.contains('is-deferred')
+      || Boolean(entry?.locked || entry?.deferred);
+  }
+
   function decorate(root, snapshot) {
     if (snapshot.readonly) return; // 旧 JSON 主稿只读：目录照常，正文不给拖柄，也不接受重排
     const byAnchor = new Map(snapshot.blocks.map((block) => [block.anchor, block]));
     for (const node of root.querySelectorAll('.doc-block[data-anchor]')) {
       const entry = byAnchor.get(node.dataset.anchor);
       if (entry) node.dataset.pageKey = entry.page.key ?? '';
+      if (blockedNode(node, entry)) {
+        node.querySelector(':scope > .block-handle')?.remove();
+        continue;
+      }
       if (node.querySelector(':scope > .block-handle')) continue;
       const handle = document.createElement('button');
       handle.type = 'button';
@@ -149,9 +159,16 @@
     }
     for (const divider of root.querySelectorAll('.page-divider[data-page-key]')) {
       const title = divider.querySelector('.page-title');
+      const key = divider.dataset.pageKey;
+      const blocked = [...root.querySelectorAll('.doc-block[data-anchor]')]
+        .some((node) => node.dataset.pageKey === key && blockedNode(node, byAnchor.get(node.dataset.anchor)));
       if (title) {
-        title.draggable = true;
-        title.title = '拖动标题移动整页';
+        title.draggable = !blocked;
+        title.title = blocked ? '页内有块正被模型处理或待核对，不能拖整页' : '拖动标题移动整页';
+      }
+      if (blocked) {
+        divider.querySelector(':scope > .page-handle')?.remove();
+        continue;
       }
       if (divider.querySelector(':scope > .page-handle')) continue;
       const handle = document.createElement('button');
@@ -163,6 +180,12 @@
       handle.innerHTML = HANDLE_SVG;
       divider.prepend(handle);
     }
+  }
+
+  /** 锁 / 待核对变化后只重算拖柄：不重画正文，不丢光标与未保存的编辑。 */
+  function refresh() {
+    if (!isBrowser || !state.root || !state.hooks) return;
+    decorate(state.root, state.hooks.snapshot());
   }
 
   function renderToc(snapshot) {
@@ -373,6 +396,10 @@
     const node = blockNodeFromSelection();
     const anchor = node?.dataset.anchor;
     if (!anchor) return;
+    if (node.classList.contains('is-locked') || node.classList.contains('is-deferred')) {
+      state.hooks?.status?.('这一块正被模型处理或待核对，不能移动', true);
+      return;
+    }
     const snapshot = state.hooks?.snapshot();
     if (!snapshot) return;
     const index = snapshot.blocks.findIndex((block) => block.anchor === anchor);
@@ -456,6 +483,7 @@
   return {
     render,
     mount: render,
+    refresh,
     blockGaps,
     pageGaps,
     nearestGap,

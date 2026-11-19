@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -781,4 +781,328 @@ test('工作台源码：六点句柄、页标题可拖、两级目录随滚动�
   assert.match(drag, /data-page-key/, '目录与落点按页身份定位，不按页号猜');
   assert.match(page, /DocDrag\.render/, '每次重画正文后目录与句柄要跟着重画');
   assert.match(css, /\.toc/, '目录要有左侧栏样式');
+});
+
+// ── 锁定与待核对：不可编辑的块也不可拖动（SPEC 第 5 节） ─────────────────────
+const postJson = (url, path, body) => fetch(`${url}${path}`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify(body),
+});
+
+test('被模型锁住的块不能被拖动：块与整页重排都被拒，解锁后同一动作可做', async (t) => {
+  const dir = scratchDir();
+  const path = writeDoc(dir, 'storyline.md', `# 测试文档
+
+## 甲
+
+### 页一
+
+块一。<!-- b:aaaaaa -->
+
+### 页二
+
+块二。<!-- b:bbbbbb -->
+
+块五。<!-- b:eeeeee -->
+
+## 乙
+
+### 页三
+
+块三。<!-- b:cccccc -->`);
+  const original = readFileSync(path, 'utf8');
+  const server = await openWorkbench(t, path);
+  const opened = await getDoc(server.url);
+
+  const feedback = await postJson(server.url, '/api/feedback', {
+    scope: 'blocks', anchors: ['b:bbbbbb'], text: '模型改这一块。',
+  });
+  const task = await feedback.json();
+  assert.equal(feedback.status, 200, JSON.stringify(task));
+  const claim = await postJson(server.url, '/api/task/claim', { task_id: task.task.id });
+  assert.equal(claim.status, 200, '模型应当拿到这一块的锁');
+
+  const moveBlock = await reorder(server.url, {
+    op: 'move-block', base_sha256: opened.sha256, anchor: 'b:bbbbbb',
+    to: { chapter: 1, index: 2, before: null },
+  });
+  const blockBody = await moveBlock.json();
+  assert.equal(moveBlock.status, 409, JSON.stringify(blockBody));
+  assert.equal(blockBody.code, 'block_locked', '锁定块不能被拖动');
+
+  const movePage = await reorder(server.url, {
+    op: 'move-page', base_sha256: opened.sha256, page: { chapter: 1, index: 2 },
+    to: { chapter: 2, index: 1, position: 'before' },
+  });
+  const pageBody = await movePage.json();
+  assert.equal(movePage.status, 409, JSON.stringify(pageBody));
+  assert.equal(pageBody.code, 'block_locked', '页里有锁定块时整页也不能拖');
+  assert.equal(readFileSync(path, 'utf8'), original, '被拒绝的重排不能留下写入');
+
+  const complete = await postJson(server.url, '/api/task/complete', { task_id: task.task.id });
+  assert.equal(complete.status, 200, '完成后再试同一动作');
+  const unlocked = await getDoc(server.url);
+  const retry = await reorder(server.url, {
+    op: 'move-page', base_sha256: unlocked.sha256, page: { chapter: 1, index: 2 },
+    to: { chapter: 2, index: 1, position: 'before' },
+  });
+  const retryBody = await retry.json();
+  assert.equal(retry.status, 200, JSON.stringify(retryBody));
+  assert.equal(retryBody.ok, true);
+  assert.equal(retryBody.changed, true, '解锁后同一动作应当真的执行');
+});
+
+test('待核对的块也不能被拖动，裁决后才恢复', async (t) => {
+  const dir = scratchDir();
+  const path = writeDoc(dir, 'storyline.md', `# 测试文档
+
+## 甲
+
+### 页一
+
+块一。<!-- b:aaaaaa -->
+
+### 页二
+
+块二。<!-- b:bbbbbb -->
+
+块五。<!-- b:eeeeee -->
+
+## 乙
+
+### 页三
+
+块三。<!-- b:cccccc -->`);
+  const server = await openWorkbench(t, path);
+  const opened = await getDoc(server.url);
+
+  const feedback = await postJson(server.url, '/api/feedback', {
+    scope: 'blocks', anchors: ['b:bbbbbb'], text: '模型改这一块。',
+  });
+  const task = (await feedback.json()).task;
+  const human = await saveBlock(server.url, {
+    anchor: 'b:bbbbbb', content: '人改过的。', base_sha256: opened.sha256,
+  });
+  assert.equal(human.status, 200, '任务还没被取走，人可以先改这一块');
+  const claimed = await postJson(server.url, '/api/task/claim', { task_id: task.id });
+  assert.equal(claimed.status, 200);
+  const patched = await postJson(server.url, '/api/patch', {
+    task_id: task.id, patches: [{ anchor: 'b:bbbbbb', content: '模型版。' }],
+  });
+  const patchBody = await patched.json();
+  assert.deepEqual(patchBody.deferred_blocks.map((item) => item.anchor), ['b:bbbbbb'], '旧基线写回只让这一块待核对');
+  const afterHuman = readFileSync(path, 'utf8');
+  const openedNow = await getDoc(server.url);
+
+  const moveBlock = await reorder(server.url, {
+    op: 'move-block', base_sha256: openedNow.sha256, anchor: 'b:bbbbbb',
+    to: { chapter: 1, index: 2, before: null },
+  });
+  const blockBody = await moveBlock.json();
+  assert.equal(moveBlock.status, 409, JSON.stringify(blockBody));
+  assert.equal(blockBody.code, 'block_locked', '待核对块也不能被拖动');
+
+  const movePage = await reorder(server.url, {
+    op: 'move-page', base_sha256: openedNow.sha256, page: { chapter: 1, index: 2 },
+    to: { chapter: 2, index: 1, position: 'before' },
+  });
+  assert.equal(movePage.status, 409, '页里有待核对块时整页也不能拖');
+  assert.equal(readFileSync(path, 'utf8'), afterHuman, '被拒绝的重排不能留下写入');
+
+  const decided = await postJson(server.url, '/api/conflict/decide', { anchor: 'b:bbbbbb', decision: 'mine' });
+  assert.equal(decided.status, 200, '裁决后解锁');
+  const afterDecide = await getDoc(server.url);
+  const retry = await reorder(server.url, {
+    op: 'move-block', base_sha256: afterDecide.sha256, anchor: 'b:bbbbbb',
+    to: { chapter: 1, index: 2, before: null },
+  });
+  const retryBody = await retry.json();
+  assert.equal(retry.status, 200, JSON.stringify(retryBody));
+  assert.equal(retryBody.changed, true, '裁决后同一动作应当真的执行');
+});
+
+// ── 历史：每次写盘前存上一版，恢复是一次新编辑（SPEC 第 4 节） ───────────────
+const historyOf = async (url) => {
+  const response = await fetch(`${url}/api/history`);
+  assert.equal(response.status, 200, 'GET /api/history 应返回 200');
+  return response.json();
+};
+
+const restoreFrom = (url, body) => postJson(url, '/api/history/restore', body);
+const pause = () => new Promise((done) => setTimeout(done, 5));
+
+test('历史按次记录：每次写盘前把上一版存档，列出时间、指纹与摘要', async (t) => {
+  const dir = scratchDir();
+  const path = writeDoc(dir, 'storyline.md', `# 测试文档
+
+## 甲
+
+### 页一
+
+原句。<!-- b:aaaaaa -->`);
+  const original = readFileSync(path, 'utf8');
+  const server = await openWorkbench(t, path);
+  const opened = await getDoc(server.url);
+
+  const first = await saveBlock(server.url, { anchor: 'b:aaaaaa', content: '第二版。', base_sha256: opened.sha256 });
+  const firstBody = await first.json();
+  assert.equal(first.status, 200, JSON.stringify(firstBody));
+  const afterFirst = readFileSync(path, 'utf8');
+  await pause();
+  const second = await saveBlock(server.url, { anchor: 'b:aaaaaa', content: '第三版。', base_sha256: firstBody.sha256 });
+  assert.equal(second.status, 200);
+  const afterSecond = readFileSync(path, 'utf8');
+
+  const listed = await historyOf(server.url);
+  assert.equal(listed.ok, true);
+  assert.equal(listed.contract, 'planners-doc-history/1');
+  assert.equal(listed.versions.length, 2, '两次写盘应当留下两版历史：原稿与第二版');
+  assert.equal(listed.versions[0].sha256, sha256(afterFirst), '新的在前：第二版被第三版取代时存档');
+  assert.equal(listed.versions[1].sha256, sha256(original), '最早一版是打开前的原稿');
+  for (const version of listed.versions) {
+    assert.match(version.id, /^\d{4}-\d{2}-\d{2}T[\d-]+Z-[0-9a-f]{8}-[0-9a-f]{6}$/, '历史 id 是时间 + 指纹');
+    assert.equal(version.bytes > 0, true, '列表要给出字节数');
+    assert.match(version.archived_at, /Z$/);
+    assert.equal(typeof version.preview, 'string');
+  }
+  assert.ok(listed.versions[0].preview.includes('第二版'), `摘要应来自上一版正文：${listed.versions[0].preview}`);
+
+  const historyDir = join(dir, '.doc-workbench', 'history', 'storyline.md');
+  assert.equal(readdirSync(historyDir).length, 2, '一版一个文件，按次存档');
+  assert.notEqual(afterSecond, afterFirst);
+});
+
+test('历史恢复是一次新编辑：旧档不删，过期基线与锁定期间都被拒', async (t) => {
+  const dir = scratchDir();
+  const path = writeDoc(dir, 'storyline.md', `# 测试文档
+
+## 甲
+
+### 页一
+
+原句。<!-- b:aaaaaa -->`);
+  const original = readFileSync(path, 'utf8');
+  const server = await openWorkbench(t, path);
+  const opened = await getDoc(server.url);
+  const first = await saveBlock(server.url, { anchor: 'b:aaaaaa', content: '第二版。', base_sha256: opened.sha256 });
+  const firstBody = await first.json();
+  await pause();
+  const second = await saveBlock(server.url, { anchor: 'b:aaaaaa', content: '第三版。', base_sha256: firstBody.sha256 });
+  assert.equal(second.status, 200);
+  const afterSecond = readFileSync(path, 'utf8');
+
+  const before = await historyOf(server.url);
+  const oldest = before.versions.at(-1);
+  assert.equal(oldest.sha256, sha256(original));
+  const current = await getDoc(server.url);
+  const restored = await restoreFrom(server.url, { id: oldest.id, base_sha256: current.sha256 });
+  const restoredBody = await restored.json();
+  assert.equal(restored.status, 200, JSON.stringify(restoredBody));
+  assert.equal(restoredBody.ok, true);
+  assert.equal(restoredBody.changed, true, '恢复要真的落一次盘');
+  assert.equal(restoredBody.restored, oldest.id);
+  assert.equal(readFileSync(path, 'utf8'), original, '磁盘回到被恢复的那一版');
+
+  const after = await historyOf(server.url);
+  assert.equal(after.versions.length, 3, '恢复本身也按次存档，旧档一个不删');
+  assert.equal(after.versions[0].operation, 'restore', '恢复作为一次新编辑记录');
+  assert.equal(after.versions[0].sha256, sha256(afterSecond), '恢复前的那一版被存了下来');
+  assert.ok(after.versions.some((version) => version.id === oldest.id), '被恢复的旧档仍在列表里');
+
+  const beforeBytes = readFileSync(path, 'utf8');
+  const stale = await restoreFrom(server.url, { id: after.versions[1].id, base_sha256: '0'.repeat(64) });
+  const staleBody = await stale.json();
+  assert.equal(stale.status, 409, JSON.stringify(staleBody));
+  assert.equal(staleBody.code, 'stale_document', '过期基线不能覆盖别处的新版本');
+  assert.equal(readFileSync(path, 'utf8'), beforeBytes, '被拒绝的恢复不能留下写入');
+
+  const feedback = await postJson(server.url, '/api/feedback', {
+    scope: 'blocks', anchors: ['b:aaaaaa'], text: '模型正在改这一块。',
+  });
+  const task = (await feedback.json()).task;
+  const claim = await postJson(server.url, '/api/task/claim', { task_id: task.id });
+  assert.equal(claim.status, 200);
+  const locked = await restoreFrom(server.url, {
+    id: after.versions[1].id,
+    base_sha256: sha256(readFileSync(path, 'utf8')),
+  });
+  const lockedBody = await locked.json();
+  assert.equal(locked.status, 409, JSON.stringify(lockedBody));
+  assert.equal(lockedBody.code, 'block_locked', '有块被模型占着时整份恢复会覆盖它，必须拒绝');
+  assert.equal(readFileSync(path, 'utf8'), beforeBytes, '被拒绝的恢复不能留下写入');
+});
+
+// ── 一处事实一个来源（references/design-and-porting-rules.md 规则一） ─────────
+test('浏览器操作白名单只有 doc-command 一份，传输层与文档引用同一组', async () => {
+  const { DOC_BROWSER_OPERATIONS } = await import('../scripts/doc-command.mjs');
+  const reviewCommand = readFileSync(join(core, 'scripts', 'lib', 'review-command.mjs'), 'utf8');
+  assert.doesNotMatch(reviewCommand, /DOC_OPERATIONS/, '传输层不许再留第二份文字工作台白名单');
+  assert.match(reviewCommand, /DOC_BROWSER_OPERATIONS/, '传输层直接引用命令后端导出的那一份');
+
+  const expected = [
+    'open', 'block', 'split', 'merge', 'reorder', 'asset_replace', 'feedback', 'tasks', 'conflicts', 'decide',
+    'history', 'restore',
+  ];
+  assert.deepEqual([...DOC_BROWSER_OPERATIONS].sort(), expected.sort(), '浏览器操作只有这十二项');
+  for (const op of ['claim', 'complete', 'patch']) {
+    assert.equal(DOC_BROWSER_OPERATIONS.has(op), false, `${op} 只能从模型侧 CLI 进来`);
+  }
+  for (const doc of ['references/command-transport.md', 'references/architecture.md']) {
+    const text = readFileSync(join(core, doc), 'utf8');
+    for (const op of expected) assert.ok(text.includes(`\`${op}\``), `${doc} 应列出 ${op}`);
+  }
+});
+
+test('sha256 与原子写只有一份实现：资产模块复用内核的内容哈希与写盘原语', () => {
+  const assetsSource = readFileSync(join(core, 'scripts', 'lib', 'doc-assets.mjs'), 'utf8');
+  const journalSource = readFileSync(join(core, 'scripts', 'lib', 'doc-journal.mjs'), 'utf8');
+  const ioSource = readFileSync(join(core, 'scripts', 'lib', 'doc-io.mjs'), 'utf8');
+
+  assert.doesNotMatch(assetsSource, /createHash\(/, '资产清单不许自带第二份 sha256');
+  assert.doesNotMatch(assetsSource, /writeAtomicFile/, '旧名不许再留一份原子写');
+  assert.match(assetsSource, /from '\.\/doc-io\.mjs'/, '原子写引用唯一实现');
+  assert.match(assetsSource, /from '\.\.\/content-review-contract\.mjs'/, '内容哈希引用唯一实现');
+  assert.doesNotMatch(journalSource, /function atomicWrite/, '原子写只在 doc-io 里定义');
+  assert.match(journalSource, /from '\.\/doc-io\.mjs'/);
+  assert.match(ioSource, /export function atomicWrite/);
+  for (const file of ['doc-boards.mjs', 'doc-inbox.mjs']) {
+    const source = readFileSync(join(core, 'scripts', 'lib', file), 'utf8');
+    assert.match(source, /from '\.\/doc-io\.mjs'/, `${file} 的原子写也要引用同一份`);
+  }
+});
+
+test('图资产的包含性判定复用 doc-assets 的唯一实现', () => {
+  const workbenchSource = readFileSync(join(core, 'scripts', 'doc-workbench.mjs'), 'utf8');
+  assert.match(workbenchSource, /resolveInside\(docPath, requested\)/, '路径解析交给 resolveInside');
+  assert.match(workbenchSource, /realPathInside\(docPath, file\)/, '符号链接判定交给 realPathInside');
+  assert.doesNotMatch(workbenchSource, /startsWith\(root \+ '\/'\)/, '不许再手拼字符串前缀');
+});
+
+test('锚点身份与任务范围只从 doc-blocks / doc-tasks 取', () => {
+  const sessionSource = readFileSync(join(core, 'scripts', 'lib', 'doc-session.mjs'), 'utf8');
+  const blocksSource = readFileSync(join(core, 'scripts', 'lib', 'doc-blocks.mjs'), 'utf8');
+  const tasksSource = readFileSync(join(core, 'scripts', 'lib', 'doc-tasks.mjs'), 'utf8');
+  assert.match(sessionSource, /BLOCK_ANCHOR_RE/, '锚点形状引用 doc-blocks 的导出');
+  assert.doesNotMatch(sessionSource, /b:\[0-9a-f\]\{6,12\}/, 'doc-session 不许再手敲锚点正则');
+  assert.match(sessionSource, /TASK_SCOPES/, '任务范围引用 doc-tasks 的导出');
+  assert.doesNotMatch(sessionSource, /\['blocks', 'page', 'doc'\]/, '任务范围不许重列');
+  assert.match(blocksSource, /export const BLOCK_ANCHOR_RE/);
+  assert.equal((blocksSource.match(/0-9a-f\]\{6,12\}/g) ?? []).length, 1, '锚点形状在 doc-blocks 里也只写一次');
+  assert.match(tasksSource, /export const TASK_SCOPES/);
+});
+
+test('页面不给锁定与待核对块装拖柄，历史入口在页面上', () => {
+  const page = readFileSync(join(core, 'assets', 'workbench', 'doc-workbench.js'), 'utf8');
+  const drag = readFileSync(join(core, 'assets', 'workbench', 'doc-drag.js'), 'utf8');
+  const html = readFileSync(join(core, 'assets', 'workbench', 'doc-workbench.html'), 'utf8');
+  assert.match(drag, /is-locked/, '锁定块不给拖柄');
+  assert.match(drag, /is-deferred/, '待核对块不给拖柄');
+  assert.match(drag, /blockedNode/, '块与整页共用同一条锁定判据');
+  assert.match(drag, /function refresh/, '锁变化后只重算句柄');
+  assert.match(page, /DocDrag\.refresh\(\)/, '锁与待核对同步后要刷新句柄');
+  assert.match(html, /id="historyOpen"/, '页面要有历史入口');
+  assert.match(html, /id="historyList"/, '历史要有可查看的列表');
+  assert.match(page, /transport\.history\(\)/, '历史走同一条 transport');
+  assert.match(page, /transport\.restore\(/, '恢复走同一条 transport');
 });

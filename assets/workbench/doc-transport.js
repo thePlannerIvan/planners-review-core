@@ -25,6 +25,8 @@
     tasks: '/api/tasks',
     conflicts: '/api/conflicts',
     decide: '/api/conflict/decide',
+    history: '/api/history',
+    restore: '/api/history/restore',
   };
 
   function bridgeUsable() {
@@ -65,6 +67,8 @@
       tasks: () => httpJson(ROUTES.tasks),
       conflicts: () => httpJson(ROUTES.conflicts),
       decide: (payload) => httpJson(ROUTES.decide, payload),
+      history: () => httpJson(ROUTES.history),
+      restore: (payload) => httpJson(ROUTES.restore, payload),
       // 同源，浏览器直接取；版本参数让换过文件的图不吃旧缓存。
       imageUrl: (path, version) => {
         const base = `/asset?path=${encodeURIComponent(path)}`;
@@ -96,6 +100,8 @@
       tasks: () => call('tasks'),
       conflicts: () => call('conflicts'),
       decide: (payload) => call('decide', payload),
+      history: () => call('history'),
+      restore: (payload) => call('restore', payload),
       async feedback(payload) {
         const receipt = await call('feedback', payload);
         const dispatch = receipt.dispatch || {};

@@ -152,6 +152,39 @@ body.is-readonly .page-handle { display: none; }
   padding: 4px 12px; border-radius: 999px; font-family: var(--font); font-size: 12px; cursor: pointer;
 }
 .overall-feedback:hover, .overall-feedback:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
+.history-open {
+  appearance: none; border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+  padding: 4px 12px; border-radius: 999px; font-family: var(--font); font-size: 12px; cursor: pointer;
+}
+.history-open:hover, .history-open:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
+.history-open[hidden] { display: none; }
+
+/* 历史版本：每次写盘前存上一版，恢复会作为一次新编辑保存。 */
+.history-panel {
+  position: fixed; top: 62px; right: clamp(12px, 4vw, 48px); z-index: 70;
+  width: min(380px, calc(100vw - 24px)); max-height: calc(100vh - 96px); overflow-y: auto;
+  padding: 12px; background: var(--surface); border: 1px solid var(--line);
+  border-radius: 10px; box-shadow: 0 10px 30px rgb(0 0 0 / 16%);
+}
+.history-panel[hidden] { display: none; }
+.history-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.history-head strong { font-size: 13px; }
+.history-close {
+  appearance: none; border: 0; background: transparent; color: var(--muted);
+  font-family: var(--font); font-size: 12px; cursor: pointer;
+}
+.history-close:hover, .history-close:focus-visible { color: var(--accent); outline: none; }
+.history-note { margin: 8px 0; font-size: 12px; line-height: 1.6; color: var(--muted); }
+.history-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.history-item { border-top: 1px solid var(--line); padding-top: 8px; }
+.history-meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: 11px; color: var(--muted); }
+.history-preview { margin: 4px 0 6px; font-size: 12px; line-height: 1.55; color: var(--ink); overflow-wrap: anywhere; }
+.history-restore {
+  appearance: none; border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+  padding: 3px 10px; border-radius: 6px; font-family: var(--font); font-size: 12px; cursor: pointer;
+}
+.history-restore:hover, .history-restore:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
+.history-restore:disabled { opacity: .55; cursor: default; }
 .overall-menu {
   position: absolute; top: calc(100% + 6px); right: 0; z-index: 50;
   min-width: 136px; padding: 4px; background: var(--surface);

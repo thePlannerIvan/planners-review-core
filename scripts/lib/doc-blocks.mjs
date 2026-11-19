@@ -38,10 +38,14 @@ const BLOCK_TAGS = new Set([
   'summary', 'table', 'tbody', 'td', 'tfoot', 'th', 'thead', 'tr', 'ul', 'video',
 ]);
 
-export const ANCHOR_RE = /<!--\s*(b:[0-9a-f]{6,12})\s*-->/g;
-export const ANCHOR_AT_END_RE = /<!--\s*(b:[0-9a-f]{6,12})\s*-->\s*$/;
-export const ANCHOR_ONLY_RE = /^\s*<!--\s*(b:[0-9a-f]{6,12})\s*-->\s*$/;
-const ANCHOR_ANY_RE = /<!--\s*b:[0-9a-f]{6,12}\s*-->/;
+/** 锚点身份的形状只写这一次：注释外壳、裸身份与「块里不许写锚点」都从这里生成。 */
+const ANCHOR_ID_PATTERN = 'b:[0-9a-f]{6,12}';
+export const ANCHOR_RE = new RegExp(`<!--\\s*(${ANCHOR_ID_PATTERN})\\s*-->`, 'g');
+export const ANCHOR_AT_END_RE = new RegExp(`<!--\\s*(${ANCHOR_ID_PATTERN})\\s*-->\\s*$`);
+export const ANCHOR_ONLY_RE = new RegExp(`^\\s*<!--\\s*(${ANCHOR_ID_PATTERN})\\s*-->\\s*$`);
+/** 裸块身份（不带注释外壳）：命令面校验锚点时只认这一种形状。 */
+export const BLOCK_ANCHOR_RE = new RegExp(`^${ANCHOR_ID_PATTERN}$`);
+const ANCHOR_ANY_RE = new RegExp(`<!--\\s*${ANCHOR_ID_PATTERN}\\s*-->`);
 const IMAGE_ONLY_RE = /^!\[[^\]]*\]\(\s*(?:<[^>\n]+>|[^\s)]+)(?:\s+["'][^"']*["'])?\s*\)$/;
 const IMAGE_RE = /!\[([^\]]*)\]\(\s*(?:<([^>\n]+)>|([^\s)]+))(?:\s+["']([^"']*)["'])?\s*\)/g;
 const HEADING_RE = /^(#{1,6})[ \t]+(.*)$/;
