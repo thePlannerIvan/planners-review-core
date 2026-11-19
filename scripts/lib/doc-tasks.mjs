@@ -7,7 +7,8 @@
  *
  *   · 07：`GET /api/tasks` / board.list() 拿任务，写本地文件或唤醒模型；
  *   · 04：task.blocks[].sha256 是提交时的基线，board.lockOf(anchor) 给出占锁的任务；
- *         完成时比对当前 sha256 与基线，就能只把变过的那一块标成待核对。
+ *         写回时逐块比对当前 sha256 与基线，只把变过的那一块交给待核对（doc-conflicts），
+ *         release() 只解已应用的块，剩下的锁让人裁决后再解。
  */
 import { randomBytes } from 'node:crypto';
 
@@ -38,6 +39,9 @@ export function createTaskBoard({ now = () => new Date().toISOString(), nextId =
     if (!task) fail('task_missing', `找不到任务 ${id}；可能已被清理`);
     return task;
   };
+  /** 任务当前还占着哪些块：部分写回后只剩待核对的那几块。 */
+  const lockedBlocks = (task) => [...locks].filter(([, owner]) => owner === task.id).map(([anchor]) => anchor);
+  const view = (task) => ({ ...clone(task), locked_blocks: lockedBlocks(task) });
 
   return {
     submit({ scope, page = null, text, doc, blocks }) {
@@ -57,13 +61,13 @@ export function createTaskBoard({ now = () => new Date().toISOString(), nextId =
         finished_at: null,
       };
       tasks.push(task);
-      return clone(task);
+      return view(task);
     },
 
     /** 模型开始处理：任务绑定的块全部锁上；同一任务重复 claim 是幂等的。 */
     claim(id) {
       const task = requireTask(id);
-      if (task.status === 'processing') return clone(task);
+      if (task.status === 'processing') return view(task);
       if (task.status !== 'pending') fail('task_state', `任务已是 ${task.status}，不能再开始处理`);
       const held = task.blocks.filter(({ anchor }) => locks.has(anchor) && locks.get(anchor) !== task.id);
       if (held.length) {
@@ -72,29 +76,50 @@ export function createTaskBoard({ now = () => new Date().toISOString(), nextId =
       for (const { anchor } of task.blocks) locks.set(anchor, task.id);
       task.status = 'processing';
       task.started_at = now();
-      return clone(task);
+      return view(task);
     },
 
     /** 模型处理完：只解自己持有的锁；已完成的任务再 complete 是幂等的。 */
     complete(id) {
       const task = requireTask(id);
-      if (task.status === 'done') return clone(task);
+      if (task.status === 'done') return view(task);
+      if (task.status === 'review') fail('task_state', '还有块在待核对，先让人裁决再完成');
       if (task.status !== 'processing') fail('task_state', '任务还没开始处理，不能直接完成');
       for (const [anchor, owner] of locks) {
         if (owner === task.id) locks.delete(anchor);
       }
       task.status = 'done';
       task.finished_at = now();
-      return clone(task);
+      return view(task);
     },
 
     list() {
-      return tasks.map(clone);
+      return tasks.map(view);
     },
 
     get(id) {
       const task = find(id);
-      return task ? clone(task) : null;
+      return task ? view(task) : null;
+    },
+
+    /**
+     * 写回后按块收尾：只解 applied 的块，待核对的块继续锁着。
+     * 手里还有锁 → `review`（人裁决后才 done）；一块不剩 → `done`。
+     * 只有 `processing` 的任务可以收尾；重复写回由调用方先按状态拦住。
+     */
+    release(id, anchors) {
+      const task = requireTask(id);
+      const wanted = new Set(anchors ?? []);
+      for (const [anchor, owner] of locks) {
+        if (owner === task.id && wanted.has(anchor)) locks.delete(anchor);
+      }
+      if (lockedBlocks(task).length) {
+        task.status = 'review';
+      } else if (task.status !== 'done') {
+        task.status = 'done';
+        task.finished_at = now();
+      }
+      return view(task);
     },
 
     /** 这一块现在被哪条任务占着；没有锁返回 null。 */
