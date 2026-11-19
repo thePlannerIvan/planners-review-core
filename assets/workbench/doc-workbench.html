@@ -12,7 +12,14 @@
       <strong id="projectName">工作稿</strong>
       <span id="docKind"></span>
     </div>
-    <span class="save-state" id="saveState" role="status" aria-live="polite">正在打开…</span>
+    <div class="top-actions">
+      <button type="button" class="overall-feedback" id="overallFeedback" aria-haspopup="menu" aria-expanded="false">整体反馈</button>
+      <div class="overall-menu" id="overallMenu" role="menu" hidden>
+        <button type="button" role="menuitem" data-overall="page">反馈这一页</button>
+        <button type="button" role="menuitem" data-overall="doc">反馈整份</button>
+      </div>
+      <span class="save-state" id="saveState" role="status" aria-live="polite">正在打开…</span>
+    </div>
   </header>
   <p class="structure-notice" id="structureNotice" hidden></p>
   <div class="workbench">
@@ -22,9 +29,20 @@
     <main class="doc" id="blocks" aria-label="文档正文"></main>
   </div>
   <div class="inline-toolbar" id="inlineToolbar" role="toolbar" aria-label="行内格式" hidden></div>
+  <button type="button" class="selection-feedback" id="selectionFeedback" data-feedback-selection hidden>反馈</button>
+  <div class="feedback-composer" id="feedbackComposer" role="dialog" aria-label="块级反馈" hidden>
+    <p class="feedback-target" id="feedbackTargetNote"></p>
+    <textarea id="feedbackText" rows="3" placeholder="要模型改什么？只改高亮的这几块。"></textarea>
+    <p class="feedback-error" id="feedbackError" hidden></p>
+    <div class="feedback-actions">
+      <button type="button" class="feedback-cancel" id="feedbackCancel">取消</button>
+      <button type="button" class="feedback-submit" id="feedbackSubmit">提交反馈</button>
+    </div>
+  </div>
   <script src="/vendor/marked.js"></script>
   <script src="/doc-inline.js"></script>
   <script src="/doc-drag.js"></script>
+  <script src="/doc-feedback.js"></script>
   <script src="/doc-workbench.js"></script>
 </body>
 </html>

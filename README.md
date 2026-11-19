@@ -76,6 +76,8 @@ node scripts/doc-workbench.mjs path/to/.planners/storyline.md --open
 
 按块渲染，点进任意块就地改；加粗、斜体、行内代码、链接在块内直接排版。保存自动发生，磁盘上只替换被编辑的那一块，其余块逐字不动。缺锚点会在打开时补写，重复锚点会重建；超出七种块或行内子集的写法按原文显示，不静默改写。
 
+要模型改哪里就选哪里：选中半句也会吸成整块，提交前高亮「将改的块」；块尾有反馈按钮，顶部「整体反馈」可发起整页或整份反馈。派发出去的任务只带块身份与 `sha256(block.raw)`，不带全文；模型处理中的块显示「模型正在改这一段」并锁定，其余块照常可写，完成后自动解锁。任务形状与命令面见 [`planners-doc-task/1`](contracts/planners-doc-task.md)。
+
 左侧目录按「章节 → 页」两级列出，点页跳转，滚动时高亮当前页。块前缀的六点句柄可拖，落点用一条提示线说明「插到哪两块之间」；拖页标题移动整页（连同其下所有块），页号随新顺序重排；`Alt+↑↓` 移动光标所在的块。拖动与页重排走同一个显式重排操作 `POST /api/reorder`（`move-block` / `move-page`），未参与重排的块逐字不动。
 
 ---
@@ -127,6 +129,7 @@ planners-review-core/
 ├── contracts/
 │   ├── review-surface.schema.json      # review-surface/2.0.0 权威契约
 │   ├── planners-doc.md                 # planners-doc/1 文档契约（工作稿结构）
+│   ├── planners-doc-task.md            # planners-doc-task/1 块级反馈任务形状
 │   └── examples/                       # 两份真实样例：storyline / by-page
 ├── assets/
 │   ├── review-bridge.js                # 双宿主运行时桥
@@ -142,6 +145,7 @@ planners-review-core/
 │   ├── content-workbench.mjs           # 通用内容/结构审阅工作台后端
 │   ├── doc-workbench.mjs               # 打开 planners-doc/1、按块就地编辑、保存与重排
 │   ├── lib/doc-blocks.mjs              # 文档切块/锚点修补唯一实现（校验器共用）
+│   ├── lib/doc-tasks.mjs               # 块级反馈任务与块锁
 │   └── lib/review_host.py              # Python 侧宿主传输封装
 ├── evals/                              # JS + Python 回归测试集
 └── references/                         # 接缝架构、Workbench 与批注规范

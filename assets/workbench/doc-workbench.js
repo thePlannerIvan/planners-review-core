@@ -15,6 +15,17 @@ let saveTimer = null;
 let saveQueue = Promise.resolve();
 const blockByAnchor = new Map();
 
+// 反馈与锁：目标块随选区 / 入口变化；锁由任务同步而来，保存时服务端还会再拦一次。
+let feedbackScope = 'blocks';
+let feedbackPage = null;
+let feedbackTargets = [];
+let lockedAnchors = new Set();
+let selectionTimer = null;
+let taskTimer = null;
+
+const blockNodes = () => $$('.doc-block');
+const blockEntry = (node) => blockByAnchor.get(node?.dataset?.anchor) ?? null;
+
 const status = (text, failed = false) => {
   const node = $('#saveState');
   node.textContent = text;
@@ -81,6 +92,7 @@ function textBlock(block) {
   node.append(content);
   node.addEventListener('click', (event) => {
     if (event.target.closest('[contenteditable="true"]')) return;
+    if (node.classList.contains('is-locked')) return; // 模型正在改这一段：点了也不聚焦
     content.focus();
   });
 
@@ -218,8 +230,28 @@ function renderBlock(block) {
   else if (block.type === 'table') node = tableBlock(block);
   else if (block.type === 'code') node = codeBlock(block);
   else node = textBlock(block);
+  attachBlockFeedback(node, block);
   blockByAnchor.set(block.anchor, { block, node });
   return node;
+}
+
+/** 块尾反馈按钮：鼠标移到块上才露出来，点了就只针对这一块。 */
+function attachBlockFeedback(node, block) {
+  if (!block.anchor) return;
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'block-feedback';
+  button.setAttribute('data-feedback-block', block.anchor);
+  button.title = '对这一块提反馈';
+  button.setAttribute('aria-label', '对这一块提反馈');
+  button.textContent = '反馈';
+  button.addEventListener('mousedown', (event) => event.preventDefault());
+  button.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openComposer([block.anchor], { scope: 'blocks', label: '将改这一块' });
+  });
+  node.append(button);
 }
 
 function renderDocument() {
@@ -355,6 +387,255 @@ function wireEditable(node, block) {
   }
 }
 
+// ── 反馈：选区吸附到块 → 标出将改的块 → 只把块身份与意见提交 ─────────────────
+function setFeedbackTargets(anchors) {
+  feedbackTargets = [...new Set(anchors ?? [])];
+  for (const node of blockNodes()) {
+    node.classList.toggle('is-feedback-target', feedbackTargets.includes(node.dataset.anchor));
+  }
+  const note = $('#feedbackTargetNote');
+  if (note && !$('#feedbackComposer').hidden) note.textContent = `将改 ${feedbackTargets.length} 块`;
+}
+
+function firstTargetNode() {
+  return blockByAnchor.get(feedbackTargets[0])?.node ?? null;
+}
+
+function openComposer(anchors, { scope = 'blocks', page = null, label = '' } = {}) {
+  if (!anchors.length) return;
+  feedbackScope = scope;
+  feedbackPage = page;
+  setFeedbackTargets(anchors);
+  const composer = $('#feedbackComposer');
+  composer.hidden = false;
+  const note = $('#feedbackTargetNote');
+  note.textContent = label || `将改 ${feedbackTargets.length} 块`;
+  const error = $('#feedbackError');
+  error.hidden = true;
+  error.textContent = '';
+  const text = $('#feedbackText');
+  text.value = '';
+  const rect = firstTargetNode()?.getBoundingClientRect();
+  const width = Math.min(360, window.innerWidth - 24);
+  composer.style.width = `${width}px`;
+  composer.style.left = `${Math.max(12, Math.min(rect?.left ?? 24, window.innerWidth - width - 12))}px`;
+  composer.style.top = `${Math.max(64, Math.min((rect?.bottom ?? 120) + 10, window.innerHeight - 200))}px`;
+  text.focus();
+}
+
+function closeComposer() {
+  $('#feedbackComposer').hidden = true;
+  $('#selectionFeedback').hidden = true;
+  feedbackScope = 'blocks';
+  feedbackPage = null;
+  setFeedbackTargets([]);
+}
+
+const showFeedbackError = (message) => {
+  const error = $('#feedbackError');
+  error.textContent = message;
+  error.hidden = false;
+};
+
+async function submitFeedback() {
+  const text = $('#feedbackText').value.trim();
+  if (!text) { showFeedbackError('先写下要模型改什么。'); return; }
+  if (!feedbackTargets.length) { showFeedbackError('没有选中的块；重新选一段再提交。'); return; }
+  const payload = { scope: feedbackScope, text };
+  if (feedbackScope === 'blocks') payload.anchors = [...feedbackTargets];
+  if (feedbackScope === 'page') payload.page = { ...feedbackPage };
+  await saveQueue; // 先把正在保存的块落盘，任务指纹才是人看到的版本
+  const button = $('#feedbackSubmit');
+  button.disabled = true;
+  try {
+    const response = await fetch('/api/feedback', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const receipt = await response.json().catch(() => ({}));
+    if (!response.ok || !receipt.ok) {
+      showFeedbackError(receipt.error ?? `提交失败 · HTTP ${response.status}`);
+      return;
+    }
+    closeComposer();
+    await syncTasks();
+    status(`已派发 · 将改 ${receipt.task.blocks.length} 块`);
+  } catch (error) {
+    showFeedbackError(error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function wireComposer() {
+  $('#feedbackCancel').addEventListener('click', closeComposer);
+  $('#feedbackSubmit').addEventListener('click', () => { void submitFeedback(); });
+  $('#feedbackText').addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') { event.preventDefault(); closeComposer(); }
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); void submitFeedback(); }
+  });
+}
+
+const inComposer = (node) => Boolean(node?.closest?.('#feedbackComposer'));
+
+function scheduleSelectionTargets() {
+  clearTimeout(selectionTimer);
+  selectionTimer = setTimeout(updateSelectionTargets, 120);
+}
+
+function updateSelectionTargets() {
+  if (!$('#feedbackComposer').hidden) return; // 写反馈时不跟着选区跑，目标已定
+  const button = $('#selectionFeedback');
+  if (!button) return;
+  const selection = getSelection();
+  if (!selection || !selection.rangeCount || selection.isCollapsed || inComposer(selection.anchorNode)) {
+    button.hidden = true;
+    setFeedbackTargets([]);
+    return;
+  }
+  const anchors = DocFeedback.anchorsForRange(selection.getRangeAt(0), blockNodes());
+  if (!anchors.length) {
+    button.hidden = true;
+    setFeedbackTargets([]);
+    return;
+  }
+  setFeedbackTargets(anchors);
+  const rect = selection.getRangeAt(0).getBoundingClientRect();
+  button.hidden = false;
+  button.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - 76))}px`;
+  button.style.top = `${rect.bottom + window.scrollY + 8}px`;
+}
+
+function wireSelectionFeedback() {
+  const button = $('[data-feedback-selection]');
+  button.addEventListener('mousedown', (event) => event.preventDefault());
+  button.addEventListener('click', (event) => {
+    event.preventDefault();
+    if (!feedbackTargets.length) return;
+    openComposer([...feedbackTargets], { scope: 'blocks' });
+  });
+  document.addEventListener('selectionchange', scheduleSelectionTargets);
+}
+
+// ── 顶部整体反馈：整页按当前视野最近的块定页，整份绑定所有块 ───────────────────
+function currentPage() {
+  const nodes = blockNodes().filter((node) => blockEntry(node)?.block?.page);
+  if (!nodes.length) return null;
+  const middle = window.innerHeight / 2;
+  let best = null;
+  let distance = Infinity;
+  for (const node of nodes) {
+    const rect = node.getBoundingClientRect();
+    const gap = Math.abs((rect.top + rect.bottom) / 2 - middle);
+    if (gap < distance) { distance = gap; best = node; }
+  }
+  return best ? blockEntry(best).block.page : null;
+}
+
+const pageKeyOf = (page) => `${page?.chapter ?? ''}\u0000${page?.number ?? ''}\u0000${page?.title ?? ''}`;
+
+function anchorsOfPage(page) {
+  return snapshot.blocks
+    .filter((block) => block.anchor && pageKeyOf(block.page) === pageKeyOf(page))
+    .map((block) => block.anchor);
+}
+
+function wireOverallFeedback() {
+  const button = $('#overallFeedback');
+  const menu = $('#overallMenu');
+  const close = () => {
+    menu.hidden = true;
+    button.setAttribute('aria-expanded', 'false');
+  };
+  button.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const open = menu.hidden;
+    menu.hidden = !open;
+    button.setAttribute('aria-expanded', String(open));
+  });
+  menu.addEventListener('click', (event) => {
+    const choice = event.target.closest('[data-overall]');
+    if (!choice) return;
+    close();
+    if (!snapshot) return;
+    if (choice.dataset.overall === 'doc') {
+      const anchors = snapshot.blocks.filter((block) => block.anchor).map((block) => block.anchor);
+      openComposer(anchors, { scope: 'doc', label: `将改整份 · ${anchors.length} 块` });
+      return;
+    }
+    const page = currentPage();
+    if (!page) return;
+    const anchors = anchorsOfPage(page);
+    openComposer(anchors, {
+      scope: 'page',
+      page: { chapter: page.chapter, number: page.number, title: page.title },
+      label: `将改这一页 · ${page.title}`,
+    });
+  });
+  document.addEventListener('click', (event) => {
+    if (!menu.hidden && !event.target.closest('.top-actions')) close();
+  });
+}
+
+// ── 锁：任务处理中的块不可编辑并明说；每 3 秒跟一次任务面 ────────────────────
+function processingLocks(tasks) {
+  const locks = new Map();
+  for (const task of tasks ?? []) {
+    if (task.status !== 'processing') continue;
+    for (const block of task.blocks ?? []) locks.set(block.anchor, task.id);
+  }
+  return locks;
+}
+
+function lockBlock(node, owner) {
+  node.classList.add('is-locked');
+  node.dataset.lockedBy = owner;
+  for (const editable of node.querySelectorAll('[contenteditable="true"]')) {
+    if (editable === document.activeElement) editable.blur();
+    editable.contentEditable = 'false';
+  }
+  if (!node.querySelector('.block-lock')) {
+    const note = document.createElement('div');
+    note.className = 'block-lock';
+    note.textContent = '模型正在改这一段';
+    node.append(note);
+  }
+}
+
+function unlockBlock(node) {
+  if (!node.classList.contains('is-locked')) return;
+  node.classList.remove('is-locked');
+  delete node.dataset.lockedBy;
+  for (const editable of node.querySelectorAll('[contenteditable="false"]')) editable.contentEditable = 'true';
+  node.querySelector('.block-lock')?.remove();
+}
+
+function applyLocks(locks) {
+  lockedAnchors = new Set(locks.keys());
+  for (const node of blockNodes()) {
+    const owner = locks.get(node.dataset.anchor);
+    if (owner) lockBlock(node, owner);
+    else unlockBlock(node);
+  }
+}
+
+async function syncTasks() {
+  try {
+    const response = await fetch('/api/tasks');
+    if (!response.ok) return;
+    const receipt = await response.json();
+    applyLocks(processingLocks(receipt.tasks));
+  } catch {
+    // 锁同步失败不打断编辑：保存时服务端仍会按锁拒绝。
+  }
+}
+
+function pollTasks() {
+  clearInterval(taskTimer);
+  taskTimer = setInterval(syncTasks, 3000);
+}
+
 function enqueueSave(node) {
   clearTimeout(saveTimer);
   saveTimer = null;
@@ -365,6 +646,10 @@ function enqueueSave(node) {
 async function persist(node) {
   const entry = blockByAnchor.get(node.dataset.anchor);
   if (!entry || !node.__compose) return;
+  if (lockedAnchors.has(node.dataset.anchor)) {
+    status('保存失败 · 模型正在改这一段', true);
+    return;
+  }
   const content = node.__compose();
   if (!content || !content.trim()) {
     status('保存失败 · 块不能为空', true);
@@ -411,16 +696,23 @@ function renderAll() {
     const entry = blockByAnchor.get(node.dataset.anchor);
     if (entry && node.querySelector('[contenteditable="true"]')) wireEditable(node, entry.block);
   }
+  // 重画会换掉节点，锁的样式跟着丢；有块在模型手里时重新拉一次任务面补回来。
+  if (lockedAnchors.size) void syncTasks();
 }
 
 async function boot() {
   wireToolbar();
+  wireComposer();
+  wireSelectionFeedback();
+  wireOverallFeedback();
   try {
     const response = await fetch('/api/doc');
     const doc = await response.json();
     if (!response.ok) throw Error(doc.error ?? `HTTP ${response.status}`);
     snapshot = doc;
     renderAll();
+    await syncTasks();
+    pollTasks();
     const broken = snapshot.errors ?? [];
     status(broken.length ? `已载入 · ${broken.length} 处结构问题按原文显示` : '已载入', broken.length > 0);
   } catch (error) {
