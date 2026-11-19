@@ -13,8 +13,8 @@
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import {
-  BLOCK_TYPES, applyBlockContent, assessBlock, blockPrefix, imageReference, moveBlock, movePage,
-  parseDocument, repairAnchors, tableModel,
+  BLOCK_TYPES, applyBlockContent, assessBlock, blockPrefix, imageReference, mergeBlockContent,
+  moveBlock, movePage, parseDocument, repairAnchors, splitBlockContent, tableModel,
 } from './doc-blocks.mjs';
 import {
   assertImageBytes, buildManifest, imageMime, manifestPathFor, realPathInside, resolveInside,
@@ -199,6 +199,79 @@ function saveBlock(docPath, payload, board, faults) {
       sha256: receipt.sha256,
       merged: !documentMatches && blockMatches,
       block: viewBlock(result.block, (value) => board.lockOf(value)),
+    };
+  });
+}
+
+/**
+ * 回车分块：一次命令同时改前半块、插入后半块（新锚点）。
+ * 与保存一块同一把写锁、同一个过期判定；锁定的块先拒，写盘仍走 journal。
+ */
+function splitBlock(docPath, payload, board, conflicts, faults) {
+  if (!payload || typeof payload !== 'object') fail('block_request', '请求体必须是 JSON 对象');
+  const { anchor, before, after, keep, base_sha256: baseSha } = payload;
+  if (typeof anchor !== 'string' || !/^b:[0-9a-f]{6,12}$/.test(anchor)) fail('block_anchor', '锚点形状不对');
+  if (typeof before !== 'string' || typeof after !== 'string') fail('block_content', '拆分的前后两半都必须是文本');
+  return withWriteLock(docPath, () => {
+    board.refresh();
+    conflicts.refresh();
+    if (board.lockOf(anchor)) fail('block_locked', '模型正在改这一段，等它完成后再编辑');
+    if (conflicts.get(anchor)) fail('block_locked', '这一块正在待核对，先裁决再编辑');
+    const document = readDocument(docPath);
+    if (typeof baseSha !== 'string' || baseSha !== document.hash) {
+      fail('stale_document', '文档已在别处被修改；请刷新工作台后再拆分');
+    }
+    const repaired = persistRepairs(docPath, document, faults);
+    const result = splitBlockContent(repaired.raw, { anchor, before, after, keep });
+    const receipt = commitDocument(docPath, {
+      oldRaw: repaired.raw,
+      raw: result.raw,
+      applied: [anchor, result.newBlock.anchor],
+      operation: 'split',
+      faults,
+    });
+    return {
+      ok: true,
+      sha256: receipt.sha256,
+      block: viewBlock(result.block, (value) => board.lockOf(value)),
+      new_block: viewBlock(result.newBlock, (value) => board.lockOf(value)),
+      ...snapshotFrom(readDocument(docPath), docPath, board, conflicts),
+    };
+  });
+}
+
+/**
+ * 删空合并：后一块（已清空）并进紧挨着的前一块。锚点随内容走——前一块的锚点保留，
+ * 后一块的锚点删除；旧任务不迁移，claim 时会明确报 stale。
+ */
+function mergeBlocks(docPath, payload, board, conflicts, faults) {
+  if (!payload || typeof payload !== 'object') fail('block_request', '请求体必须是 JSON 对象');
+  const { anchor, previous, content, base_sha256: baseSha } = payload;
+  if (typeof anchor !== 'string' || !/^b:[0-9a-f]{6,12}$/.test(anchor)) fail('block_anchor', '锚点形状不对');
+  return withWriteLock(docPath, () => {
+    board.refresh();
+    conflicts.refresh();
+    if (board.lockOf(anchor)) fail('block_locked', '模型正在改这一段，等它完成后再编辑');
+    if (conflicts.get(anchor)) fail('block_locked', '这一块正在待核对，先裁决再编辑');
+    const document = readDocument(docPath);
+    if (typeof baseSha !== 'string' || baseSha !== document.hash) {
+      fail('stale_document', '文档已在别处被修改；请刷新工作台后再合并');
+    }
+    const repaired = persistRepairs(docPath, document, faults);
+    const result = mergeBlockContent(repaired.raw, { anchor, previous, content });
+    const receipt = commitDocument(docPath, {
+      oldRaw: repaired.raw,
+      raw: result.raw,
+      applied: [result.block.anchor],
+      operation: 'merge',
+      faults,
+    });
+    return {
+      ok: true,
+      sha256: receipt.sha256,
+      block: viewBlock(result.block, (value) => board.lockOf(value)),
+      removed: result.removed,
+      ...snapshotFrom(readDocument(docPath), docPath, board, conflicts),
     };
   });
 }
@@ -600,6 +673,8 @@ export async function createDocSession({ docPath, faults = null, persistent = tr
       return snapshotFrom(document, file, board, conflicts, journalState);
     },
     saveBlock: (payload) => guarded(() => saveBlock(file, payload, board, faults)),
+    splitBlock: (payload) => guarded(() => splitBlock(file, payload, board, conflicts, faults)),
+    mergeBlocks: (payload) => guarded(() => mergeBlocks(file, payload, board, conflicts, faults)),
     reorder: (payload) => guarded(() => reorderDocument(file, payload, board, conflicts, faults)),
     replaceAsset: (payload) => guarded(() => replaceImageAsset(file, payload, board, conflicts)),
     submitFeedback: (payload) => guarded(() => submitFeedback(file, payload, board)),

@@ -433,11 +433,41 @@ function wireEditable(node, block) {
     });
     editable.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') { editable.blur(); return; }
-      if (event.key === 'Enter' && !event.shiftKey) {
-        if (block.type === 'heading') { event.preventDefault(); return; }
-        event.preventDefault();
-        document.execCommand('insertLineBreak');
+      // 中文输入法选词时的 Enter / Backspace 属于 IME，不当作分块或合并。
+      if (event.isComposing || event.keyCode === 229) return;
+      if (event.key === 'Backspace' && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        const selection = getSelection();
+        const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+        // 删空合并：块里已经没内容、光标又在块首，Backspace 并进前一块。
+        // 还有内容时 Backspace 照常删字，不抢。
+        if (range && selection.isCollapsed
+          && editable.contains(range.startContainer)
+          && caretAtBlockStart(editable, range)
+          && isEmptyInline(inlineOf(editable))
+          && isSplittable(block)) {
+          event.preventDefault();
+          mergeIntoPrevious(node, editable);
+        }
+        return;
       }
+      if (event.key !== 'Enter') return;
+      if (!isSplittable(block)) return; // 代码块回车换行、表格回车留在单元格，都走默认
+      if (event.shiftKey) {
+        // 块内换行交给浏览器插 <br>（Chromium 默认），序列化时写成 `\` + 换行；
+        // 自己挪光标插 <br> 会把随后输入的文字插到换行前面。标题在契约里是一行，不换。
+        if (block.type === 'heading') { event.preventDefault(); return; }
+        // 兜底：即使浏览器没为这次按键发 input，也在默认行为之后再排一次保存。
+        setTimeout(() => {
+          if (!editable.isConnected) return;
+          node.__dirty = true;
+          status('待保存');
+          clearTimeout(saveTimer);
+          saveTimer = setTimeout(() => enqueueSave(node), 600);
+        }, 0);
+        return;
+      }
+      event.preventDefault();
+      splitAtCaret(node, editable);
     });
   }
 }
@@ -833,6 +863,290 @@ async function flushSaves() {
     if (node.__dirty) enqueueSave(node);
   }
   await saveQueue;
+}
+
+// ── 回车分块 / Shift+Enter 块内换行 / 空块 Backspace 合并 ─────────────────────
+//
+// 三种动作（SPEC 第 4 节）：回车在光标处切成两块（新块新锚点）；Shift+Enter 在块内
+// 换行（写 \\ + 换行，仍是同一块）；空块开头 Backspace 并进前一块（前块锚点保留，
+// 后块锚点删除）。分块与合并会改变块数量，所以走显式命令，不混进「保存一块」。
+//
+// 空块在契约里没有锚点可落（锚点必须贴内容），所以「回车时后半为空」「块首回车时
+// 前半为空」先在页面里放一个待定块，第一次输入才带着内容调一次 split。空块永远不落盘。
+const SPLIT_TYPES = new Set(['paragraph', 'heading', 'list', 'quote']);
+const isSplittable = (block) => SPLIT_TYPES.has(block?.type);
+let pendingSeq = 0;
+
+/** 块内行内内容（不含 `- ` / `> ` / `#### ` 这些块前缀）。 */
+const inlineOf = (editable) => DocInline.serializeInline(editable);
+/** 只剩空白或硬换行的块算空块（浏览器删光文字后常留一个 <br>）。 */
+const isEmptyInline = (markdown) => String(markdown ?? '').replace(/\\\r?\n/g, '').trim() === '';
+
+function enqueueOperation(run) {
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  saveQueue = saveQueue.then(run).catch(() => {});
+  return saveQueue;
+}
+
+function applySnapshot(next) {
+  snapshot = next;
+  renderAll();
+}
+
+function focusNode(node, where = 'start') {
+  const editable = node?.querySelector?.('[contenteditable="true"]');
+  if (!editable) return;
+  editable.focus();
+  const range = document.createRange();
+  range.selectNodeContents(editable);
+  range.collapse(where !== 'end');
+  const selection = getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function focusBlock(anchor, where = 'start') {
+  focusNode(blockByAnchor.get(anchor)?.node, where);
+}
+
+/** 同页里紧挨着的前一块；越过页边界（上一页的块）不算「前一块」。 */
+function previousBlockNode(node) {
+  let prev = node.previousElementSibling;
+  while (prev && !prev.classList.contains('doc-block')) {
+    if (prev.classList.contains('page-divider')) return null;
+    prev = prev.previousElementSibling;
+  }
+  return prev?.dataset?.anchor ? prev : null;
+}
+
+/** 光标处切成两半；选中的文字先删掉再分。返回块内 Markdown（不含块前缀）。 */
+function splitInlineAtCaret(editable) {
+  const selection = getSelection();
+  if (!selection || !selection.rangeCount) return null;
+  const range = selection.getRangeAt(0);
+  if (!editable.contains(range.commonAncestorContainer)) return null;
+  if (!selection.isCollapsed) {
+    range.deleteContents();
+    range.collapse(true);
+  }
+  const before = document.createRange();
+  before.selectNodeContents(editable);
+  before.setEnd(range.startContainer, range.startOffset);
+  const after = document.createRange();
+  after.selectNodeContents(editable);
+  after.setStart(range.endContainer, range.endOffset);
+  const markdownOf = (source) => {
+    const holder = document.createElement('div');
+    holder.append(source.cloneContents());
+    return DocInline.serializeInline(holder);
+  };
+  return {
+    before: markdownOf(before),
+    after: markdownOf(after),
+    collapsedAtStart: before.toString() === '',
+  };
+}
+
+/** 只在这几秒里存在、还没落盘的空块：给它输入内容后才生成锚点。 */
+function createPendingBlock(anchor, side) {
+  const node = document.createElement('div');
+  node.className = 'doc-block is-pending';
+  node.dataset.type = 'paragraph';
+  node.dataset.pendingAnchor = anchor;
+  node.dataset.pendingSide = side;
+  node.dataset.pendingSeq = String((pendingSeq += 1));
+  const editable = document.createElement('div');
+  editable.className = 'block-text';
+  editable.contentEditable = 'true';
+  editable.spellcheck = false;
+  editable.dataset.inline = '1';
+  editable.dataset.placeholder = side === 'before' ? '在上方输入' : '在下方输入';
+  node.append(editable);
+  wirePendingBlock(node, editable);
+  return node;
+}
+
+function wirePendingBlock(node, editable) {
+  let committing = false;
+  let timer = null;
+  const clearTimer = () => { clearTimeout(timer); timer = null; };
+  const drop = (where) => {
+    clearTimer();
+    const source = blockByAnchor.get(node.dataset.pendingAnchor)?.node;
+    node.remove();
+    focusNode(source, where);
+  };
+  /**
+   * 把待定块的内容交给服务端之前先冻结编辑面：回执回来会重画，这期间敲下的字
+   * 既没进这次请求、也不属于任何块，静默丢掉比慢一点更糟。
+   */
+  const commit = () => {
+    if (committing || isEmptyInline(inlineOf(editable))) return;
+    clearTimer();
+    committing = true;
+    editable.contentEditable = 'false';
+    void commitPendingBlock(node, editable).finally(() => {
+      committing = false;
+      if (editable.isConnected && editable.contentEditable === 'false') editable.contentEditable = 'true';
+    });
+  };
+  editable.addEventListener('input', (event) => {
+    // 输入法组合中间态不提交：第一次 input 常常只是一个拼音串。
+    if (committing || event.isComposing) return;
+    clearTimer();
+    if (isEmptyInline(inlineOf(editable))) return;
+    timer = setTimeout(commit, 400);
+  });
+  editable.addEventListener('blur', () => {
+    // 第一次输入会先把内容交给服务端，再重画；这时节点被换掉不该算「放弃」。
+    if (committing) return;
+    if (isEmptyInline(inlineOf(editable))) drop(node.dataset.pendingSide === 'after' ? 'end' : 'start');
+    else commit();
+  });
+  editable.addEventListener('keydown', (event) => {
+    if (event.isComposing || event.keyCode === 229) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      // 已经输入了内容就不算「放弃」：按回车/失焦同一条路提交，不静默丢字。
+      if (isEmptyInline(inlineOf(editable))) drop(node.dataset.pendingSide === 'after' ? 'end' : 'start');
+      else commit();
+      return;
+    }
+    if (event.key === 'Backspace' && isEmptyInline(inlineOf(editable))) {
+      event.preventDefault();
+      drop(node.dataset.pendingSide === 'after' ? 'end' : 'start');
+      return;
+    }
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    if (event.shiftKey) return;
+    commit();
+  });
+}
+
+/** 待定块有内容了：连同原块的内容一次性 split，锚点由服务端分配。 */
+async function commitPendingBlock(pending, editable) {
+  const anchor = pending.dataset.pendingAnchor;
+  const side = pending.dataset.pendingSide;
+  const sourceNode = blockByAnchor.get(anchor)?.node;
+  const sourceEditable = sourceNode?.querySelector('[contenteditable="true"]');
+  if (!sourceEditable) return;
+  const content = inlineOf(editable);
+  if (isEmptyInline(content)) return;
+  const sourceInline = inlineOf(sourceEditable);
+  if (isEmptyInline(sourceInline)) return;
+  await enqueueOperation(async () => {
+    // 队列里可能刚有别的保存落盘，基线要在真正发请求时取。
+    let receipt;
+    try {
+      receipt = await transport.splitBlock({
+        anchor,
+        before: side === 'after' ? sourceInline : content,
+        after: side === 'after' ? content : sourceInline,
+        keep: side === 'after' ? 'before' : 'after',
+        base_sha256: snapshot.sha256,
+      });
+    } catch (error) {
+      status(`分块失败 · ${error.message}`, true);
+      return;
+    }
+    if (!receipt.ok) {
+      status(`分块失败 · ${receipt.error ?? receipt.status ?? '未知错误'}`, true);
+      return;
+    }
+    applySnapshot(receipt);
+    status('已自动保存 · 已分块');
+    focusBlock(receipt.new_block?.anchor, 'end');
+  });
+}
+
+/** 回车：把当前块在光标处拆成两块；空的一半先在页面里等输入。 */
+function splitAtCaret(node, editable) {
+  const pieces = splitInlineAtCaret(editable);
+  if (!pieces) return;
+  const beforeEmpty = isEmptyInline(pieces.before);
+  const afterEmpty = isEmptyInline(pieces.after);
+  if (beforeEmpty || afterEmpty) {
+    const side = beforeEmpty ? 'before' : 'after';
+    const pending = createPendingBlock(node.dataset.anchor, side);
+    if (side === 'before') node.before(pending);
+    else node.after(pending);
+    pending.querySelector('[contenteditable="true"]').focus();
+    return;
+  }
+  const anchor = node.dataset.anchor;
+  node.__dirty = false;
+  status('分块中');
+  // 冻结到回执回来：拆分请求带的是按下回车那一刻的两半，之后敲的字不能静默消失。
+  editable.contentEditable = 'false';
+  void enqueueOperation(async () => {
+    let receipt;
+    try {
+      receipt = await transport.splitBlock({
+        anchor,
+        before: pieces.before,
+        after: pieces.after,
+        keep: 'before',
+        base_sha256: snapshot.sha256,
+      });
+    } catch (error) {
+      if (editable.isConnected) editable.contentEditable = 'true';
+      status(`分块失败 · ${error.message}`, true);
+      return;
+    }
+    if (!receipt.ok) {
+      if (editable.isConnected) editable.contentEditable = 'true';
+      status(`分块失败 · ${receipt.error ?? receipt.status ?? '未知错误'}`, true);
+      return;
+    }
+    applySnapshot(receipt);
+    status('已自动保存 · 已分块');
+    focusBlock(receipt.new_block?.anchor, 'start');
+  });
+}
+
+/** 空块开头按 Backspace：并进紧挨着的前一块（前块锚点保留，本块锚点删除）。 */
+function mergeIntoPrevious(node, editable) {
+  const previous = previousBlockNode(node);
+  if (!previous) {
+    status('前面没有可合并的块', true);
+    return;
+  }
+  const anchor = node.dataset.anchor;
+  status('合并中');
+  editable.contentEditable = 'false';
+  void enqueueOperation(async () => {
+    let receipt;
+    try {
+      receipt = await transport.mergeBlock({
+        anchor,
+        previous: previous.dataset.anchor,
+        content: '',
+        base_sha256: snapshot.sha256,
+      });
+    } catch (error) {
+      if (editable.isConnected) editable.contentEditable = 'true';
+      status(`合并失败 · ${error.message}`, true);
+      return;
+    }
+    if (!receipt.ok) {
+      if (editable.isConnected) editable.contentEditable = 'true';
+      status(`合并失败 · ${receipt.error ?? receipt.status ?? '未知错误'}`, true);
+      return;
+    }
+    applySnapshot(receipt);
+    status('已自动保存 · 已合并');
+    focusBlock(receipt.block?.anchor ?? previous.dataset.anchor, 'end');
+  });
+}
+
+/** 光标在块首（前面没有任何字符）时返回 true。 */
+function caretAtBlockStart(editable, range) {
+  const before = document.createRange();
+  before.selectNodeContents(editable);
+  before.setEnd(range.startContainer, range.startOffset);
+  return before.toString() === '';
 }
 
 /** 重画正文、目录与句柄：块内编辑的接线每次重画后都要重来。 */

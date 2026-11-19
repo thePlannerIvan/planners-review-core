@@ -125,6 +125,45 @@ test('同一份稿子重复生成 surface：id 与路径不变；不同稿子各
   assert.match(entry, /doc-block/, '入口带着正文块样式与渲染逻辑');
 });
 
+// ── 回车分块 / 删空合并：侧栏命令通道与本地 HTTP 共用同一份块级实现 ──────────
+test('侧栏命令通道也能回车分块与删空合并，锚点随内容走', async (t) => {
+  const { path } = sandboxExample();
+  const { buildDocSurface } = await import('../scripts/doc-surface.mjs');
+  const built = buildDocSurface({ docPath: path });
+  const surface = loadSurface(built.surfacePath);
+  const opened = await command(surface, { op: 'open' });
+  assert.equal(opened.ok, true, JSON.stringify(opened));
+  const target = opened.blocks.find((block) => block.type === 'paragraph' && block.editable
+    && !String(block.raw).includes('\n'));
+  assert.ok(target, '样例里应有一块单行可编辑段落');
+
+  const split = await command(surface, {
+    op: 'split',
+    anchor: target.anchor,
+    before: '侧栏前半。',
+    after: '侧栏后半。',
+    base_sha256: opened.sha256,
+  });
+  assert.equal(split.ok, true, JSON.stringify(split));
+  assert.notEqual(split.new_block.anchor, target.anchor, '新块拿新锚点');
+  const saved = readFileSync(path, 'utf8');
+  assert.ok(saved.includes(`侧栏前半。<!-- ${target.anchor} -->`), '原锚点留在前半');
+  assert.ok(saved.includes(`侧栏后半。<!-- ${split.new_block.anchor} -->`), '新锚点贴在后半');
+
+  const merged = await command(surface, {
+    op: 'merge',
+    anchor: split.new_block.anchor,
+    previous: target.anchor,
+    content: '',
+    base_sha256: split.sha256,
+  });
+  assert.equal(merged.ok, true, JSON.stringify(merged));
+  assert.equal(merged.block.anchor, target.anchor, '合并后留下前一块的锚点');
+  const after = await command(surface, { op: 'open' });
+  assert.equal(after.blocks.some((block) => block.anchor === split.new_block.anchor), false, '后一块的锚点被删除');
+  assert.equal(blockOf(after, target.anchor).raw, '侧栏前半。', '前一块内容逐字不动');
+});
+
 // ── 派发：有插件唤醒、没插件收件箱，任务形状与页面状态同形 ──────────────────
 const feedbackShape = (task) => ({
   keys: Object.keys(task).sort(),

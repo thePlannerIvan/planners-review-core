@@ -106,6 +106,8 @@ body.is-readonly .page-handle { display: none; }
 .is-heading .block-prefix, .is-quote .block-prefix { display: none; }
 .block-text { flex: 1; min-width: 0; outline: none; white-space: pre-wrap; overflow-wrap: anywhere; }
 .block-text:focus { outline: none; }
+/* 回车后还没落盘的空块：先占一个位置，第一次输入才生成锚点。 */
+.doc-block.is-pending .block-text:empty::before { content: attr(data-placeholder); color: var(--muted); pointer-events: none; }
 .block-text a, .doc-block table a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .block-text code, .doc-block table code { font-family: var(--mono); font-size: .92em; background: #eef0ee; border-radius: 3px; padding: .1em .3em; }
 

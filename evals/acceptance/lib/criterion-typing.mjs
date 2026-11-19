@@ -5,7 +5,9 @@
  * 走真实浏览器（Playwright + CDP），不是模拟 DOM：
  *   · IME：CDP Input.imeSetComposition 触发 composition，再 Input.insertText 提交
  *   · 标点：逐字插入中文标点
- *   · 换行：Enter（工作台的 keydown 把 Enter 接成块内换行）
+ *   · 块内换行：Shift+Enter，落盘后仍是同一块
+ *   · 回车分块：Enter 在光标处切成两块，新块拿新锚点
+ *   · 删空合并：空块开头 Backspace，并入前一块
  *   · 撤销/重做：Meta/Ctrl+Z、Meta/Ctrl+Shift+Z，每次等自动保存落盘后再断言磁盘
  *   · 跨块选区：程序化 Range 跨三块，断言吸附到三块整块并原样派发
  */
@@ -20,6 +22,7 @@ const PUNCTUATION = '，标点：。！？「引号」；';
 const TYPED = `${COMPOSITIONS.map(([, text]) => text).join('')}${PUNCTUATION}`;
 const UNDO_CHUNK = '撤销重做';
 const NEWLINE_CHUNK = '换行之后';
+const SPLIT_CHUNK = '分块之后';
 const META = process.platform === 'darwin' ? 'Meta' : 'Control';
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
@@ -207,22 +210,24 @@ export async function runTyping(corpus) {
       evidence: { expected_after_redo: withChunk, actual_after_redo: redoResult.raw },
     });
 
-    // 换行：Enter 是工作台声明的块内换行入口（SPEC 第 4 节则写作「回车分块」）。
-    // 记录工作台实际回执与磁盘，不替实现圆场。
+    // 块内换行：Shift+Enter（SPEC 第 4 节）。浏览器可能把它落成 `\\` + 换行（<br>），
+    // 也可能落成文本里的换行；两种都必须是「同一块两行」并且能保存。
     const requestsBeforeNewline = saveRequests.length;
     const responsePromise = page.waitForResponse((response) => response.url().endsWith('/api/block'), { timeout: 8000 }).catch(() => null);
-    await page.keyboard.press('Enter');
+    await page.keyboard.press('Shift+Enter');
     await page.keyboard.insertText(NEWLINE_CHUNK);
     const newlineResponse = await responsePromise;
     const newlineStatus = await statusText(page);
-    await sleep(300);
+    const newlineForms = [`${withChunk}\\\n${NEWLINE_CHUNK}`, `${withChunk}\n${NEWLINE_CHUNK}`];
+    const newlineSave = await waitForDisk(path, target.anchor, (raw) => newlineForms.includes(raw));
     const newlineReceipt = newlineResponse ? await newlineResponse.json().catch(() => null) : null;
-    const newlineDiskRaw = readBlockRaw(path, target.anchor);
+    const newlineDiskRaw = newlineSave.raw;
     const newlinePayload = saveRequests.slice(requestsBeforeNewline).at(-1)?.body ?? null;
     const newlineDom = await page.locator(selector).innerText();
     details.phases.newline = {
-      key: 'Enter',
+      key: 'Shift+Enter',
       inserted: NEWLINE_CHUNK,
+      accepted_forms: newlineForms,
       response_status: newlineResponse?.status() ?? null,
       receipt: newlineReceipt,
       request_payload: newlinePayload,
@@ -233,23 +238,19 @@ export async function runTyping(corpus) {
     cases.push({
       id: 'typing/newline',
       ok: newlineResponse?.status() === 200
-        && typeof newlineDiskRaw === 'string'
-        && newlineDiskRaw.includes(NEWLINE_CHUNK)
+        && newlineForms.includes(newlineDiskRaw)
         && newlineDom.includes(NEWLINE_CHUNK),
-      name: '换行：保存后磁盘文本正确（含换行后的新文本）',
+      name: '块内换行（Shift+Enter）：保存后磁盘上还是同一块，换行后的新文本在',
       evidence: {
         response_status: newlineResponse?.status() ?? null,
         receipt: newlineReceipt,
         request_payload: newlinePayload,
+        accepted_forms: newlineForms,
+        disk_raw: newlineDiskRaw,
         dom_contains_new_text: newlineDom.includes(NEWLINE_CHUNK),
-        disk_contains_new_text: String(newlineDiskRaw).includes(NEWLINE_CHUNK),
         status_text: newlineStatus,
       },
     });
-    // 把换行撤掉，恢复可保存文本，继续测跨块选区。
-    await page.keyboard.press(`${META}+z`);
-    await sleep(900);
-    await waitForDisk(path, target.anchor, (raw) => raw === withChunk, 5000);
 
     // 跨块选区：选 DOM 里连续三个「有块内编辑面」的块，保证选区中间不夹表格/代码/图片。
     const anchors = await page.evaluate(() => {
@@ -316,6 +317,97 @@ export async function runTyping(corpus) {
         doc_sha_unchanged: shaBeforeFeedback === shaAfterFeedback,
       },
     });
+
+    // 回车分块：SPEC 第 4 节「回车分块」。目标块在块尾回车时后半为空，空块先在页面里
+    // 待定（契约要求锚点贴内容），第一次输入才带着内容调一次 split；新块拿新锚点。
+    const docBeforeSplit = (await getJson(`${server.url}/api/doc`)).body;
+    const countBeforeSplit = docBeforeSplit.blocks.length;
+    const rawBeforeSplit = readBlockRaw(path, target.anchor);
+    await page.locator(selector).click();
+    await caretToEnd(page, selector);
+    const splitResponsePromise = page.waitForResponse((response) => response.url().endsWith('/api/block/split'), { timeout: 10000 }).catch(() => null);
+    await page.keyboard.press('Enter');
+    const pendingVisible = await page.waitForSelector('.doc-block.is-pending', { timeout: 3000 }).then(() => true).catch(() => false);
+    await page.keyboard.insertText(SPLIT_CHUNK);
+    const splitResponse = await splitResponsePromise;
+    await sleep(300);
+    const splitReceipt = splitResponse ? await splitResponse.json().catch(() => null) : null;
+    const afterSplit = (await getJson(`${server.url}/api/doc`)).body;
+    const splitAnchor = splitReceipt?.new_block?.anchor ?? null;
+    const splitBlock = splitAnchor ? afterSplit.blocks.find((block) => block.anchor === splitAnchor) : null;
+    details.phases.split = {
+      pending_block_visible: pendingVisible,
+      inserted: SPLIT_CHUNK,
+      response_status: splitResponse?.status() ?? null,
+      receipt: splitReceipt,
+      new_anchor: splitAnchor,
+      new_block_raw: splitBlock?.raw ?? null,
+      block_count: { before: countBeforeSplit, after: afterSplit.blocks.length },
+    };
+    cases.push({
+      id: 'typing/enter-split',
+      ok: pendingVisible
+        && splitResponse?.status() === 200
+        && splitReceipt?.ok === true
+        && typeof splitAnchor === 'string' && splitAnchor !== target.anchor
+        && splitBlock?.raw === SPLIT_CHUNK
+        && afterSplit.blocks.find((block) => block.anchor === target.anchor)?.raw === rawBeforeSplit
+        && afterSplit.blocks.length === countBeforeSplit + 1,
+      name: '回车分块：新块拿新锚点、原块内容不变，块数 +1',
+      evidence: {
+        response_status: splitResponse?.status() ?? null,
+        new_anchor: splitAnchor,
+        new_block_raw: splitBlock?.raw ?? null,
+        original_raw_unchanged: afterSplit.blocks.find((block) => block.anchor === target.anchor)?.raw === rawBeforeSplit,
+        block_count: { before: countBeforeSplit, after: afterSplit.blocks.length },
+      },
+    });
+
+    // 空块 Backspace 合并：把新块清空再按 Backspace，后一块的锚点删除、前一块留原锚点。
+    if (splitAnchor) {
+      const newSelector = `.doc-block[data-anchor="${splitAnchor}"] .block-text`;
+      await page.locator(newSelector).click();
+      await page.evaluate((selectorForBlock) => {
+        const node = document.querySelector(selectorForBlock);
+        node.focus();
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }, newSelector);
+      await page.keyboard.press('Backspace');
+      await sleep(150);
+      const mergeResponsePromise = page.waitForResponse((response) => response.url().endsWith('/api/block/merge'), { timeout: 10000 }).catch(() => null);
+      await page.keyboard.press('Backspace');
+      const mergeResponse = await mergeResponsePromise;
+      await sleep(400);
+      const mergeReceipt = mergeResponse ? await mergeResponse.json().catch(() => null) : null;
+      const afterMerge = (await getJson(`${server.url}/api/doc`)).body;
+      details.phases.merge = {
+        removed_anchor: splitAnchor,
+        response_status: mergeResponse?.status() ?? null,
+        receipt: mergeReceipt,
+        block_count: { before: countBeforeSplit + 1, after: afterMerge.blocks.length },
+        kept_raw: afterMerge.blocks.find((block) => block.anchor === target.anchor)?.raw ?? null,
+      };
+      cases.push({
+        id: 'typing/backspace-merge',
+        ok: mergeResponse?.status() === 200
+          && mergeReceipt?.ok === true
+          && !afterMerge.blocks.some((block) => block.anchor === splitAnchor)
+          && afterMerge.blocks.find((block) => block.anchor === target.anchor)?.raw === rawBeforeSplit
+          && afterMerge.blocks.length === countBeforeSplit,
+        name: '空块 Backspace：并入前一块，被删块的锚点不再存在，前一块内容逐字不动',
+        evidence: {
+          response_status: mergeResponse?.status() ?? null,
+          removed_anchor: splitAnchor,
+          kept_anchor: target.anchor,
+          kept_raw: afterMerge.blocks.find((block) => block.anchor === target.anchor)?.raw ?? null,
+          block_count: { before: countBeforeSplit + 1, after: afterMerge.blocks.length },
+        },
+      });
+    }
   } catch (error) {
     cases.push({
       id: 'typing/error',

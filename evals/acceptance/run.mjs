@@ -30,7 +30,9 @@ const reportPath = resolve(flag('--report', join(ACCEPTANCE, 'REPORT.md')));
 const recordsDir = resolve(flag('--records', join(ACCEPTANCE, 'records')));
 
 const FALLBACKS = [
-  [/^typing\/newline$/, { ticket: 3, title: '02 打开文档、就地编辑、只改一块', why: '块内换行落盘被块结构校验拒绝；同一处 Enter 的行为也与 SPEC 第 4 节「回车分块」不一致。' }],
+  [/^typing\/newline$/, { ticket: 3, title: '02 打开文档、就地编辑、只改一块', why: '块内换行落盘属于就地编辑内核：换行后仍是同一块，且不能被块结构比较误判。' }],
+  [/^typing\/enter-split$/, { ticket: 3, title: '02 打开文档、就地编辑、只改一块', why: '回车分块（新块新锚点）属于就地编辑内核。' }],
+  [/^typing\/backspace-merge$/, { ticket: 3, title: '02 打开文档、就地编辑、只改一块', why: '删空合并与锚点归属属于就地编辑内核。' }],
   [/^typing\//, { ticket: 3, title: '02 打开文档、就地编辑、只改一块', why: '块内输入/选区/撤销属于就地编辑内核。' }],
   [/^roundtrip\/.*\/readback$/, { ticket: 2, title: '01 文档契约与校验器', why: '读回与锚点属于文档契约；若只是块保存问题则回退 #3。' }],
   [/^roundtrip\//, { ticket: 3, title: '02 打开文档、就地编辑、只改一块', why: '往返与改一块属于打开、编辑、只改一块这条链路。' }],
@@ -123,6 +125,39 @@ function renderReport(record) {
   const typingPhases = typing.phases ?? {};
   const newline = typingPhases.newline ?? {};
   const selection = typingPhases.selection ?? {};
+  const caseOf = (id) => c2.cases.find((item) => item.id === id) ?? null;
+  const newlineCase = caseOf('typing/newline');
+  const splitCase = caseOf('typing/enter-split');
+  const mergeCase = caseOf('typing/backspace-merge');
+  const count = (value) => (value === null || value === undefined ? '—' : String(value));
+  /** 块内换行的结论段：通过时写清三种键的实际结果，失败时保留原来的回退说明。 */
+  const newlineSection = !newlineCase
+    ? ''
+    : (newlineCase.ok
+      ? `### 块内换行、回车分块与删空合并
+
+| 动作 | 键 | 结论 | 证据 |
+|---|---|---|---|
+| 块内换行 | Shift+Enter | 通过 | HTTP ${count(newline.response_status)}，磁盘块 raw = \`${JSON.stringify(newline.disk_raw ?? null)}\`，仍是同一块两行 |
+| 回车分块 | Enter | ${splitCase?.ok ? '通过' : '见未通过项'} | 新锚点 \`${count(splitCase?.evidence?.new_anchor)}\`，新块 raw「${count(splitCase?.evidence?.new_block_raw)}」，块数 ${count(splitCase?.evidence?.block_count?.before)} → ${count(splitCase?.evidence?.block_count?.after)}，原块 raw 逐字不动 |
+| 删空合并 | 空块开头 Backspace | ${mergeCase?.ok ? '通过' : '见未通过项'} | 被删锚点 \`${count(mergeCase?.evidence?.removed_anchor)}\`，前一块 \`${count(mergeCase?.evidence?.kept_anchor)}\` 的 raw 逐字不动，块数 ${count(mergeCase?.evidence?.block_count?.before)} → ${count(mergeCase?.evidence?.block_count?.after)} |
+
+回车分块与删空合并会改变块数量，所以走显式命令（\`POST /api/block/split\` / \`POST /api/block/merge\`），
+不混进「保存一块」。空块在契约里没有锚点可落（锚点必须贴内容），所以回车时为空的那一半先在页面里待定，
+第一次输入才带着内容调一次 split；空块永远不落盘。`
+      : `### 未通过：块内换行
+
+按 \`${newline.key ?? 'Enter'}\` 后继续输入「${newline.dom_after?.includes('换行之后') ? '换行之后' : '—'}」，页面保留了文字，但自动保存收到 **HTTP ${newline.response_status ?? '—'}**：
+
+\`\`\`json
+${JSON.stringify(newline.receipt ?? {}, null, 2)}
+\`\`\`
+
+- 请求里的块内容是：\`${JSON.stringify(newline.request_payload?.content ?? null)}\`
+- 磁盘没有被改写：${newline.disk_raw && newline.inserted && !String(newline.disk_raw).includes(newline.inserted) ? '是（新文本没有保存）' : '否'}
+- 页面状态：${newline.status_text ? `「${newline.status_text}」` : '—'}
+
+这不是输入丢字，而是「块内换行」这一编辑保存不下来。按边界不修实现，回退到 #3。`);
 
   return `# 文字工作台 · 验收记录（票 10「实测与验收」）
 
@@ -179,19 +214,7 @@ ${roundtripFailures.length ? `\n未通过的语料：${roundtripFailures.map((do
 - 撤销：磁盘回到输入前文本（${typingPhases.undo?.after_undo === `${typing.target?.original_raw ?? ''}${typingPhases.typing?.typed ?? ''}` ? '通过' : '见记录'}）；重做：磁盘恢复被撤销的输入（${c2.cases.find((item) => item.id === 'typing/redo')?.ok ? '通过' : '未通过'}）。
 - 跨块选区：选中 ${selection.anchors?.length ?? '—'} 块，页面吸附 ${selection.highlighted?.length ?? '—'} 块（${JSON.stringify(selection.highlighted ?? [])}），派发回执绑定 ${selection.feedback_receipt?.task?.blocks?.length ?? '—'} 块，原文 sha 不变：${selection.doc_sha_unchanged ? '是' : '否'}。
 
-### 未通过：块内换行
-
-按 \`Enter\` 后继续输入「${newline.dom_after?.includes('换行之后') ? '换行之后' : '—'}」，页面保留了文字，但自动保存收到 **HTTP ${newline.response_status ?? '—'}**：
-
-\`\`\`json
-${JSON.stringify(newline.receipt ?? {}, null, 2)}
-\`\`\`
-
-- 请求里的块内容是：\`${JSON.stringify(newline.request_payload?.content ?? null)}\`
-- 磁盘没有被改写：${newline.disk_raw && newline.inserted && !String(newline.disk_raw).includes(newline.inserted) ? '是（新文本没有保存）' : '否'}
-- 页面状态：${newline.status_text ? `「${newline.status_text}」` : '—'}
-
-这不是输入丢字，而是「块内换行」这一编辑保存不下来；且工作台把 Enter 接成块内换行，与 SPEC 第 4 节「回车分块」不一致。按边界不修实现，回退到 #3。
+${newlineSection}
 
 ## 判据三：同块双改只锁该块（复跑两遍）
 

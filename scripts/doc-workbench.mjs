@@ -11,6 +11,8 @@
  * 命令面（页面与 eval 共用同一个入口）：
  *   GET  /api/doc                打开文档（补齐缺失锚点、重建重复锚点）并返回块
  *   POST /api/block              人改一块：{anchor, content, base_sha256, base_block_sha256?}
+ *   POST /api/block/split        人按回车分块：{anchor, before, after, base_sha256}
+ *   POST /api/block/merge        人把空块并进前一块：{anchor, previous, content, base_sha256}
  *   POST /api/asset/replace      换掉图块引用的文件：{anchor, content_base64, base_sha256}
  *   POST /api/reorder            重排（一次一个动作），返回重排后的整份快照
  *   POST /api/feedback           派发块级反馈任务；回执带 dispatch.channel（wake / inbox）
@@ -157,6 +159,18 @@ export async function startDocWorkbench({
         if (!allowWrite(request, response, server, host, 'block')) return;
         const payload = JSON.parse((await readBody(request)) || '{}');
         return json(response, 200, session.saveBlock(payload));
+      }
+      if (url.pathname === '/api/block/split') {
+        if (request.method !== 'POST') return json(response, 405, { ok: false, code: 'method', error: '用 POST 拆分块' });
+        if (!allowWrite(request, response, server, host, 'block')) return;
+        const payload = JSON.parse((await readBody(request)) || '{}');
+        return json(response, 200, session.splitBlock(payload));
+      }
+      if (url.pathname === '/api/block/merge') {
+        if (request.method !== 'POST') return json(response, 405, { ok: false, code: 'method', error: '用 POST 合并块' });
+        if (!allowWrite(request, response, server, host, 'block')) return;
+        const payload = JSON.parse((await readBody(request)) || '{}');
+        return json(response, 200, session.mergeBlocks(payload));
       }
       if (url.pathname === '/api/asset/replace') {
         if (request.method !== 'POST') return json(response, 405, { ok: false, code: 'method', error: '用 POST 换图' });

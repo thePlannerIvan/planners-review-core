@@ -11,7 +11,7 @@ const PROCESSOR = ['planners-ppt-hell', 'scripts', 'workbench_store.py'];
 const OPERATIONS = new Set(['get', 'state', 'save', 'feedback', 'snapshot', 'restore', 'history', 'order']);
 // 文字工作台的浏览器操作白名单：保存、派发、裁决、看锁与待核对。
 // claim / patch / complete 是模型侧动作，只允许 doc-command CLI 调用。
-const DOC_OPERATIONS = new Set(['open', 'block', 'reorder', 'asset_replace', 'feedback', 'tasks', 'conflicts', 'decide']);
+const DOC_OPERATIONS = new Set(['open', 'block', 'split', 'merge', 'reorder', 'asset_replace', 'feedback', 'tasks', 'conflicts', 'decide']);
 const OVERRIDES = ['root', 'project_root', 'projectRoot', 'executable', 'script', 'processor', 'python', 'argv', 'cwd', 'command_backend'];
 const INPUT_LIMIT = 1024 * 1024;
 const OUTPUT_LIMIT = 4 * 1024 * 1024;

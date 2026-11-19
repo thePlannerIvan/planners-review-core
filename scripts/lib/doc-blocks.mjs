@@ -335,7 +335,9 @@ export function parseDocument(raw, options = {}) {
         anchorLine: inlineAnchor ? lineNo : null,
         inlineAnchor: inlineAnchor !== null,
         anchorStartColumn: inlineAnchor !== null ? anchorIndexInRaw : null,
-        anchorEndColumn: inlineAnchor !== null ? anchorIndexInRaw + `<!-- b:${inlineAnchor} -->`.length : null,
+        // inlineAnchor 已经是 `b:xxxxxx`（match[1] 带前缀），这里不能再拼一个 `b:`，
+        // 否则锚点末端会多算两个字符，替换区间会吃掉下一行的开头。
+        anchorEndColumn: inlineAnchor !== null ? anchorIndexInRaw + `<!-- ${inlineAnchor} -->`.length : null,
         contentEndColumn: inlineAnchor !== null ? contentLine.length : null,
       };
       addBlock(block);
@@ -778,7 +780,13 @@ export function applyBlockContent(raw, anchor, content, options = {}) {
   const after = parseDocument(next, { checkImages: false });
   // 只允许「同一块换内容」：块的数量、类型顺序、所属页都不能变。
   // 否则把「- 变成列表」粘进段落会静默换掉块类型，锚点还在但语义已经不同。
-  const shape = (document) => document.blocks.map((item) => `${item.type}@${item.page?.line ?? '-'}`).join(',');
+  //
+  // 判据是**页身份**（章节号 + 页序号），不是页标题所在的绝对行号：块里多一行会让
+  // 后面所有页的行号整体位移，用行号当判据会把「同一页里换内容」误判成「结构变了」，
+  // 多行块就永远存不下来。页身份由顺序决定（契约第 2 节），不随行号漂移。
+  const shape = (document) => document.blocks
+    .map((item) => `${item.type}@${item.page ? `${item.page.chapter?.index ?? 0}-${item.page.index}` : '-'}`)
+    .join(',');
   const beforeAnchors = parsed.blocks.filter((item) => item.anchor).map((item) => item.anchor);
   const afterAnchors = after.blocks.filter((item) => item.anchor).map((item) => item.anchor);
   if (shape(after) !== shape(parsed)
@@ -788,6 +796,187 @@ export function applyBlockContent(raw, anchor, content, options = {}) {
   const written = after.blocks.find((item) => item.anchor === anchor);
   if (!written || written.raw !== normalized) fail('block_structure', '写入后无法按同一块读回，已拒绝');
   return { raw: bom + next, block: written };
+}
+
+// ───────────── 分块与合并：块的数量这两种操作会变，所以各有显式命令 ─────────────
+//
+// 编辑面只换一块的内容，不许增删块；但「回车分块、删空合并」本身就是会改变块数量的
+// 编辑动作（SPEC 第 4 节）。所以分成两条显式命令：都按锚点定位、都重解析验证结果、
+// 都只写目标块所在的那几行。分块时新块换新锚点；合并时保留前一块锚点、删掉后一块的
+// 锚点——块身份随内容走，不迁移（契约第 4 节：删除锚点等同删除块身份）。
+
+/** 能拆成两块的块类型：段落、标题、列表项、引用。表格 / 图片 / 代码不拆。 */
+export const SPLITTABLE_TYPES = new Set(['paragraph', 'heading', 'list', 'quote']);
+/** 能互相合并的块类型：同上，都是「一行内容 + 行内格式」的块。 */
+export const MERGEABLE_TYPES = SPLITTABLE_TYPES;
+
+/** 行内内容规范化：行尾空白去掉（与 applyBlockContent 一致），保留行首。 */
+function normalizeInline(content) {
+  return String(content)
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/\s+$/, ''))
+    .join('\n')
+    .replace(/\s+$/, '');
+}
+
+/** 把一段行内 Markdown 按块类型拼回块 raw（不含锚点）。 */
+function formatBlockContent(type, prefix, content) {
+  if (type === 'heading') return `${prefix}${content.replace(/\n+/g, ' ')}`;
+  if (type === 'quote') {
+    return content.split('\n').map((line) => (line ? `${prefix}${line}` : prefix.trimEnd())).join('\n');
+  }
+  if (type === 'list') return `${prefix}${content}`;
+  return content;
+}
+
+const countErrorCodes = (document) => {
+  const counts = new Map();
+  for (const error of document.errors) counts.set(error.code, (counts.get(error.code) ?? 0) + 1);
+  return counts;
+};
+
+/** 重解析后不该多出任何结构错误（空页、锚点重复、块越层……）。 */
+function assertNoNewErrors(beforeDocument, afterDocument, label) {
+  const afterCounts = countErrorCodes(afterDocument);
+  for (const [code, count] of countErrorCodes(beforeDocument)) {
+    if ((afterCounts.get(code) ?? 0) > count) {
+      reorderFail('block_structure', `${label}引出了结构错误 ${code}`);
+    }
+  }
+  for (const [code, count] of afterCounts) {
+    if (count > 0 && !countErrorCodes(beforeDocument).has(code)) {
+      reorderFail('block_structure', `${label}引出了结构错误 ${code}`);
+    }
+  }
+}
+
+/**
+ * 在光标处把一块拆成两块：前半留在原锚点，后半拿一个新锚点，紧跟在原块之后。
+ *
+ * 入参的 before / after 是**块内行内 Markdown**（不含 `- ` / `> ` / `#### ` 这些块前缀），
+ * 块前缀由这里按原块类型补：标题拆开后，后半退成正文段落；列表与引用保持同类。
+ *
+ * @returns {{raw:string, block:object, newBlock:object}}
+ */
+export function splitBlockContent(raw, { anchor, before, after, keep = 'before' } = {}, options = {}) {
+  const { eol = String(raw).includes('\r\n') ? '\r\n' : '\n', generate = generateAnchor } = options;
+  const parsed = parseDocument(raw, { checkImages: false });
+  const source = parsed.text;
+  const bom = String(raw).startsWith('\uFEFF') ? '\uFEFF' : '';
+  const block = parsed.blocks.find((item) => item.anchor === anchor);
+  if (!block) reorderFail('block_missing', `找不到锚点 ${anchor}；文档可能已被外部修改`);
+  if (keep !== 'before' && keep !== 'after') {
+    reorderFail('block_content', '拆分只接受 keep: before / after —— 原锚点留给哪一半');
+  }
+  if (!SPLITTABLE_TYPES.has(block.type)) {
+    reorderFail('block_split_type', `${TYPE_NAMES[block.type] ?? block.type}不能拆成两块；只有段落 / 标题 / 列表项 / 引用可以`);
+  }
+  const verdict = assessBlock(block);
+  if (!verdict.editable) reorderFail('block_degraded', `这一块超出可编辑子集：${verdict.reason}`);
+  if (typeof before !== 'string' || typeof after !== 'string') {
+    reorderFail('block_content', '拆分的前后两半都必须是文本');
+  }
+  const first = normalizeInline(before);
+  const second = normalizeInline(after);
+  if (!first.trim()) reorderFail('block_empty', '拆分后前半为空：回车应当在光标处把内容分成两段');
+  if (!second.trim()) reorderFail('block_empty', '拆分后后半为空：空块没有锚点可落，不能写进文档');
+
+  const prefix = blockPrefix(block);
+  const firstRaw = formatBlockContent(block.type, prefix, first);
+  // 标题回车后的后半是正文：再写一个同级别标题会把页内小节越拆越深。
+  const secondType = block.type === 'heading' ? 'paragraph' : block.type;
+  const secondRaw = formatBlockContent(secondType, secondType === 'heading' ? '' : prefix, second);
+  const seen = new Set(parsed.blocks.map((item) => item.anchor).filter(Boolean));
+  const newAnchor = generate(seen);
+  // 块首回车时新块在前半，原锚点要跟着原来的内容留到后半；两种落法都只换这一处。
+  const firstAnchor = keep === 'after' ? newAnchor : anchor;
+  const secondAnchor = keep === 'after' ? anchor : newAnchor;
+  const replacement = `${firstRaw}<!-- ${firstAnchor} -->${eol}${eol}${secondRaw}<!-- ${secondAnchor} -->`;
+  const next = source.slice(0, block.startOffset) + replacement + source.slice(block.endOffset);
+
+  const afterDocument = parseDocument(next, { checkImages: false });
+  const position = parsed.blocks.indexOf(block);
+  const firstBlock = afterDocument.blocks[position];
+  const secondBlock = afterDocument.blocks[position + 1];
+  if (afterDocument.blocks.length !== parsed.blocks.length + 1
+    || firstBlock?.anchor !== firstAnchor || firstBlock.raw !== firstRaw
+    || secondBlock?.anchor !== secondAnchor || secondBlock.raw !== secondRaw) {
+    reorderFail('block_structure', '拆分后的块序列与预期不一致，已拒绝');
+  }
+  const pageOf = (item) => `${item.page?.chapter?.index ?? 0}-${item.page?.index ?? 0}`;
+  if (pageOf(firstBlock) !== pageOf(block) || pageOf(secondBlock) !== pageOf(block)) {
+    reorderFail('block_structure', '拆分把块挪出了原来那一页，已拒绝');
+  }
+  for (const piece of [firstBlock, secondBlock]) {
+    const check = assessBlock(piece);
+    if (!check.editable) reorderFail('block_degraded', `拆分出的${TYPE_NAMES[piece.type] ?? piece.type}超出可编辑子集：${check.reason}`);
+  }
+  assertNoNewErrors(parsed, afterDocument, '拆分');
+  // 回执里 block 永远是「守住原锚点的那一块」，newBlock 是这次新生成的块：
+  // 块首回车时新块在前、原块在后，但身份跟着内容走，不能按前后位置命名。
+  const kept = keep === 'after' ? secondBlock : firstBlock;
+  const created = keep === 'after' ? firstBlock : secondBlock;
+  return { raw: bom + next, block: kept, newBlock: created };
+}
+
+/**
+ * 把一个已经清空的块并进紧挨着的前一块：前一块的锚点与 raw 逐字不动，后一块连同锚点删除。
+ *
+ * 只接受 content 为空（行内序列化后只剩空白 / 硬换行）的请求：还有内容的块不能被
+ * 「合并」静默丢掉，那要走保存。块身份不迁移——被删块的评论与任务留在原锚点上，
+ * 旧任务 claim 时会明确报 stale，而不是悄悄改到前一块（契约第 4 节）。
+ *
+ * @returns {{raw:string, block:object, removed:string}}
+ */
+export function mergeBlockContent(raw, { anchor, previous, content } = {}, options = {}) {
+  const { eol = String(raw).includes('\r\n') ? '\r\n' : '\n' } = options;
+  const parsed = parseDocument(raw, { checkImages: false });
+  const source = parsed.text;
+  const bom = String(raw).startsWith('\uFEFF') ? '\uFEFF' : '';
+  if (typeof content !== 'string') reorderFail('block_content', '合并请求要带上这一块现在的内容');
+  const residue = content.replace(/\\\r?\n/g, '').replace(/\s+/g, '');
+  if (residue !== '') reorderFail('merge_not_empty', '这一块还有内容；先清空再按 Backspace 合并');
+  const block = parsed.blocks.find((item) => item.anchor === anchor);
+  if (!block) reorderFail('block_missing', `找不到锚点 ${anchor}；文档可能已被外部修改`);
+  const target = parsed.blocks.find((item) => item.anchor === previous);
+  if (typeof previous !== 'string' || !previous) {
+    reorderFail('merge_previous_missing', '这一块前面没有可并入的块');
+  }
+  if (!target) reorderFail('merge_target', `找不到上一块 ${previous}；文档可能已被外部修改`);
+  if (!MERGEABLE_TYPES.has(block.type) || !MERGEABLE_TYPES.has(target.type)) {
+    reorderFail('block_merge_type', '只有段落 / 标题 / 列表项 / 引用可以互相合并');
+  }
+  const position = parsed.blocks.indexOf(block);
+  if (parsed.blocks.indexOf(target) !== position - 1) {
+    reorderFail('merge_target', '只能并入紧挨着的前一块');
+  }
+  const pageOf = (item) => `${item.page?.chapter?.index ?? 0}-${item.page?.index ?? 0}`;
+  if (pageOf(target) !== pageOf(block)) reorderFail('merge_target', '只能并入同一页的前一块');
+  if (block.page && block.page.blocks.length === 1) {
+    reorderFail('page_would_be_empty', `页「${block.page.title}」只有这一块；删掉会让页变空`);
+  }
+
+  const lines = source.split(/\r?\n/);
+  const previousEndIndex = blockEndLine(target) - 1;
+  const end = blockEndLine(block);
+  let start = block.startLine - 1;
+  // 吞掉前一块与本块之间的空行；接缝处只留一个空行。
+  while (start - 1 > previousEndIndex && isBlankLine(lines[start - 1])) start -= 1;
+  if (end < lines.length && !isBlankLine(lines[end])) lines.splice(end, 0, '');
+  lines.splice(start, end - start);
+  const next = bom + lines.join(eol);
+
+  const afterDocument = parseDocument(next, { checkImages: false });
+  const kept = afterDocument.blocks.find((item) => item.anchor === previous);
+  if (afterDocument.blocks.length !== parsed.blocks.length - 1
+    || !kept || kept.raw !== target.raw
+    || afterDocument.blocks.some((item) => item.anchor === anchor)) {
+    reorderFail('block_structure', '合并后的块序列与预期不一致，已拒绝');
+  }
+  if (pageOf(kept) !== pageOf(target)) reorderFail('block_structure', '合并把前一块挪出了原来那一页，已拒绝');
+  assertNoNewErrors(parsed, afterDocument, '合并');
+  return { raw: next, block: kept, removed: anchor };
 }
 
 // ───────────── 重排：只挪位置，不换内容 ─────────────

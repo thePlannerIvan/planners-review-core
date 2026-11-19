@@ -34,7 +34,7 @@ evals/acceptance/
 
 **往返（roundtrip）**：每份语料先打开一次形成基线 → 再打开、不编辑、关闭，逐字节比较；然后在块尾追加一句、只保存这一块，断言只有该块的片段与字节区间变化，front matter、其余块、表格、图片语法逐字不动。
 
-**中文输入（typing）**：Playwright 驱动真实 Chromium。用 CDP `Input.imeSetComposition` 触发中文组合，再 `Input.insertText` 提交；输入中文标点；`Enter` 测块内换行；`Meta/Ctrl+Z`、`Meta/Ctrl+Shift+Z` 测撤销重做，每一步都等自动保存落盘后看磁盘。最后跨三个块做选区，断言吸附到三块整块、派发回执绑定三块、原文 sha 不变。
+**中文输入（typing）**：Playwright 驱动真实 Chromium。用 CDP `Input.imeSetComposition` 触发中文组合，再 `Input.insertText` 提交；输入中文标点；`Shift+Enter` 测块内换行（落盘后仍是同一块）、`Enter` 测回车分块（新块拿新锚点）、空块开头 `Backspace` 测删空合并（前一块锚点保留、后一块锚点删除）；`Meta/Ctrl+Z`、`Meta/Ctrl+Shift+Z` 测撤销重做，每一步都等自动保存落盘后看磁盘。最后跨三个块做选区，断言吸附到三块整块、派发回执绑定三块、原文 sha 不变。
 
 **同块双改（conflict）**：复跑两遍。人对 A 派发反馈 → 人先改 A → 模型 claim（锁 A）→ A 被锁时改 A 被拒、同时改 B 成功 → 模型用过期基线 patch A，只有 A 进待核对 → 待核对期间 B 仍能改 → 裁决 model。每步的回执与磁盘块内容都进 JSON 记录。
 
@@ -42,9 +42,9 @@ evals/acceptance/
 
 `REPORT.md` 与 `records/<UTC 时间>.json` 都由 `run.mjs` 生成，数字来自本次运行。JSON 里有每份语料的来源 sha256、补锚点数、往返结果、改块证据，以及冲突演练的完整回执；`REPORT.md` 是人读版，末尾列未通过项、回退票与无法验证项。
 
-## 已知未通过
+## 已修复（票 12）
 
-- `typing/newline`：块内按 Enter 后自动保存返回 409 `block_structure`，换行后的文字没有落盘。Enter 的行为还与 SPEC 第 4 节「回车分块」不一致。按票 10 的边界不修实现，回退到 #3（02 打开文档、就地编辑、只改一块）。
+- `typing/newline` 曾红过：块结构比较用 `type@page.line` 的绝对行号，块内多一行会让后续页行号整体位移，被误判成「结构变了」而返回 409。票 12 把判据改成页身份（章节号 + 页序号 + 块类型序列），并把 Enter 改为回车分块、Shift+Enter 保留块内换行、空块 Backspace 合并；本目录记录由 `node evals/acceptance/run.mjs` 重新生成。
 
 ## 加一份语料
 
