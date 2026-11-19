@@ -568,12 +568,17 @@ function wireOverallFeedback() {
   });
 }
 
-// ── 锁：任务处理中的块不可编辑并明说；每 3 秒跟一次任务面 ────────────────────
+// ── 锁与待核对：处理中的块不可编辑；待核对块继续锁着，等人裁决 ────────────────
+const LOCKED_TASK_STATES = new Set(['processing', 'review']);
+
 function processingLocks(tasks) {
   const locks = new Map();
   for (const task of tasks ?? []) {
-    if (task.status !== 'processing') continue;
-    for (const block of task.blocks ?? []) locks.set(block.anchor, task.id);
+    if (!LOCKED_TASK_STATES.has(task.status)) continue;
+    const anchors = Array.isArray(task.locked_blocks)
+      ? task.locked_blocks
+      : (task.blocks ?? []).map((block) => block.anchor);
+    for (const anchor of anchors) locks.set(anchor, task.id);
   }
   return locks;
 }
@@ -613,11 +618,93 @@ function applyLocks(locks) {
 async function syncTasks() {
   try {
     const response = await fetch('/api/tasks');
-    if (!response.ok) return;
-    const receipt = await response.json();
-    applyLocks(processingLocks(receipt.tasks));
+    if (response.ok) {
+      const receipt = await response.json();
+      applyLocks(processingLocks(receipt.tasks));
+    }
   } catch {
     // 锁同步失败不打断编辑：保存时服务端仍会按锁拒绝。
+  }
+  await syncConflicts();
+}
+
+const DECISION_LABELS = { mine: '保留我的', model: '用模型版', discard: '放弃该块' };
+
+/** 待核对块：显示两个版本与三个出口；裁决后重新载入，磁盘上只留一个版本。 */
+function renderDeferred(node, conflict) {
+  node.classList.add('is-deferred');
+  let panel = node.querySelector('.block-deferred');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.className = 'block-deferred';
+    const note = document.createElement('p');
+    note.className = 'deferred-note';
+    note.textContent = '待核对 · 你改过这一段之后，模型也改了它';
+    const details = document.createElement('details');
+    details.className = 'deferred-model';
+    const summary = document.createElement('summary');
+    summary.textContent = '看模型版';
+    const preview = document.createElement('pre');
+    details.append(summary, preview);
+    const actions = document.createElement('div');
+    actions.className = 'deferred-actions';
+    for (const decision of ['mine', 'model', 'discard']) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.setAttribute('data-decision', decision);
+      button.textContent = DECISION_LABELS[decision];
+      button.addEventListener('click', () => { void decideConflict(node.dataset.anchor, decision); });
+      actions.append(button);
+    }
+    panel.append(note, details, actions);
+    node.append(panel);
+  }
+  const preview = panel.querySelector('.deferred-model pre');
+  if (preview) preview.textContent = conflict.model_content ?? '';
+}
+
+function clearDeferred(node) {
+  if (!node.classList.contains('is-deferred')) return;
+  node.classList.remove('is-deferred');
+  node.querySelector('.block-deferred')?.remove();
+}
+
+async function syncConflicts() {
+  try {
+    const response = await fetch('/api/conflicts');
+    if (!response.ok) return;
+    const receipt = await response.json();
+    const byAnchor = new Map((receipt.conflicts ?? []).map((conflict) => [conflict.anchor, conflict]));
+    for (const node of blockNodes()) {
+      const conflict = byAnchor.get(node.dataset.anchor);
+      if (conflict) renderDeferred(node, conflict);
+      else clearDeferred(node);
+    }
+  } catch {
+    // 待核对同步失败不打断编辑：保存路径仍会拒绝锁定块。
+  }
+}
+
+async function decideConflict(anchor, decision) {
+  const node = blockByAnchor.get(anchor)?.node;
+  node?.querySelectorAll('.deferred-actions button').forEach((button) => { button.disabled = true; });
+  try {
+    const response = await fetch('/api/conflict/decide', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ anchor, decision }),
+    });
+    const receipt = await response.json().catch(() => ({}));
+    if (!response.ok || !receipt.ok) {
+      status(`裁决失败 · ${receipt.error ?? response.status}`, true);
+      node?.querySelectorAll('.deferred-actions button').forEach((button) => { button.disabled = false; });
+      return;
+    }
+    status('已裁决 · 重新载入文档');
+    window.location.reload();
+  } catch (error) {
+    status(`裁决失败 · ${error.message}`, true);
+    node?.querySelectorAll('.deferred-actions button').forEach((button) => { button.disabled = false; });
   }
 }
 
@@ -652,7 +739,12 @@ async function persist(node) {
     response = await fetch('/api/block', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ anchor: node.dataset.anchor, content, base_sha256: snapshot.sha256 }),
+      body: JSON.stringify({
+        anchor: node.dataset.anchor,
+        content,
+        base_sha256: snapshot.sha256,
+        base_block_sha256: entry.block.sha256,
+      }),
     });
   } catch (error) {
     status(`保存失败 · ${error.message}`, true);
@@ -664,9 +756,10 @@ async function persist(node) {
     return;
   }
   snapshot.sha256 = receipt.sha256;
-  entry.block.raw = content;
+  entry.block.raw = receipt.block?.raw ?? content;
+  if (receipt.block?.sha256) entry.block.sha256 = receipt.block.sha256;
   node.__dirty = false;
-  status('已自动保存');
+  status(receipt.merged ? '已自动保存 · 合并了别处的改动' : '已自动保存');
 }
 
 async function boot() {

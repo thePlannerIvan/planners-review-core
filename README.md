@@ -76,7 +76,9 @@ node scripts/doc-workbench.mjs path/to/.planners/storyline.md --open
 
 按块渲染，点进任意块就地改；加粗、斜体、行内代码、链接在块内直接排版。保存自动发生，磁盘上只替换被编辑的那一块，其余块逐字不动。缺锚点会在打开时补写，重复锚点会重建；超出七种块或行内子集的写法按原文显示，不静默改写。
 
-要模型改哪里就选哪里：选中半句也会吸成整块，提交前高亮「将改的块」；块尾有反馈按钮，顶部「整体反馈」可发起整页或整份反馈。派发出去的任务只带块身份与 `sha256(block.raw)`，不带全文；模型处理中的块显示「模型正在改这一段」并锁定，其余块照常可写，完成后自动解锁。任务形状与命令面见 [`planners-doc-task/1`](contracts/planners-doc-task.md)。
+要模型改哪里就选哪里：选中半句也会吸成整块，提交前高亮「将改的块」；块尾有反馈按钮，顶部「整体反馈」可发起整页或整份反馈。派发出去的任务只带块身份与 `sha256(block.raw)`，不带全文；模型处理中的块显示「模型正在改这一段」并锁定，其余块照常可写，完成后自动解锁。
+
+模型一次写回多块（`POST /api/patch`）。服务端按块比对任务提交时的指纹与磁盘当前版本：没变过的块直接落盘并解锁；在这之后被人改过的那一块只标「待核对」、保持锁定、磁盘不动，其余块照常落盘。人可以选择「保留我的」「用模型版」或「放弃该块」，裁决后解锁。两个人改不同块时按块合并，同一块才会被拒绝。所有写盘走 journal，进程在两次 rename 之间被打断，重启时能恢复未提交的改动，也不会多出幽灵块。任务形状、回执与 journal 判据见 [`planners-doc-task/1`](contracts/planners-doc-task.md)。
 
 ---
 
@@ -141,9 +143,11 @@ planners-review-core/
 │   ├── review-host.mjs                 # 本地宿主生命周期唯一 CLI
 │   ├── serve-review.mjs                # 无 DSH 插件时的本地浏览器宿主
 │   ├── content-workbench.mjs           # 通用内容/结构审阅工作台后端
-│   ├── doc-workbench.mjs               # 打开 planners-doc/1、按块就地编辑与保存
+│   ├── doc-workbench.mjs               # 打开 planners-doc/1、按块编辑、模型写回与人工裁决
 │   ├── lib/doc-blocks.mjs              # 文档切块/锚点修补唯一实现（校验器共用）
 │   ├── lib/doc-tasks.mjs               # 块级反馈任务与块锁
+│   ├── lib/doc-conflicts.mjs           # 同块双改的待核对队列（两个版本 + 裁决）
+│   ├── lib/doc-journal.mjs             # 写盘 journal、跨进程写锁与崩溃恢复
 │   └── lib/review_host.py              # Python 侧宿主传输封装
 ├── evals/                              # JS + Python 回归测试集
 └── references/                         # 接缝架构、Workbench 与批注规范

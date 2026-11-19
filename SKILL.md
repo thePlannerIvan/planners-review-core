@@ -157,7 +157,7 @@ Proposal 与 By-page 调用 `scripts/render-content-review.mjs` 的 `renderConte
 |---|---|
 | `contracts/review-surface.schema.json` | `review-surface/2.0.0` 契约（**唯一真相源**；含可选的 `annotate` 开关） |
 | `contracts/planners-doc.md` | `planners-doc/1` 文档契约：文档头、层级、七种块、锚点、页为空、图片；样例在 `contracts/examples/` |
-| `contracts/planners-doc-task.md` | `planners-doc-task/1` 块级反馈任务：只带块身份与内容指纹、任务状态机、锁与命令面；给模型与 04 / 07 消费 |
+| `contracts/planners-doc-task.md` | `planners-doc-task/1` 块级反馈任务：只带块身份与内容指纹、任务状态机、锁、模型写回 / 待核对 / journal 判据；给模型与 07 消费 |
 | `scripts/validate-doc.mjs` | `planners-doc/1` 唯一校验器：结构 + 锚点唯一 + 块白名单 + 图片可解析，错误带行号与块身份 |
 | `scripts/open-artifact.mjs` | 给已有 HTML 产物一条命令做出 surface（`annotate: true` + feedback/draft + 校验），产物不用改 |
 | `scripts/validate-surface.mjs` | 唯一校验器：结构 + 路径包含性 + 注入点形态 |
@@ -178,6 +178,7 @@ Proposal 与 By-page 调用 `scripts/render-content-review.mjs` 的 `renderConte
 | `evals/test_doc_contract.mjs` | `planners-doc/1` 文档契约回归（13 条）：两份样例通过 + 锚点重复 / 块类型越界 / 图片缺失 / 页为空四类拒绝 |
 | `evals/test_doc_workbench.mjs` | 文字工作台编辑面回归（11 条）：只改一块、未编辑块逐字不动、补锚点幂等、退化显示、行内序列化 |
 | `evals/test_doc_feedback.mjs` | 块级反馈与派发回归（6 条）：任务只带块身份与指纹、整页 / 整份范围、锁定期间改别的块、完成后解锁、任务状态机、半句吸成整块 |
+| `evals/test_doc_conflict.mjs` | 待核对与并发回归（5 条）：同块双改只锁该块其余落盘、裁决两个方向、跨块并发按块合并、journal 崩溃恢复、页面裁决入口 |
 
 **跑测试要跑两条入口，只跑一条就等于没跑**（这里踩过：JS 绿而 Python 那条没跑）：
 
