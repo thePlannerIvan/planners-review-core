@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 400" role="img" aria-label="问题页结构：左画面、右主张">
+  <rect width="720" height="400" fill="#fbfaf7"/>
+  <g font-family="-apple-system, 'PingFang SC', 'Noto Sans SC', sans-serif">
+    <rect x="32" y="32" width="656" height="336" fill="none" stroke="#d5d9d3" stroke-width="1.5"/>
+
+    <!-- 左：画面 -->
+    <rect x="56" y="56" width="300" height="256" fill="#e7e9e2"/>
+    <line x1="56" y1="256" x2="356" y2="256" stroke="#c7ccc4" stroke-width="1"/>
+    <circle cx="206" cy="160" r="46" fill="#c9b79c" fill-opacity="0.6"/>
+    <rect x="126" y="226" width="160" height="10" rx="5" fill="#b9c0b7"/>
+    <text x="206" y="336" font-size="13" fill="#7a847c" text-anchor="middle">场景画面：下午三点的会议室</text>
+
+    <!-- 右：主张 -->
+    <line x1="388" y1="56" x2="388" y2="312" stroke="#e0e3dd" stroke-width="1"/>
+    <text x="412" y="132" font-size="28" fill="#232b26" font-weight="600">你不是困</text>
+    <text x="412" y="174" font-size="28" fill="#232b26" font-weight="600">是状态切不过去</text>
+    <text x="412" y="222" font-size="14" fill="#5b665f">主张只留一句，不解释机制</text>
+    <rect x="412" y="252" width="96" height="2" fill="#2f6b4f"/>
+    <text x="412" y="282" font-size="13" fill="#2f6b4f">P02 · 问题页</text>
+
+    <text x="688" y="384" font-size="12" fill="#7a847c" text-anchor="end">版式示意，不按最终视觉比例</text>
+  </g>
+</svg>
