@@ -66,6 +66,18 @@ node scripts/review-host.mjs start path/to/review-surface.json
 
 ---
 
+## 单独使用：打开一份工作稿
+
+`planners-doc/1` 工作稿（`.planners/storyline.md`、`.planners/by-page.md`）可以直接用工作台打开：
+
+```bash
+node scripts/doc-workbench.mjs path/to/.planners/storyline.md --open
+```
+
+按块渲染，点进任意块就地改；加粗、斜体、行内代码、链接在块内直接排版。保存自动发生，磁盘上只替换被编辑的那一块，其余块逐字不动。缺锚点会在打开时补写，重复锚点会重建；超出七种块或行内子集的写法按原文显示，不静默改写。
+
+---
+
 <details>
 <summary>Skill 开发者说明：`review-surface/2.0.0` 契约、桥 API、命令通道与回归测试</summary>
 
@@ -117,6 +129,7 @@ planners-review-core/
 ├── assets/
 │   ├── review-bridge.js                # 双宿主运行时桥
 │   ├── dsh-tokens.css                  # DSH 共享视觉令牌唯一源
+│   ├── workbench/                      # 文字工作台页面与行内格式序列化
 │   └── annotate/                       # 无依赖 HTML 产物批注层
 ├── scripts/
 │   ├── open-artifact.mjs               # 任意 HTML 一键建批注面入口
@@ -125,6 +138,8 @@ planners-review-core/
 │   ├── review-host.mjs                 # 本地宿主生命周期唯一 CLI
 │   ├── serve-review.mjs                # 无 DSH 插件时的本地浏览器宿主
 │   ├── content-workbench.mjs           # 通用内容/结构审阅工作台后端
+│   ├── doc-workbench.mjs               # 打开 planners-doc/1、按块就地编辑与保存
+│   ├── lib/doc-blocks.mjs              # 文档切块/锚点修补唯一实现（校验器共用）
 │   └── lib/review_host.py              # Python 侧宿主传输封装
 ├── evals/                              # JS + Python 回归测试集
 └── references/                         # 接缝架构、Workbench 与批注规范

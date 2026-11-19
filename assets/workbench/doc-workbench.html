@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>文字工作台</title>
+  <link rel="stylesheet" href="/doc-workbench.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="doc-meta">
+      <strong id="projectName">工作稿</strong>
+      <span id="docKind"></span>
+    </div>
+    <span class="save-state" id="saveState" role="status" aria-live="polite">正在打开…</span>
+  </header>
+  <p class="structure-notice" id="structureNotice" hidden></p>
+  <main class="doc" id="blocks" aria-label="文档正文"></main>
+  <div class="inline-toolbar" id="inlineToolbar" role="toolbar" aria-label="行内格式" hidden></div>
+  <script src="/vendor/marked.js"></script>
+  <script src="/doc-inline.js"></script>
+  <script src="/doc-workbench.js"></script>
+</body>
+</html>
