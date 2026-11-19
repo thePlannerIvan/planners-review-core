@@ -8,6 +8,10 @@
  * 命令面（页面与 eval 共用同一个入口）：
  *   GET  /api/doc                打开文档（补齐缺失锚点、重建重复锚点）并返回块
  *   POST /api/block              人改一块：{anchor, content, base_sha256, base_block_sha256?}
+ *   POST /api/reorder            重排（一次一个动作），返回重排后的整份快照：
+ *                                {op:'move-block', anchor, to:{chapter,index,before}, base_sha256}
+ *                                {op:'move-page', page:{chapter,index},
+ *                                 to:{chapter,index,position:'before'|'after'}, base_sha256}
  *   POST /api/feedback           派发块级反馈任务
  *   GET  /api/tasks              模型读任务
  *   POST /api/task/claim         模型开始处理（锁块）
@@ -19,13 +23,17 @@
  * 块怎么切、锚点怎么补只有一份实现：`scripts/lib/doc-blocks.mjs`，
  * 与 `scripts/validate-doc.mjs` 共用。写盘走 journal（`scripts/lib/doc-journal.mjs`），
  * 崩溃重启时不产生幽灵块；同块双改进待核对（`scripts/lib/doc-conflicts.mjs`）。
+ * 改内容与改顺序是两个显式操作，互不放宽。
  */
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
-import { BLOCK_TYPES, applyBlockContent, assessBlock, blockPrefix, parseDocument, repairAnchors, tableModel } from './lib/doc-blocks.mjs';
+import {
+  BLOCK_TYPES, applyBlockContent, assessBlock, blockPrefix, moveBlock, movePage,
+  parseDocument, repairAnchors, tableModel,
+} from './lib/doc-blocks.mjs';
 import { TASK_CONTRACT, createTaskBoard } from './lib/doc-tasks.mjs';
 import { CONFLICT_CONTRACT, CONFLICT_DECISIONS, createConflictBoard } from './lib/doc-conflicts.mjs';
 import { commitDocument, journalPathFor, recoverJournal, withWriteLock } from './lib/doc-journal.mjs';
@@ -59,7 +67,9 @@ function viewBlock(block, lockOf = () => null, conflictOf = () => null) {
     type: block.type,
     index: block.index,
     page: {
+      key: block.page ? `${block.page.chapter?.index ?? 0}-${block.page.index}` : null,
       chapter: block.page?.chapter?.title ?? null,
+      chapterIndex: block.page?.chapter?.index ?? null,
       number: block.page?.index ?? null,
       title: block.page?.title ?? null,
     },
@@ -80,6 +90,18 @@ function viewBlock(block, lockOf = () => null, conflictOf = () => null) {
     locked_by: lockedBy,
     deferred: conflict ? { task_id: conflict.task_id, reason: conflict.reason } : null,
     ...(block.type === 'table' ? { table: tableModel(block) } : {}),
+  };
+}
+
+/** 目录用的页视图：页没有锚点，身份是「章节号 + 页号」，编号由顺序决定。 */
+function viewPage(page) {
+  return {
+    key: `${page.chapter?.index ?? 0}-${page.index}`,
+    chapter: page.chapter?.title ?? null,
+    chapterIndex: page.chapter?.index ?? null,
+    index: page.index,
+    title: page.title,
+    anchor: page.blocks[0]?.anchor ?? null,
   };
 }
 
@@ -125,7 +147,11 @@ function readForView(docPath) {
 }
 
 function snapshotOf(docPath, board, conflicts, journalState = null) {
-  const document = readForView(docPath);
+  return snapshotFrom(readForView(docPath), docPath, board, conflicts, journalState);
+}
+
+/** 已经拿到文档的场合直接拼快照；调用方若正持有写锁，不能走会再加锁的 snapshotOf。 */
+function snapshotFrom(document, docPath, board, conflicts, journalState = null) {
   const { raw, parsed, repairs } = document;
   return {
     path: docPath,
@@ -133,6 +159,7 @@ function snapshotOf(docPath, board, conflicts, journalState = null) {
     doc: parsed.front.doc ?? null,
     project: parsed.front.project ?? null,
     sha256: sha256(raw),
+    pages: parsed.pages.map(viewPage),
     blocks: parsed.blocks.map((block) => viewBlock(
       block,
       (anchor) => board.lockOf(anchor),
@@ -432,6 +459,7 @@ const BAD_REQUEST_CODES = new Set([
   'block_request', 'feedback_request', 'feedback_text', 'feedback_scope',
   'task_request', 'task_id', 'task_scope', 'task_blocks',
   'patch_request', 'patch_blocks', 'conflict_request', 'conflict_decision', 'conflict_anchor',
+  'reorder_request', 'reorder_op',
 ]);
 
 /** 只接受工作台页面自己的同源 JSON 写入：别的网页不能借浏览器改本地文档或派发任务。 */
@@ -447,6 +475,37 @@ function allowWrite(request, response, server, host, code) {
     return false;
   }
   return true;
+}
+
+/**
+ * 保存一次重排：只接受显式的 move-block / move-page，一次一个动作。
+ * 与改内容一样按 base_sha256 拒绝过期写入，并走同一把写锁与 journal；
+ * 成功后回整份快照，页面据此重画目录与正文。
+ */
+function reorderDocument(docPath, payload, board, conflicts, faults) {
+  if (!payload || typeof payload !== 'object') fail('reorder_request', '请求体必须是 JSON 对象');
+  const { op, base_sha256: baseSha } = payload;
+  if (op !== 'move-block' && op !== 'move-page') {
+    fail('reorder_op', '重排只接受 move-block（移块）或 move-page（移页）');
+  }
+  return withWriteLock(docPath, () => {
+    const document = readDocument(docPath);
+    if (typeof baseSha !== 'string' || baseSha !== sha256(document.raw)) {
+      fail('stale_document', '文档已在别处被修改；请刷新工作台后再拖动');
+    }
+    const repaired = persistRepairs(docPath, document, faults); // 基线对得上才把这次打开补的锚点落盘
+    const result = op === 'move-page'
+      ? movePage(repaired.raw, { page: payload.page, to: payload.to })
+      : moveBlock(repaired.raw, { anchor: payload.anchor, to: payload.to });
+    if (result.changed) {
+      commitDocument(docPath, { oldRaw: repaired.raw, raw: result.raw, applied: [], operation: 'reorder', faults });
+    }
+    return {
+      ok: true,
+      changed: result.changed,
+      ...snapshotFrom(readDocument(docPath), docPath, board, conflicts),
+    };
+  });
 }
 
 function readBody(request, limit = 2 * 1024 * 1024) {
@@ -534,6 +593,12 @@ export async function startDocWorkbench({
         const payload = JSON.parse((await readBody(request)) || '{}');
         return json(response, 200, saveBlock(file, payload, board, faults));
       }
+      if (url.pathname === '/api/reorder') {
+        if (request.method !== 'POST') return json(response, 405, { ok: false, code: 'method', error: '用 POST 重排' });
+        if (!allowWrite(request, response, server, host, 'reorder')) return;
+        const payload = JSON.parse((await readBody(request)) || '{}');
+        return json(response, 200, reorderDocument(file, payload, board, conflicts, faults));
+      }
       if (url.pathname === '/api/feedback') {
         if (request.method !== 'POST') return json(response, 405, { ok: false, code: 'method', error: '用 POST 提交反馈' });
         if (!allowWrite(request, response, server, host, 'feedback')) return;
@@ -585,7 +650,8 @@ export async function startDocWorkbench({
         return serveFile(response, join(ASSETS, 'doc-workbench.html'));
       }
       if (url.pathname === '/doc-workbench.js' || url.pathname === '/doc-inline.js'
-        || url.pathname === '/doc-feedback.js' || url.pathname === '/doc-workbench.css') {
+        || url.pathname === '/doc-drag.js' || url.pathname === '/doc-feedback.js'
+        || url.pathname === '/doc-workbench.css') {
         return serveFile(response, join(ASSETS, url.pathname.slice(1)));
       }
       if (url.pathname === '/vendor/marked.js') {

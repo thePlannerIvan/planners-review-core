@@ -176,7 +176,7 @@ Proposal 与 By-page 调用 `scripts/render-content-review.mjs` 的 `renderConte
 | `references/architecture.md` | module 表、缝、DSH 侧的接入要求 |
 | `evals/run.mjs` | 回归（JS；条数以脚本实际输出为准，当前 75 条）：校验器 + 宿主 + 第二形状 + 线协议 + 轮询 + 桥 |
 | `evals/test_doc_contract.mjs` | `planners-doc/1` 文档契约回归（13 条）：两份样例通过 + 锚点重复 / 块类型越界 / 图片缺失 / 页为空四类拒绝 |
-| `evals/test_doc_workbench.mjs` | 文字工作台编辑面回归（11 条）：只改一块、未编辑块逐字不动、补锚点幂等、退化显示、行内序列化 |
+| `evals/test_doc_workbench.mjs` | 文字工作台回归（18 条）：只改一块、未编辑块逐字不动、补锚点幂等、退化显示、行内序列化；页内 / 跨页移动块、整页重排、拒绝空页空章节、落点算法与目录 / 句柄接线 |
 | `evals/test_doc_feedback.mjs` | 块级反馈与派发回归（6 条）：任务只带块身份与指纹、整页 / 整份范围、锁定期间改别的块、完成后解锁、任务状态机、半句吸成整块 |
 | `evals/test_doc_conflict.mjs` | 待核对与并发回归（5 条）：同块双改只锁该块其余落盘、裁决两个方向、跨块并发按块合并、journal 崩溃恢复、页面裁决入口 |
 
