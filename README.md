@@ -111,7 +111,9 @@ planners-review-core/
 ├── GOTCHAS.md
 ├── SECURITY.md
 ├── contracts/
-│   └── review-surface.schema.json      # review-surface/2.0.0 权威契约
+│   ├── review-surface.schema.json      # review-surface/2.0.0 权威契约
+│   ├── planners-doc.md                 # planners-doc/1 文档契约（工作稿结构）
+│   └── examples/                       # 两份真实样例：storyline / by-page
 ├── assets/
 │   ├── review-bridge.js                # 双宿主运行时桥
 │   ├── dsh-tokens.css                  # DSH 共享视觉令牌唯一源
@@ -119,6 +121,7 @@ planners-review-core/
 ├── scripts/
 │   ├── open-artifact.mjs               # 任意 HTML 一键建批注面入口
 │   ├── validate-surface.mjs            # surface 结构与包含性校验器
+│   ├── validate-doc.mjs                # planners-doc/1 文档校验器
 │   ├── review-host.mjs                 # 本地宿主生命周期唯一 CLI
 │   ├── serve-review.mjs                # 无 DSH 插件时的本地浏览器宿主
 │   ├── content-workbench.mjs           # 通用内容/结构审阅工作台后端
