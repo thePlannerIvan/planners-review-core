@@ -1,0 +1,16 @@
+{
+  "contract": "doc-assets/1",
+  "doc": "by-page.md",
+  "assets": [
+    {
+      "path": "assets/page-structure.svg",
+      "kind": "svg",
+      "sha256": "08803fb48f9e0dd83355cab570b15e27df22c5bb15b08711de6e680e3096007e",
+      "bytes": 1484,
+      "anchors": [
+        "b:c6e384"
+      ],
+      "alt": "问题页结构：左画面、右主张"
+    }
+  ]
+}

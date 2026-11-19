@@ -43,7 +43,7 @@ export const ANCHOR_AT_END_RE = /<!--\s*(b:[0-9a-f]{6,12})\s*-->\s*$/;
 export const ANCHOR_ONLY_RE = /^\s*<!--\s*(b:[0-9a-f]{6,12})\s*-->\s*$/;
 const ANCHOR_ANY_RE = /<!--\s*b:[0-9a-f]{6,12}\s*-->/;
 const IMAGE_ONLY_RE = /^!\[[^\]]*\]\(\s*(?:<[^>\n]+>|[^\s)]+)(?:\s+["'][^"']*["'])?\s*\)$/;
-const IMAGE_RE = /!\[[^\]]*\]\(\s*(?:<([^>\n]+)>|([^\s)]+))(?:\s+["'][^"']*["'])?\s*\)/g;
+const IMAGE_RE = /!\[([^\]]*)\]\(\s*(?:<([^>\n]+)>|([^\s)]+))(?:\s+["']([^"']*)["'])?\s*\)/g;
 const HEADING_RE = /^(#{1,6})[ \t]+(.*)$/;
 const EMPTY_HEADING_RE = /^(#{1,6})[ \t]*$/;
 const LIST_RE = /^(\s*)([-*+]|\d+[.)])[ \t]+(.*)$/;
@@ -52,6 +52,24 @@ const RAW_HTML_RE = /^<([a-zA-Z][a-zA-Z0-9-]*)(?:\s[^>]*)?\/?>/;
 export const TABLE_DELIMITER_RE = /^\s*\|?\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)+\|?\s*$/;
 /** 行内代码里的锚点 / 图片语法是示例文本，不当锚点用（替换成等长空白，索引不变） */
 const stripInlineCode = (line) => line.replace(/`+[^`]*`+/g, (match) => ' '.repeat(match.length));
+
+/**
+ * 一段 Markdown 里的图片引用。行内代码里的示例不算。
+ * 工作台的图块显示、资产清单、校验器都从这里取路径，避免三份解析漂移。
+ *
+ * @returns {Array<{alt:string, path:string, title:string}>}
+ */
+export function imageReferences(raw) {
+  const probe = stripInlineCode(String(raw ?? ''));
+  return [...probe.matchAll(IMAGE_RE)]
+    .map((match) => ({ alt: match[1] ?? '', path: (match[2] ?? match[3] ?? '').trim(), title: match[4] ?? '' }))
+    .filter((reference) => reference.path !== '');
+}
+
+/** 一个独立图块（整行只有图片）的引用；不是图片块就给 null。 */
+export function imageReference(raw) {
+  return imageReferences(raw)[0] ?? null;
+}
 
 /** 行首到行内容结束（去掉行尾空白）的长度 */
 const trimmedLength = (line) => line.replace(/\s+$/, '').length;
@@ -576,7 +594,7 @@ export function parseDocument(raw, options = {}) {
       const probeRaw = stripInlineCode(blockRaw);
       const seenImages = new Set();
       for (const match of probeRaw.matchAll(IMAGE_RE)) {
-        const target = (match[1] ?? match[2] ?? '').trim();
+        const target = (match[2] ?? match[3] ?? '').trim();
         if (!target || seenImages.has(target)) continue;
         seenImages.add(target);
         const lineOffset = (probeRaw.slice(0, match.index).match(/\n/g) ?? []).length;

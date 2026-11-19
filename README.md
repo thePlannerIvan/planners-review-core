@@ -78,6 +78,8 @@ node scripts/doc-workbench.mjs path/to/.planners/storyline.md --open
 
 要模型改哪里就选哪里：选中半句也会吸成整块，提交前高亮「将改的块」；块尾有反馈按钮，顶部「整体反馈」可发起整页或整份反馈。派发出去的任务只带块身份与 `sha256(block.raw)`，不带全文；模型处理中的块显示「模型正在改这一段」并锁定，其余块照常可写，完成后自动解锁。任务形状与命令面见 [`planners-doc-task/1`](contracts/planners-doc-task.md)。
 
+图片按正文里的 `![说明](相对路径)` 就地显示，点开是只读放大层（滚轮 / 按钮缩放，可切「适应窗口」与「1:1」看裁切）；文件取不到时块内标「未能加载 · 路径」，不画占位图。SVG 与位图一样只经 `<img>` 加载，`/asset` 只发图片 MIME 并给 SVG 带 `sandbox; script-src 'none'` 的 CSP，图里的脚本不执行。换图只换文件字节：`POST /api/asset/replace` 的请求里没有路径，用哪张图始终由正文引用决定；锁定的图块会被拒绝，正文与其他块一个字节都不动。文档引用的图登记在同名清单（`storyline.md` → `storyline.assets.json`，`doc-assets/1`），打开时按正文与磁盘重建，换过文件会留下 `replaced_from_sha256`；`node scripts/validate-doc-assets.mjs <doc>` 独立核对三边是否一致。
+
 左侧目录按「章节 → 页」两级列出，点页跳转，滚动时高亮当前页。块前缀的六点句柄可拖，落点用一条提示线说明「插到哪两块之间」；拖页标题移动整页（连同其下所有块），页号随新顺序重排；`Alt+↑↓` 移动光标所在的块。拖动与页重排走同一个显式重排操作 `POST /api/reorder`（`move-block` / `move-page`），未参与重排的块逐字不动。
 
 ---
@@ -129,6 +131,7 @@ planners-review-core/
 ├── contracts/
 │   ├── review-surface.schema.json      # review-surface/2.0.0 权威契约
 │   ├── planners-doc.md                 # planners-doc/1 文档契约（工作稿结构）
+│   ├── doc-assets.md                   # doc-assets/1 图资产清单契约（派生索引）
 │   ├── planners-doc-task.md            # planners-doc-task/1 块级反馈任务形状
 │   └── examples/                       # 两份真实样例：storyline / by-page
 ├── assets/
@@ -140,11 +143,13 @@ planners-review-core/
 │   ├── open-artifact.mjs               # 任意 HTML 一键建批注面入口
 │   ├── validate-surface.mjs            # surface 结构与包含性校验器
 │   ├── validate-doc.mjs                # planners-doc/1 文档校验器
+│   ├── validate-doc-assets.mjs         # doc-assets/1 资产清单校验器
 │   ├── review-host.mjs                 # 本地宿主生命周期唯一 CLI
 │   ├── serve-review.mjs                # 无 DSH 插件时的本地浏览器宿主
 │   ├── content-workbench.mjs           # 通用内容/结构审阅工作台后端
 │   ├── doc-workbench.mjs               # 打开 planners-doc/1、按块就地编辑、保存与重排
 │   ├── lib/doc-blocks.mjs              # 文档切块/锚点修补唯一实现（校验器共用）
+│   ├── lib/doc-assets.mjs              # 图资产清单：派生、换文件守卫与三边校验
 │   ├── lib/doc-tasks.mjs               # 块级反馈任务与块锁
 │   └── lib/review_host.py              # Python 侧宿主传输封装
 ├── evals/                              # JS + Python 回归测试集

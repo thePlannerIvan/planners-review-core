@@ -8,6 +8,8 @@
  * 命令面（页面与 eval 共用同一个入口）：
  *   GET  /api/doc             打开文档（补齐缺失锚点、重建重复锚点）并返回块
  *   POST /api/block           改一块：{anchor, content, base_sha256}
+ *   POST /api/asset/replace   换掉图块引用的文件：{anchor, content_base64, base_sha256}
+ *                             —— 正文引用路径不变；锁定块不可换；清单同步新指纹
  *   POST /api/reorder         重排（一次一个动作），返回重排后的整份快照：
  *                             {op:'move-block', anchor, to:{chapter,index,before}, base_sha256}
  *                             {op:'move-page', page:{chapter,index},
@@ -18,13 +20,17 @@
  */
 import { closeSync, existsSync, fsyncSync, openSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { extname, join, resolve } from 'node:path';
+import { basename, extname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import {
-  BLOCK_TYPES, applyBlockContent, assessBlock, blockPrefix, moveBlock, movePage,
+  BLOCK_TYPES, applyBlockContent, assessBlock, blockPrefix, imageReference, moveBlock, movePage,
   parseDocument, repairAnchors, tableModel,
 } from './lib/doc-blocks.mjs';
+import {
+  assertImageBytes, buildManifest, imageMime, manifestPathFor, realPathInside, resolveInside, syncManifest,
+  writeAtomicFile,
+} from './lib/doc-assets.mjs';
 import { TASK_CONTRACT, createTaskBoard } from './lib/doc-tasks.mjs';
 import { sha256 } from './content-review-contract.mjs';
 
@@ -64,6 +70,7 @@ function viewBlock(block, lockOf = () => null) {
   const verdict = assessBlock(block);
   const prefix = blockPrefix(block);
   const lockedBy = block.anchor ? lockOf(block.anchor) : null;
+  const image = block.type === 'image' ? imageReference(block.raw) : null;
   return {
     anchor: block.anchor ?? null,
     type: block.type,
@@ -90,6 +97,7 @@ function viewBlock(block, lockOf = () => null) {
     reason: verdict.reason,
     locked: lockedBy !== null,
     locked_by: lockedBy,
+    ...(image ? { image } : {}),
     ...(block.type === 'table' ? { table: tableModel(block) } : {}),
   };
 }
@@ -133,6 +141,15 @@ function snapshotOf(docPath, board) {
   const document = readDocument(docPath);
   persistRepairs(docPath, document);
   const { raw, parsed, repairs } = document;
+  // 图资产清单是派生索引：每次打开按正文重建，没变化就不写盘。写不进去也不该让文档打不开，
+  // 只把原因如实带回去（清单是辅助，正文才是真源）。
+  let assets = { path: manifestPathFor(docPath), manifest: { contract: 'doc-assets/1', doc: basename(docPath), assets: [] }, changed: false };
+  let assetsError = null;
+  try {
+    assets = syncManifest(docPath, parsed);
+  } catch (error) {
+    assetsError = error?.message ?? String(error);
+  }
   return {
     path: docPath,
     contract: parsed.front.contract ?? null,
@@ -141,6 +158,9 @@ function snapshotOf(docPath, board) {
     sha256: sha256(raw),
     pages: parsed.pages.map(viewPage),
     blocks: parsed.blocks.map((block) => viewBlock(block, (anchor) => board.lockOf(anchor))),
+    assets: assets.manifest.assets,
+    assets_manifest: basename(assets.path),
+    ...(assetsError ? { assets_error: assetsError } : {}),
     repairs,
     errors: parsed.errors.map(({ code, message, line, block }) => ({ code, message, line, block })),
   };
@@ -264,6 +284,7 @@ const BAD_REQUEST_CODES = new Set([
   'block_request', 'feedback_request', 'feedback_text', 'feedback_scope',
   'task_request', 'task_id', 'task_scope', 'task_blocks',
   'reorder_request', 'reorder_op',
+  'asset_request', 'asset_type', 'asset_content',
 ]);
 
 /** 只接受工作台页面自己的同源 JSON 写入：别的网页不能借浏览器改本地文档或派发任务。 */
@@ -303,6 +324,60 @@ function reorderDocument(docPath, payload, board) {
   return { ok: true, changed: result.changed, ...snapshotOf(docPath, board) };
 }
 
+/**
+ * 换掉一个图块引用的文件。
+ *
+ * 请求里只有块身份与图字节，**没有路径**：用哪张图由正文的 Markdown 引用决定，
+ * 所以换文件在结构上就不可能改掉正文引用。锁定的块先拒，再按 base_sha256 拒过期写入。
+ * 清单跟着新指纹同步（`replaced_from_sha256` 记下上一版），正文一个字节都不写。
+ */
+function replaceImageAsset(docPath, payload, board) {
+  if (!payload || typeof payload !== 'object') fail('asset_request', '请求体必须是 JSON 对象');
+  const { anchor, content_base64: encoded, base_sha256: baseSha } = payload;
+  if (typeof anchor !== 'string' || !/^b:[0-9a-f]{6,12}$/.test(anchor)) fail('asset_request', '锚点形状不对');
+  if (typeof encoded !== 'string' || !encoded.trim()) fail('asset_request', '需要 content_base64（图文件字节）');
+  const compact = encoded.replace(/\s+/g, '');
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(compact) || compact.length % 4 !== 0) {
+    fail('asset_request', 'content_base64 不是合法的 base64');
+  }
+  const bytes = Buffer.from(compact, 'base64');
+  if (bytes.length > 12 * 1024 * 1024) fail('asset_request', '一张图不要超过 12MB');
+
+  const owner = board.lockOf(anchor);
+  if (owner) fail('block_locked', '模型正在改这一块，等它完成后再换图');
+  const document = readDocument(docPath);
+  if (typeof baseSha !== 'string' || baseSha !== sha256(document.raw)) {
+    fail('stale_document', '文档已在别处被修改；请刷新工作台后再换图');
+  }
+  const block = document.parsed.blocks.find((item) => item.anchor === anchor);
+  if (!block) fail('asset_anchor', `找不到图块 ${anchor}；文档可能已被修改`);
+  if (block.type !== 'image') fail('asset_anchor', '只有图块可以换文件；文字块请用块编辑');
+  const image = imageReference(block.raw);
+  if (!image) fail('asset_reference', '这一块的 Markdown 图片引用解析不出来');
+  const target = resolveInside(docPath, image.path);
+  if (!target) fail('asset_path', `图片必须落在文档目录内：${image.path}`);
+  if (!existsSync(target) || !statSync(target).isFile()) fail('asset_path', `图文件不存在：${image.path}`);
+  if (!realPathInside(docPath, target)) fail('asset_path', `图片指向文档目录之外：${image.path}`);
+  assertImageBytes(image.path, bytes);
+  writeAtomicFile(target, bytes);
+  // 文件已经换好；清单同步失败不该把这次替换说成失败，但要如实带出原因。
+  const manifestPath = manifestPathFor(docPath);
+  let manifest = buildManifest(docPath, document.parsed);
+  let assetsError = null;
+  try {
+    manifest = syncManifest(docPath, document.parsed).manifest;
+  } catch (error) {
+    assetsError = error?.message ?? String(error);
+  }
+  return {
+    ok: true,
+    asset: manifest.assets.find((asset) => asset.path === image.path) ?? null,
+    doc_sha256: sha256(document.raw),
+    assets_manifest: basename(manifestPath),
+    ...(assetsError ? { assets_error: assetsError } : {}),
+  };
+}
+
 function readBody(request, limit = 2 * 1024 * 1024) {
   return new Promise((done, failRequest) => {
     let body = '';
@@ -331,15 +406,35 @@ function serveFile(response, file, type) {
   response.end(bytes);
 }
 
-/** 文档旁边的图片：只放行文档目录内的普通文件，不接受绝对路径与跨目录。 */
+/** 文档旁边的图片：只放行文档目录内的普通**图片**文件，不接受绝对路径与跨目录。 */
 function assetFile(docPath, url) {
   const requested = new URL(url, 'http://127.0.0.1').searchParams.get('path') ?? '';
   if (!requested || /^(?:[a-zA-Z][a-zA-Z0-9+.-]*:|\/|~)/.test(requested)) return null;
   const root = resolve(docPath, '..');
   const file = resolve(root, requested);
   if (!file.startsWith(root + '/')) return null;
+  if (!imageMime(file)) return null; // 同源 /asset 不能把 HTML / JS 当资产发出去
   if (!existsSync(file) || !statSync(file).isFile()) return null;
+  if (!realPathInside(docPath, file)) return null; // 符号链接指到文档目录外也不算资产
   return file;
+}
+
+/**
+ * 发一个图资产。SVG 带 sandbox + script-src 'none' 的 CSP：即使被人单独在新标签打开，
+ * 里面的 <script> 也不执行；在 <img> 里本来就不会执行，这一层是纵深防御。
+ */
+function serveAsset(response, file) {
+  const type = imageMime(file) ?? 'application/octet-stream';
+  const headers = {
+    'content-type': type,
+    'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
+  };
+  if (type === 'image/svg+xml') {
+    headers['content-security-policy'] = "sandbox; script-src 'none'";
+  }
+  response.writeHead(200, headers);
+  response.end(readFileSync(file));
 }
 
 export async function startDocWorkbench({ docPath, port = 0, host = '127.0.0.1', onTask = null } = {}) {
@@ -361,6 +456,12 @@ export async function startDocWorkbench({ docPath, port = 0, host = '127.0.0.1',
         if (!allowWrite(request, response, server, host, 'block')) return;
         const payload = JSON.parse((await readBody(request)) || '{}');
         return json(response, 200, saveBlock(file, payload, board));
+      }
+      if (url.pathname === '/api/asset/replace') {
+        if (request.method !== 'POST') return json(response, 405, { ok: false, code: 'method', error: '用 POST 换图' });
+        if (!allowWrite(request, response, server, host, 'asset')) return;
+        const payload = JSON.parse((await readBody(request, 20 * 1024 * 1024)) || '{}');
+        return json(response, 200, replaceImageAsset(file, payload, board));
       }
       if (url.pathname === '/api/reorder') {
         if (request.method !== 'POST') return json(response, 405, { ok: false, code: 'method', error: '用 POST 重排' });
@@ -404,7 +505,7 @@ export async function startDocWorkbench({ docPath, port = 0, host = '127.0.0.1',
       }
       if (url.pathname === '/doc-workbench.js' || url.pathname === '/doc-inline.js'
         || url.pathname === '/doc-drag.js' || url.pathname === '/doc-feedback.js'
-        || url.pathname === '/doc-workbench.css') {
+        || url.pathname === '/doc-images.js' || url.pathname === '/doc-workbench.css') {
         return serveFile(response, join(ASSETS, url.pathname.slice(1)));
       }
       if (url.pathname === '/vendor/marked.js') {
@@ -413,7 +514,7 @@ export async function startDocWorkbench({ docPath, port = 0, host = '127.0.0.1',
       if (url.pathname === '/asset') {
         const target = assetFile(file, request.url);
         if (!target) { response.writeHead(404); return response.end('not found'); }
-        return serveFile(response, target);
+        return serveAsset(response, target);
       }
       json(response, 404, { ok: false, code: 'not_found', error: '没有这个入口' });
     } catch (error) {

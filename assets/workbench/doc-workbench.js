@@ -45,13 +45,6 @@ const renderInline = (markdown) => {
   return escapeHtml(markdown);
 };
 
-const parseImage = (raw) => {
-  const match = String(raw).match(/^!\[([^\]]*)\]\(\s*(?:<([^>]+)>|([^\s)]+))(?:\s+["']([^"']*)["'])?\s*\)/);
-  return match ? { alt: match[1], path: (match[2] ?? match[3] ?? '').trim(), title: match[4] ?? '' } : null;
-};
-
-const assetUrl = (path) => `/asset?path=${encodeURIComponent(path)}`;
-
 function pageHeading(block) {
   const node = document.createElement('div');
   node.className = 'page-divider';
@@ -185,7 +178,7 @@ function imageBlock(block) {
   node.className = 'doc-block';
   node.setAttribute('data-anchor', block.anchor);
   node.dataset.type = 'image';
-  const image = parseImage(block.raw);
+  const image = block.image ?? null;
   if (!image) {
     node.setAttribute('data-degraded', '1');
     const raw = document.createElement('pre');
@@ -194,15 +187,9 @@ function imageBlock(block) {
     node.append(raw);
     return node;
   }
-  const figure = document.createElement('figure');
-  const img = document.createElement('img');
-  img.src = assetUrl(image.path);
-  img.alt = image.alt;
-  img.loading = 'lazy';
-  const caption = document.createElement('figcaption');
-  caption.textContent = image.alt;
-  figure.append(img, caption);
-  node.append(figure);
+  // 清单里的指纹当缓存版本：模型换掉文件后重开工作台，地址跟着变，不会被旧内存缓存骗。
+  const version = (snapshot.assets ?? []).find((asset) => asset.path === image.path)?.sha256 ?? null;
+  node.append(DocImages.render(image, { version }));
   return node;
 }
 

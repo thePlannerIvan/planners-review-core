@@ -261,3 +261,58 @@ body.is-reordering { cursor: grabbing; user-select: none; }
   .toc-panel { display: none; }
   .workbench .doc { padding-top: 24px; }
 }
+
+/* 图块：按正文引用就地显示；点开是只读放大层，缩放不碰正文。 */
+.doc-block figure.image-figure { margin: 6px 0; width: 100%; }
+.image-open {
+  display: block; width: 100%; padding: 0;
+  border: 0; border-radius: 4px; background: none; cursor: zoom-in;
+}
+.image-open[hidden] { display: none; }
+.image-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.image-figure img {
+  display: block; width: auto; height: auto;
+  max-width: 100%; border: 1px solid var(--line); border-radius: 4px; background: #fff;
+}
+.image-caption { margin-top: 6px; font-size: 12px; color: var(--muted); }
+.image-failed {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px; border: 1px dashed color-mix(in srgb, var(--danger) 40%, var(--line));
+  border-radius: 6px; background: #fff6f5; color: var(--danger); font-size: 12px;
+}
+.image-failed[hidden] { display: none; }
+.image-retry {
+  appearance: none; border: 1px solid currentColor; background: none; color: inherit;
+  padding: 2px 8px; border-radius: 999px; font: inherit; font-size: 11px; cursor: pointer;
+}
+
+.image-viewer {
+  position: fixed; inset: 0; z-index: 90;
+  display: flex; flex-direction: column;
+  background: rgb(20 21 20 / 92%);
+}
+.image-viewer[hidden] { display: none; }
+.image-viewer-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px clamp(12px, 4vw, 28px);
+  background: rgb(20 21 20 / 72%); color: #f3f4f2;
+}
+.image-viewer-name {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 12px; color: #d6dad3;
+}
+.image-viewer-scale { margin-left: auto; font-size: 12px; color: #d6dad3; font-variant-numeric: tabular-nums; }
+.image-viewer-actions { display: flex; gap: 4px; }
+.image-viewer-button {
+  appearance: none; border: 1px solid rgb(255 255 255 / 24%);
+  background: rgb(255 255 255 / 8%); color: #f7f7f5;
+  padding: 4px 10px; border-radius: 6px; font: inherit; font-size: 12px; cursor: pointer;
+}
+.image-viewer-button:hover, .image-viewer-button:focus-visible { background: rgb(255 255 255 / 18%); outline: none; }
+.image-viewer-stage { flex: 1; min-height: 0; overflow: auto; padding: clamp(16px, 4vw, 48px); }
+.image-viewer-image {
+  display: block; margin: 0 auto; max-width: none;
+  background: #fff; box-shadow: 0 10px 40px rgb(0 0 0 / 45%);
+}
+.image-viewer-image.is-fit { max-width: 100%; max-height: calc(100vh - 96px); width: auto; height: auto; margin: auto; }
+body.has-image-viewer { overflow: hidden; }

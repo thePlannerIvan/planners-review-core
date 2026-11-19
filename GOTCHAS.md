@@ -134,3 +134,12 @@
 - **证据**：`evals/run.mjs` 的"产物批注层"三条 + `dsh-review-dock/test/bridge-injection.test.mjs` 的 `annotate:true` 两条。
 - **状态**：已落地。
 - **module**：`assets/annotate/annotate.js` + 两个宿主 + 测试
+
+## 13. 同源 `/asset` 什么都发 = 文档目录里放一个 HTML 就多一个可执行页面
+
+- **现象**：图块按正文引用从 `/asset?path=…` 取文件。最初它只做目录包含性，于是文档目录里任何文件（`.html` / `.js`）都能用同一个源取回；只要有人把它单独在标签页打开，就能带着工作台的源读 `/api/doc`、发 `/api/block`。SVG 更隐蔽：`<img>` 里脚本不执行，单独打开却会执行。
+- **原因**：把「文件在文档目录里」当成了「文件是资产」。包含性只回答越不越界，不回答**这东西该不该被当作资产**。而 SVG 的脚本语义取决于**承载方式**（`<img>` vs 顶层文档），只靠页面写法防不住"用户右键新标签打开"。
+- **行为修正**：① `/asset` 只放行图片 MIME 白名单（扩展名判定），其余一律 404；② SVG 响应带 `Content-Security-Policy: sandbox; script-src 'none'` 与 `X-Content-Type-Options: nosniff`，顶层打开也不执行；③ 页面只用 `<img>`，不内联 SVG；④ 换文件入口按扩展名核对真实字节签名，`pixel.png` 里塞 HTML/SVG 直接拒。
+- **证据**：`evals/test_doc_assets.mjs` 的「位图与 SVG 都能就地加载」一条（CSP 头 + `evil.html` 404）与锁定替换一条。
+- **状态**：已落地。
+- **module**：`scripts/doc-workbench.mjs`（`/asset`、`/api/asset/replace`）+ `assets/workbench/doc-images.js`
