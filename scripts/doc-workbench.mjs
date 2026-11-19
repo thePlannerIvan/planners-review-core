@@ -14,13 +14,18 @@
  *                                {op:'move-block', anchor, to:{chapter,index,before}, base_sha256}
  *                                {op:'move-page', page:{chapter,index},
  *                                 to:{chapter,index,position:'before'|'after'}, base_sha256}
- *   POST /api/feedback           派发块级反馈任务
+ *   POST /api/feedback           派发块级反馈任务；回执带 dispatch.channel（wake / inbox）
  *   GET  /api/tasks              模型读任务
  *   POST /api/task/claim         模型开始处理（锁块）
  *   POST /api/task/complete      模型不写回、直接完成
  *   POST /api/patch              模型一次写回多块：{task_id, patches:[{anchor, content}]}
  *   GET  /api/conflicts          人读待核对：磁盘版本 + 模型版
  *   POST /api/conflict/decide    裁决一块：{anchor, decision: mine|model|discard}
+ *
+ * 没有侧栏插件时，派发把同一条任务落进文档同目录的 `.doc-workbench/inbox/`，
+ * 模型用 `scripts/doc-inbox.mjs list|take` 读；有插件时同一条任务交给 onTask 唤醒。
+ * 旧 JSON 主稿（`.proposal-work/page-architecture.json` 这类）只读挂载：
+ * GET /api/doc 给出 readonly 快照，所有写入口 409 readonly，磁盘零变化。
  *
  * 块怎么切、锚点怎么补只有一份实现：`scripts/lib/doc-blocks.mjs`，
  * 与 `scripts/validate-doc.mjs` 共用。写盘走 journal（`scripts/lib/doc-journal.mjs`），
@@ -43,6 +48,8 @@ import {
 import { TASK_CONTRACT, createTaskBoard } from './lib/doc-tasks.mjs';
 import { CONFLICT_CONTRACT, CONFLICT_DECISIONS, createConflictBoard } from './lib/doc-conflicts.mjs';
 import { commitDocument, journalPathFor, recoverJournal, withWriteLock } from './lib/doc-journal.mjs';
+import { createTaskDispatcher } from './lib/doc-dispatch.mjs';
+import { LEGACY_READONLY_MESSAGE, legacySnapshot, readLegacyMaster } from './lib/doc-legacy.mjs';
 import { sha256 } from './content-review-contract.mjs';
 
 const HERE = fileURLToPath(new URL('..', import.meta.url));
@@ -483,6 +490,12 @@ const BAD_REQUEST_CODES = new Set([
   'asset_request', 'asset_type', 'asset_content',
 ]);
 
+/** 只读挂载拒绝的写入口：人保存、重排、派发、模型 claim/complete/patch、裁决，一个都不放行。 */
+const READONLY_PATHS = new Set([
+  '/api/block', '/api/reorder', '/api/feedback', '/api/task/claim', '/api/task/complete',
+  '/api/patch', '/api/conflict/decide', '/api/asset/replace',
+]);
+
 /** 只接受工作台页面自己的同源 JSON 写入：别的网页不能借浏览器改本地文档或派发任务。 */
 function allowWrite(request, response, server, host, code) {
   const allowedOrigin = `http://${host}:${server.address().port}`;
@@ -665,24 +678,33 @@ export async function startDocWorkbench({
   if (!docPath) throw Error('需要一份文档路径');
   const file = realpathSync(resolve(docPath));
   if (!statSync(file).isFile()) throw Error(`不是文件：${file}`);
+  // 旧 JSON 主稿不进入 planners-doc/1 的读-改-写：只挂成只读快照，不补锚点、不恢复 journal。
+  const legacy = readLegacyMaster(file);
   // 先收上一次被中断的写盘，再补锚点：恢复用整份目标全文，不按块硬拼，不会生成幽灵块。
-  const recovery = await withStartupLock(file, () => recoverJournal(file));
+  const recovery = legacy ? { state: 'none' } : await withStartupLock(file, () => recoverJournal(file));
   if (recovery.state === 'orphaned') {
     console.warn(`journal 未恢复：${recovery.journal} 的基线已过期，文档保持现状，请人工核对`);
   }
-  const startup = await withStartupLock(file, () => openDocument(file, faults));
-  const board = createTaskBoard(); // 任务、锁、待核对只在工作台运行期间存在；落盘派发由 07 接。
+  const startup = legacy ? null : await withStartupLock(file, () => openDocument(file, faults));
+  const board = createTaskBoard(); // 任务、锁、待核对只在工作台运行期间存在；落盘派发由收件箱接。
   const conflicts = createConflictBoard();
+  // 派发的唯一出口：有插件走唤醒，没有插件写本地收件箱；两条路径拿到同一条任务。
+  const dispatch = legacy ? null : createTaskDispatcher({ docPath: file, onTask });
   const journalState = recovery.state === 'orphaned'
     ? { state: recovery.state, path: recovery.journal }
     : null;
+  const readonlyDocument = () => legacySnapshot({ path: file, master: readLegacyMaster(file) });
 
   const server = createServer(async (request, response) => {
     const url = new URL(request.url || '/', `http://${host}`);
     try {
+      // 只读挂载：每一条写入口都在这里拒绝，磁盘一个字节都不动；原因原样回给页面/调用方。
+      if (legacy && READONLY_PATHS.has(url.pathname)) {
+        return json(response, 409, { ok: false, code: 'readonly', error: LEGACY_READONLY_MESSAGE });
+      }
       if (url.pathname === '/api/doc') {
         if (request.method !== 'GET') return json(response, 405, { ok: false, code: 'method', error: '用 GET 打开文档' });
-        return json(response, 200, snapshotOf(file, board, conflicts, journalState));
+        return json(response, 200, legacy ? readonlyDocument() : snapshotOf(file, board, conflicts, journalState));
       }
       if (url.pathname === '/api/block') {
         if (request.method !== 'POST') return json(response, 405, { ok: false, code: 'method', error: '用 POST 保存块' });
@@ -707,15 +729,21 @@ export async function startDocWorkbench({
         if (!allowWrite(request, response, server, host, 'feedback')) return;
         const payload = JSON.parse((await readBody(request)) || '{}');
         const receipt = submitFeedback(file, payload, board);
-        // 07：把任务写进本地收件箱 / 唤醒模型。这里只报事件，不让派发失败吞掉已创建的任务。
-        if (typeof onTask === 'function') {
-          try {
-            await onTask(receipt.task);
-          } catch (error) {
-            console.error(`派发钩子失败：${error?.message ?? error}`);
-          }
+        // 派发出口只有一处：任务先建成同一个形状，再选择唤醒或写收件箱。
+        // 派发失败只报错，不让已创建的任务消失（人还能在 /api/tasks 里看到它）。
+        let delivery;
+        try {
+          delivery = await dispatch(receipt.task);
+        } catch (error) {
+          delivery = {
+            channel: typeof onTask === 'function' ? 'wake' : 'inbox',
+            task_id: receipt.task.id,
+            status: receipt.task.status,
+            error: error?.message ?? String(error),
+          };
+          console.error(`派发失败：${error?.message ?? error}`);
         }
-        return json(response, 200, receipt);
+        return json(response, 200, { ...receipt, dispatch: delivery });
       }
       if (url.pathname === '/api/tasks') {
         if (request.method !== 'GET') return json(response, 405, { ok: false, code: 'method', error: '用 GET 读取任务' });
@@ -782,9 +810,10 @@ export async function startDocWorkbench({
     url,
     port: address.port,
     path: file,
-    repairs: startup.repairs,
+    repairs: startup?.repairs ?? [],
     recovery,
-    journal: journalPathFor(file),
+    journal: legacy ? null : journalPathFor(file),
+    readonly: legacy ? { reason: legacy.kind, message: LEGACY_READONLY_MESSAGE } : null,
     tasks: board,
     conflicts,
     close: () => new Promise((done) => server.close(() => done())),

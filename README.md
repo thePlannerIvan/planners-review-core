@@ -84,6 +84,16 @@ node scripts/doc-workbench.mjs path/to/.planners/storyline.md --open
 
 左侧目录按「章节 → 页」两级列出，点页跳转，滚动时高亮当前页。块前缀的六点句柄可拖，落点用一条提示线说明「插到哪两块之间」；拖页标题移动整页（连同其下所有块），页号随新顺序重排；`Alt+↑↓` 移动光标所在的块。拖动与页重排走同一个显式重排操作 `POST /api/reorder`（`move-block` / `move-page`），未参与重排的块逐字不动。
 
+**没有侧栏插件时**，派发不丢：同一条任务会落进文档同目录的 `.doc-workbench/inbox/t-<任务 id>.json`，等人说一声「去看看」，模型用一条命令读回块身份、提交时的指纹与意见原文，再把它标记为已取走。有插件时同一条任务交给唤醒；两条路径消费同一个任务形状。派发不写正文，也不等于批准。
+
+```bash
+node scripts/doc-inbox.mjs list path/to/.planners/storyline.md          # 未处理任务
+node scripts/doc-inbox.mjs take path/to/.planners/storyline.md          # pending → processing
+```
+
+旧的 `.proposal-work/page-architecture.json` / `.bypage-work/page-architecture.json` 也能打开，但**只读**：页面顶部写明原因，保存、重排、派发都被拒绝，磁盘一个字节都不动。旧项目不迁移，新的工作稿要按 `planners-doc/1` 重建。
+
+
 ---
 
 <details>
@@ -150,9 +160,13 @@ planners-review-core/
 │   ├── serve-review.mjs                # 无 DSH 插件时的本地浏览器宿主
 │   ├── content-workbench.mjs           # 通用内容/结构审阅工作台后端
 │   ├── doc-workbench.mjs               # 打开 planners-doc/1、按块编辑、重排、模型写回与人工裁决
+│   ├── doc-inbox.mjs                   # 模型侧读收件箱：list 未处理任务 / take 取走任务
 │   ├── lib/doc-blocks.mjs              # 文档切块/锚点修补唯一实现（校验器共用）
 │   ├── lib/doc-assets.mjs              # 图资产清单：派生、换文件守卫与三边校验
 │   ├── lib/doc-tasks.mjs               # 块级反馈任务与块锁
+│   ├── lib/doc-inbox.mjs               # 无插件派发的本地收件箱（一条任务一个文件）
+│   ├── lib/doc-dispatch.mjs            # 派发唯一出口：有插件唤醒 / 无插件落收件箱
+│   ├── lib/doc-legacy.mjs              # 旧 JSON 主稿的只读快照，不进入新契约的读写
 │   ├── lib/doc-conflicts.mjs           # 同块双改的待核对队列（两个版本 + 裁决）
 │   ├── lib/doc-journal.mjs             # 写盘 journal、跨进程写锁与崩溃恢复
 │   └── lib/review_host.py              # Python 侧宿主传输封装

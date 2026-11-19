@@ -4,7 +4,8 @@
 
 - 形状由工作台 `scripts/lib/doc-tasks.mjs` 产生，页面不自己拼任务。
 - 任务**不携带全文**，也不携带块 raw。模型要改哪块，按 `doc.path` 读文件、按 `anchor` 定位。
-- 本版任务只在工作台运行期间存在。落盘派发（无插件）与唤醒模型属于 `07 无插件派发`；同块双改的「待核对」由本契约第 4、5 节定义（04 已实现）。
+- 任务与锁只在一个工作台进程里活着；无插件时同一条任务另落一份本地收件箱（第 6 节），
+  工作台重启后收件箱仍在，锁与待核对不跨重启恢复。同块双改的「待核对」由本契约第 4、5 节定义（04 已实现）。
 
 ## 1. 任务形状
 
@@ -51,7 +52,7 @@
 
 | 命令 | 谁调用 | 回执 | 副作用 |
 |---|---|---|---|
-| `POST /api/feedback` | 页面 | `{ok, task}` | 创建 `pending` 任务。请求体 `{scope, text, anchors?}` 或 `{scope: "page", page, text}` 或 `{scope: "doc", text}` |
+| `POST /api/feedback` | 页面 | `{ok, task, dispatch}` | 创建 `pending` 任务。请求体 `{scope, text, anchors?}` 或 `{scope: "page", page, text}` 或 `{scope: "doc", text}`；`dispatch.channel` 是 `wake`（有插件）或 `inbox`（落收件箱） |
 | `GET /api/tasks` | 模型 / 07 | `{ok, contract, tasks}` | 只读；模型侧靠它取待办 |
 | `POST /api/task/claim` | 模型 | `{ok, task}` | `pending → processing`，锁定 `task.blocks`；同一任务重复 claim 幂等 |
 | `POST /api/task/complete` | 模型 | `{ok, task}` | `processing → done`，只解自己持有的锁；重复 complete 幂等 |
@@ -162,6 +163,51 @@ POST /api/conflict/decide
 - 恢复写的是整份快照，不按锚点重拼，所以不会在文档里多出幽灵块；锚点集合与块数由恢复后的正文决定。
 - `save.lock` 把跨进程的读-改-写串行化。人保存带 `base_block_sha256` 时，整份基线过期但这一块没变就按块合并（`merged: true`），两人改不同块都能落盘；同一块被改过则 `block_conflict`，不静默覆盖。
 
-## 6. 给后续票的接口
+## 6. 无插件派发：本地收件箱
 
-- **07 无插件派发**：`startDocWorkbench({ onTask })` 在任务创建后回调（失败只报错，不影响已创建的任务）；或轮询 `GET /api/tasks` 把 `pending` 任务写进本地收件箱。有插件时的唤醒与无插件时的落盘必须消费同一个 `task` 形状，不要另造一份。
+派发只有一个出口 `createTaskDispatcher`：有侧栏插件（`startDocWorkbench({ onTask })`）时把**同一个任务对象**
+交给唤醒；没有插件时把**同一个任务对象**写进本地收件箱。两条路径不各自拼形状，模型侧不需要知道有没有插件。
+
+**位置与文件名**
+
+```text
+<文档目录>/.doc-workbench/inbox/t-<12 位十六进制>.json
+```
+
+- 由任务 id `t:<12 位十六进制>` 派生，文件名把 `:` 换成 `-` 以便跨平台。
+- 文件内容就是第 1 节的任务对象（含 `contract` / `id` / `blocks[].anchor` / `blocks[].sha256` / `text`），
+  不另包一层、不复制块 raw 或全文。
+- **一条任务一个文件**：重复派发同一条任务只覆盖同一个文件，不产生第二个条目。
+- 收件箱只是任务的落盘副本；块锁与待核对仍只在工作台进程内。模型在工作台运行时参与锁与写回，
+  走 `/api/task/claim`、`/api/patch`；工作台不在时按任务直接改文件。
+
+**状态**
+
+| 文件里的 `status` | 含义 |
+|---|---|
+| `pending` | 已派发，等人/模型来读 |
+| `processing` | 模型已取走：写 `started_at`，`locked_blocks` 是这条任务占的块 |
+
+`take` 之前的任务才是「未处理」。`take` 之后用 `list --all` 仍能看到它，却不会再被取第二次。
+
+**模型读取入口**
+
+```bash
+node scripts/doc-inbox.mjs list <文档路径>          # 只列 pending，stdout 是 JSON
+node scripts/doc-inbox.mjs list <文档路径> --all    # 连 processing / done 一起列
+node scripts/doc-inbox.mjs take <文档路径> [--id <任务 id>]  # pending → processing
+```
+
+`list` 每条形如第 1 节的任务，模型据此拿 `doc.path` 读工作稿、按 `blocks[].anchor` 定位、
+用 `blocks[].sha256` 对齐提交时的版本。`take` 幂等：没有待取任务时返回空列表，不报错。
+
+## 7. 旧 JSON 主稿只读
+
+`.proposal-work/page-architecture.json`、`.bypage-work/page-architecture.json` 这类旧 JSON **不迁移、不兼容读取**，
+但可以被工作台**只读挂载**看一眼：`node scripts/doc-workbench.mjs <旧 JSON>`。
+
+- 检测按扩展名 `.json`；打开时不补锚点、不恢复 journal、不写任何旁路文件。
+- `GET /api/doc` 返回 `readonly: {reason: "legacy-json", message}`，页与块只作预览（块没有锚点、`readonly: true`）。
+- 所有写入口（`/api/block`、`/api/reorder`、`/api/feedback`、`/api/task/*`、`/api/patch`、`/api/conflict/decide`）
+  一律 `409 {code: "readonly", error: <可读原因>}`；磁盘一个字节都不动。
+- 页面顶部显示「旧项目 · 只读」，不显示反馈入口、拖柄与编辑面；保存失败直接显示服务端原因。
