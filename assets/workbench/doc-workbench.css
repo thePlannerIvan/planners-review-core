@@ -96,6 +96,86 @@ body { min-height: 100vh; }
 .inline-toolbar button:hover, .inline-toolbar button:focus-visible { background: #3f4650; outline: none; }
 .inline-toolbar code { font-family: var(--mono); }
 
+/* 三处反馈入口：块尾、选中浮出、顶部整体。 */
+.top-actions { position: relative; display: flex; align-items: center; gap: 14px; }
+.overall-feedback {
+  appearance: none; border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+  padding: 4px 12px; border-radius: 999px; font-family: var(--font); font-size: 12px; cursor: pointer;
+}
+.overall-feedback:hover, .overall-feedback:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
+.overall-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 50;
+  min-width: 136px; padding: 4px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
+}
+.overall-menu[hidden] { display: none; }
+.overall-menu button {
+  display: block; width: 100%; text-align: left; appearance: none; border: 0; background: transparent;
+  padding: 7px 10px; border-radius: 5px; font-family: var(--font); font-size: 13px; color: var(--ink); cursor: pointer;
+}
+.overall-menu button:hover, .overall-menu button:focus-visible { background: var(--hover); outline: none; }
+
+.block-feedback {
+  position: absolute; top: 2px; right: 2px; z-index: 2;
+  appearance: none; border: 1px solid var(--line); background: var(--surface); color: var(--muted);
+  padding: 1px 8px; border-radius: 999px; font-family: var(--font); font-size: 11px; line-height: 1.6;
+  cursor: pointer; opacity: 0; transition: opacity .12s ease;
+}
+.doc-block:hover > .block-feedback, .block-feedback:focus-visible { opacity: 1; }
+.block-feedback:hover { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+.is-locked > .block-feedback { display: none; }
+
+.selection-feedback {
+  position: absolute; z-index: 45;
+  appearance: none; border: 0; background: var(--ink); color: #f7f7f5;
+  padding: 4px 12px; border-radius: 999px; font-family: var(--font); font-size: 12px; cursor: pointer;
+}
+.selection-feedback[hidden] { display: none; }
+.selection-feedback:hover, .selection-feedback:focus-visible { background: var(--accent); outline: none; }
+
+/* 提交前：这些块就是「将改的块」。 */
+.doc-block.is-feedback-target {
+  background: color-mix(in srgb, #d9a514 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #a87800 45%, transparent);
+}
+
+.feedback-composer {
+  position: fixed; z-index: 60; width: min(360px, calc(100vw - 24px));
+  padding: 10px; background: var(--surface); border: 1px solid var(--line);
+  border-radius: 10px; box-shadow: 0 10px 30px rgb(0 0 0 / 16%);
+}
+.feedback-composer[hidden] { display: none; }
+.feedback-target { margin: 0 0 6px; font-size: 12px; color: var(--muted); }
+.feedback-composer textarea {
+  width: 100%; min-height: 76px; resize: vertical; box-sizing: border-box;
+  padding: 8px 9px; border: 1px solid var(--line); border-radius: 6px;
+  font-family: var(--font); font-size: 13px; line-height: 1.6; color: var(--ink); background: var(--canvas);
+}
+.feedback-composer textarea:focus { outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent); outline-offset: 1px; }
+.feedback-error { margin: 6px 0 0; font-size: 12px; color: var(--danger); }
+.feedback-error[hidden] { display: none; }
+.feedback-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.feedback-actions button {
+  appearance: none; border-radius: 6px; padding: 5px 12px; font-family: var(--font); font-size: 12px; cursor: pointer;
+}
+.feedback-cancel { border: 1px solid var(--line); background: var(--surface); color: var(--muted); }
+.feedback-submit { border: 1px solid var(--accent); background: var(--accent); color: #fff; }
+.feedback-submit:disabled { opacity: .55; cursor: default; }
+.feedback-actions button:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 1px; }
+
+/* 模型正在处理的块：锁定 + 明说，其余块照常可写。 */
+.doc-block.is-locked { background: color-mix(in srgb, #6b7280 10%, transparent); }
+.doc-block.is-locked > .block-prefix,
+.doc-block.is-locked .block-text,
+.doc-block.is-locked table,
+.doc-block.is-locked figure,
+.doc-block.is-locked .block-code { opacity: .62; }
+.block-lock {
+  position: absolute; top: 2px; right: 2px; z-index: 2;
+  padding: 1px 8px; border-radius: 999px;
+  background: var(--ink); color: #f7f7f5; font-size: 11px; line-height: 1.6;
+}
+
 @media (max-width: 640px) {
   .doc { padding-top: 24px; }
   .page-title { font-size: 22px; }

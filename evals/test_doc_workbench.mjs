@@ -294,7 +294,9 @@ test('工作台页面按块就地编辑，带四种行内格式按钮，没有 M
   assert.match(page, /data-anchor/, '块要带锚点身份');
   assert.match(page, /contentEditable\s*=\s*'true'/, '块内容用 contenteditable 就地编辑');
   assert.doesNotMatch(page, /createElement\(['"]textarea['"]\)/, '块编辑不能退回 Markdown 文本框');
-  assert.doesNotMatch(html, /<textarea/i, '页面里不应有 Markdown 文本框');
+  // 页面上唯一的文本框是块级反馈的意见框；块本身仍是就地排版，不是 Markdown 编辑器。
+  assert.equal((html.match(/<textarea\b/gi) ?? []).length, 1, '只留一个反馈意见框');
+  assert.match(html, /<textarea[^>]*id="feedbackText"/, '反馈意见框不算块编辑器');
   assert.match(page, /DocInline\.serialize/, '保存时把行内 DOM 序列化成块 raw');
   for (const command of ['bold', 'italic', 'code', 'link']) {
     assert.match(page, new RegExp(`data-inline="${command}"`), `缺少行内格式按钮 ${command}`);
