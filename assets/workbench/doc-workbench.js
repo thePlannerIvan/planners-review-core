@@ -11,6 +11,7 @@ const TOOLBAR_HTML = `
   <button type="button" data-inline="link" title="链接" aria-label="链接">↗</button>`;
 
 let snapshot = null;
+let transport = null; // 同一份页面两种宿主：本地 /api 或侧栏 command（doc-transport.js）
 let saveTimer = null;
 let saveQueue = Promise.resolve();
 const blockByAnchor = new Map();
@@ -188,8 +189,15 @@ function imageBlock(block) {
     return node;
   }
   // 清单里的指纹当缓存版本：模型换掉文件后重开工作台，地址跟着变，不会被旧内存缓存骗。
+  // 侧栏里的图由桥递字节（不透明帧取不到 /asset），本地页直接走同源；由 transport 决定。
   const version = (snapshot.assets ?? []).find((asset) => asset.path === image.path)?.sha256 ?? null;
-  node.append(DocImages.render(image, { version }));
+  node.append(DocImages.render(image, {
+    version,
+    // 本地页同源取图，保持同步地址；侧栏里才需要桥异步换 blob。
+    ...(transport.mode === 'sidebar'
+      ? { resolve: (path, stamp, attempt) => transport.imageUrl(path, attempt ? `${stamp ?? ''}-r${attempt}` : stamp) }
+      : {}),
+  }));
   return node;
 }
 
@@ -291,6 +299,7 @@ function renderDocument() {
     apply: (next) => { snapshot = next; renderAll(); },
     flush: flushSaves,
     save: (node) => enqueueSave(node),
+    reorder: (payload) => transport.reorder(payload),
     status,
   });
   $('#projectName').textContent = snapshot.project ?? '未命名项目';
@@ -496,14 +505,9 @@ async function submitFeedback() {
   const button = $('#feedbackSubmit');
   button.disabled = true;
   try {
-    const response = await fetch('/api/feedback', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const receipt = await response.json().catch(() => ({}));
-    if (!response.ok || !receipt.ok) {
-      showFeedbackError(receipt.error ?? `提交失败 · HTTP ${response.status}`);
+    const receipt = await transport.feedback(payload);
+    if (!receipt.ok) {
+      showFeedbackError(receipt.error ?? `提交失败 · ${receipt.status ?? '未知错误'}`);
       return;
     }
     closeComposer();
@@ -686,11 +690,8 @@ function applyLocks(locks) {
 
 async function syncTasks() {
   try {
-    const response = await fetch('/api/tasks');
-    if (response.ok) {
-      const receipt = await response.json();
-      applyLocks(processingLocks(receipt.tasks));
-    }
+    const receipt = await transport.tasks();
+    if (receipt.ok) applyLocks(processingLocks(receipt.tasks));
   } catch {
     // 锁同步失败不打断编辑：保存时服务端仍会按锁拒绝。
   }
@@ -740,9 +741,8 @@ function clearDeferred(node) {
 
 async function syncConflicts() {
   try {
-    const response = await fetch('/api/conflicts');
-    if (!response.ok) return;
-    const receipt = await response.json();
+    const receipt = await transport.conflicts();
+    if (!receipt.ok) return;
     const byAnchor = new Map((receipt.conflicts ?? []).map((conflict) => [conflict.anchor, conflict]));
     for (const node of blockNodes()) {
       const conflict = byAnchor.get(node.dataset.anchor);
@@ -758,14 +758,9 @@ async function decideConflict(anchor, decision) {
   const node = blockByAnchor.get(anchor)?.node;
   node?.querySelectorAll('.deferred-actions button').forEach((button) => { button.disabled = true; });
   try {
-    const response = await fetch('/api/conflict/decide', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ anchor, decision }),
-    });
-    const receipt = await response.json().catch(() => ({}));
-    if (!response.ok || !receipt.ok) {
-      status(`裁决失败 · ${receipt.error ?? response.status}`, true);
+    const receipt = await transport.decide({ anchor, decision });
+    if (!receipt.ok) {
+      status(`裁决失败 · ${receipt.error ?? receipt.status ?? '未知错误'}`, true);
       node?.querySelectorAll('.deferred-actions button').forEach((button) => { button.disabled = false; });
       return;
     }
@@ -807,25 +802,20 @@ async function persist(node) {
   }
   if (content === entry.block.raw && !node.__dirty) return;
   status('保存中', true);
-  let response;
+  let receipt;
   try {
-    response = await fetch('/api/block', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        anchor: node.dataset.anchor,
-        content,
-        base_sha256: snapshot.sha256,
-        base_block_sha256: entry.block.sha256,
-      }),
+    receipt = await transport.saveBlock({
+      anchor: node.dataset.anchor,
+      content,
+      base_sha256: snapshot.sha256,
+      base_block_sha256: entry.block.sha256,
     });
   } catch (error) {
     status(`保存失败 · ${error.message}`, true);
     return;
   }
-  const receipt = await response.json().catch(() => ({}));
-  if (!response.ok || !receipt.ok) {
-    status(`保存失败 · ${receipt.error ?? response.status}`, true);
+  if (!receipt.ok) {
+    status(`保存失败 · ${receipt.error ?? receipt.status ?? '未知错误'}`, true);
     return;
   }
   snapshot.sha256 = receipt.sha256;
@@ -862,9 +852,9 @@ async function boot() {
   wireSelectionFeedback();
   wireOverallFeedback();
   try {
-    const response = await fetch('/api/doc');
-    const doc = await response.json();
-    if (!response.ok) throw Error(doc.error ?? `HTTP ${response.status}`);
+    transport = await DocTransport.connect();
+    const doc = await transport.open();
+    if (!doc.ok) throw Error(doc.error ?? `打开失败 · ${doc.status ?? '未知错误'}`);
     snapshot = doc;
     renderAll();
     if (snapshot.readonly) {

@@ -8,10 +8,27 @@
 export const CONFLICT_CONTRACT = 'planners-doc-conflict/1';
 export const CONFLICT_DECISIONS = ['mine', 'model', 'discard'];
 
+const fail = (code, message) => { throw Object.assign(Error(message), { code }); };
 const clone = (conflict) => ({ ...conflict });
 
-export function createConflictBoard({ now = () => new Date().toISOString() } = {}) {
+export function createConflictBoard({ now = () => new Date().toISOString(), store = null } = {}) {
   const conflicts = new Map(); // anchor → conflict
+  const persist = () => { if (store) store.save({ conflicts: [...conflicts.values()].map(clone) }); };
+  /** 写之前读回磁盘最新状态：另一个进程可能刚裁决或新增了一条。 */
+  const refresh = () => {
+    if (!store) return;
+    const saved = store.load();
+    conflicts.clear();
+    if (!saved) return;
+    if (!Array.isArray(saved.conflicts)) fail('board_state', '工作台待核对队列形状不对');
+    for (const conflict of saved.conflicts) {
+      if (!conflict || typeof conflict !== 'object' || typeof conflict.anchor !== 'string') {
+        fail('board_state', '工作台待核对记录形状不对');
+      }
+      conflicts.set(conflict.anchor, { ...conflict });
+    }
+  };
+  refresh();
 
   return {
     /** 同一块重复进入待核对时，以最新一次磁盘版本与模型版为准。 */
@@ -28,12 +45,15 @@ export function createConflictBoard({ now = () => new Date().toISOString() } = {
         created_at: now(),
       };
       conflicts.set(conflict.anchor, conflict);
+      persist();
       return clone(conflict);
     },
 
     list() {
       return [...conflicts.values()].map(clone);
     },
+
+    refresh,
 
     get(anchor) {
       const conflict = conflicts.get(anchor);
@@ -45,6 +65,7 @@ export function createConflictBoard({ now = () => new Date().toISOString() } = {
       const conflict = conflicts.get(anchor);
       if (!conflict) return null;
       conflicts.delete(anchor);
+      persist();
       return clone(conflict);
     },
 

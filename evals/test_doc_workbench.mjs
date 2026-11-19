@@ -769,7 +769,7 @@ test('工作台源码：六点句柄、页标题可拖、两级目录随滚动�
   assert.match(drag, /dragstart/);
   assert.match(drag, /dragover/);
   assert.match(drag, /drop-line/, '落点要有一条提示线');
-  assert.match(drag, /'\/api\/reorder'/, '拖动与 Alt+↑↓ 都走同一个显式重排接口');
+  assert.match(drag, /hooks\.reorder\(/, '拖动与 Alt+↑↓ 都走同一个显式重排接口');
   assert.match(drag, /altKey/);
   assert.match(drag, /ArrowUp/);
   assert.match(drag, /ArrowDown/);

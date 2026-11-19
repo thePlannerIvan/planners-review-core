@@ -51,17 +51,46 @@
     return node;
   }
 
+  /**
+   * 取图地址：本地页是同源 `/asset?...`，侧栏里由桥把字节递进来换成 blob URL。
+   * 页面把 `options.resolve(path, version, attempt)` 交给 transport；没有就退回同源地址。
+   */
+  function resolveUrl(image, options, attempt) {
+    if (typeof options.resolve === 'function') {
+      return Promise.resolve(options.resolve(image.path, options.version, attempt)).then((url) => {
+        if (typeof url !== 'string' || url === '') throw Error('取图地址为空');
+        return url;
+      });
+    }
+    return Promise.resolve(assetUrl(image.path, options.version));
+  }
+
   function render(image, options = {}) {
     const figure = element('figure', 'image-figure');
     const button = element('button', 'image-open');
     button.type = 'button';
     button.setAttribute('aria-label', `放大查看：${image.alt || image.path}`);
     const img = document.createElement('img');
-    img.src = assetUrl(image.path, options.version);
     img.alt = image.alt || '';
     img.loading = 'lazy';
     img.draggable = false;
     button.append(img);
+    let attempt = 0;
+    const load = () => {
+      // 没有 transport 的场合（纯浏览器/测试）保持同源地址的同步行为。
+      if (typeof options.resolve !== 'function') {
+        const base = assetUrl(image.path, options.version);
+        img.src = attempt === 0 ? base : `${base}&retry=${attempt}`;
+        return;
+      }
+      resolveUrl(image, options, attempt)
+        .then((url) => { img.src = url; })
+        .catch(() => {
+          figure.classList.add('is-failed');
+          button.hidden = true;
+          failed.hidden = false;
+        });
+    };
 
     const failed = element('div', 'image-failed');
     failed.hidden = true;
@@ -71,7 +100,8 @@
     retry.addEventListener('click', () => {
       failed.hidden = true;
       button.hidden = false;
-      img.src = `${assetUrl(image.path, options.version)}&retry=${Date.now()}`;
+      attempt += 1;
+      load();
     });
     failed.append(reason, retry);
 
@@ -96,6 +126,7 @@
     const caption = element('figcaption', 'image-caption', image.alt || '');
     if (!image.alt) caption.hidden = true;
     figure.append(button, failed, caption);
+    load();
     return figure;
   }
 

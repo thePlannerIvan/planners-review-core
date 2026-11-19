@@ -160,6 +160,11 @@ Proposal 与 By-page 调用 `scripts/render-content-review.mjs` 的 `renderConte
 | `contracts/planners-doc-task.md` | `planners-doc-task/1` 块级反馈任务：只带块身份与内容指纹、任务状态机、锁、模型写回 / 待核对 / journal 判据；无插件派发的本地收件箱与旧 JSON 只读也在这里 |
 | `contracts/doc-assets.md` | `doc-assets/1` 图资产清单：正文派生、同名清单、换文件留上一版指纹；不碰 bypage 的素材取舍 |
 | `scripts/doc-inbox.mjs` | 模型侧收件箱命令：`list` 未处理任务（块身份 + 指纹 + 意见），`take` 把 pending 标成 processing |
+| `scripts/doc-surface.mjs` | 为一份 `planners-doc/1` 工作稿生成侧栏 `review-surface`（`doc-workbench/1`）与自包含入口；同 id 再开 = 刷新 |
+| `scripts/doc-command.mjs` | 侧栏命令后端（保存 / 派发 / 裁决 / 看锁）与模型侧 CLI（`tasks` / `claim` / `complete` / `patch` / `conflicts`），共用 `lib/doc-session.mjs` |
+| `scripts/lib/doc-session.mjs` | 两个入口共用的块级内核：解析、块级写、journal、锁与待核对的唯一实现 |
+| `scripts/lib/doc-boards.mjs` | 任务板与待核对的落盘（`.doc-workbench/state/`），让本地页 / 侧栏 / 模型 CLI 跨进程看到同一组锁 |
+| `assets/workbench/doc-transport.js` | 页面到存储的唯一通道：侧栏走 `review.command` / `review.wake` / `review.asset`，无插件走 `/api/*` |
 | `scripts/validate-doc-assets.mjs` | `doc-assets/1` 唯一校验器：正文引用、清单、磁盘三边对得上（哈希 / 字节 / 类型 / 锚点 / 上一版） |
 | `scripts/lib/doc-assets.mjs` | 清单派生与同步、换文件字节守卫（扩展名 + 真签名、SVG 结构）——工作台与校验器共用 |
 | `scripts/validate-doc.mjs` | `planners-doc/1` 唯一校验器：结构 + 锚点唯一 + 块白名单 + 图片可解析，错误带行号与块身份 |
@@ -185,6 +190,7 @@ Proposal 与 By-page 调用 `scripts/render-content-review.mjs` 的 `renderConte
 | `evals/test_doc_assets.mjs` | 图块与资产回归（10 条）：位图 / SVG 加载与脚本隔离、未能加载文案、放大只读；清单派生 / 新增登记 / 换图留上一版；锁定图块拒绝替换；清单漂移四类；两份样例清单 |
 | `evals/test_doc_conflict.mjs` | 待核对与并发回归（5 条）：同块双改只锁该块其余落盘、裁决两个方向、跨块并发按块合并、journal 崩溃恢复、页面裁决入口 |
 | `evals/test_doc_dispatch.mjs` | 无插件派发与旧项目只读回归（5 条）：收件箱落盘 / 读回 / 重复写不重复、pending→processing、有插件与无插件同形、旧 JSON 只读拒绝且磁盘不变、界面状态如实 |
+| `evals/test_sidebar_surface.mjs` | 侧栏接入回归（7 条）：侧栏通道只改被编辑块的字节、同 id 刷新、派发两通道同形、模型 CLI 跨进程 claim/patch 与侧栏裁决、页面源码只有一条 transport、无插件宿主直接打开生成的 surface、transport 的 command/wake 映射 |
 
 **跑测试要跑两条入口，只跑一条就等于没跑**（这里踩过：JS 绿而 Python 那条没跑）：
 

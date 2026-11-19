@@ -44,7 +44,11 @@ if (verdict.status !== 0) {
 const doc = JSON.parse(readFileSync(surfacePath, 'utf8'));
 const surfaceDir = dirname(surfacePath);
 const ROOT = realpathSync(resolve(surfaceDir, doc.dir));
-const COMMAND_SURFACE = { data: doc, projectRoot: realpathSync(resolve(surfaceDir, doc.project_root)), dir: ROOT };
+// 没有插件：命令后端按 host=local 走「落收件箱」，页面不会假装唤醒了模型。
+const COMMAND_SURFACE = {
+  data: doc, file: surfacePath, base: surfaceDir, host: 'local',
+  projectRoot: realpathSync(resolve(surfaceDir, doc.project_root)), dir: ROOT,
+};
 const ENTRY = doc.entry;
 // 与内容无关的批注层：`annotate: true` 时把公共件的 annotate.js 内联进页面。
 // 不透明帧里取不到 /assets 下的脚本（和桥同一个原因），所以只能内联。

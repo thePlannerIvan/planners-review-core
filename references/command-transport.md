@@ -22,6 +22,17 @@ backend identifier does not enable command. The validator rejects unknown
 backend identifiers. DSH also requires a Core bridge and shared runner that
 both provide command; older installations do not advertise it.
 
+Allowlisted backends today are `svg-workbench/1`, `content-workbench/1` and
+`doc-workbench/1` (the block-level writing workbench). `doc-workbench/1` is a
+Node backend in this Core: `runBrowserCommand` dispatches to
+`scripts/doc-command.mjs`, which resolves the document from a `binding.json`
+written next to the surface (the generic surface contract deliberately carries
+no review semantics) and runs the same `scripts/lib/doc-session.mjs` the local
+workbench page uses. Browser operations are `open`, `block`, `reorder`,
+`asset_replace`, `feedback`, `tasks`, `conflicts` and `decide`; `claim`,
+`complete` and `patch` are model-side operations exposed only by the
+`doc-command.mjs` CLI.
+
 The backend implementation is fixed by the declared backend identifier. For
 `content-workbench/1`, Core resolves its Node adapter from trusted runtime
 mounts; producer-specific backends follow the same allowlisted lookup rule.
@@ -84,6 +95,13 @@ processing to 20 seconds (below the bridge's 30-second deadline). On timeout,
 retry with the original operation ID: the backend may already have committed.
 
 ## Host Integration
+
+`doc-workbench/1` dispatch follows the host: with a plugin the backend returns
+`dispatch.channel: "wake"` plus the whole wake sentence and the next CLI
+command, and the page calls `review.wake(...)`; under the no-plugin local host
+the backend writes the same task into the local inbox and returns
+`dispatch.channel: "inbox"`. Task boards and pending-review records live in
+`.doc-workbench/state/` so the page, the backend and the model CLI share locks.
 
 Local host: run `scripts/serve-review.mjs <surface> --no-open`
 or its lifecycle CLI. The endpoint is `POST /__review/command` with the command

@@ -6,8 +6,12 @@ import { fileURLToPath } from 'node:url';
 
 const CORE_DIR = fileURLToPath(new URL('../../', import.meta.url));
 const BACKEND = 'svg-workbench/1';
+const DOC_BACKEND = 'doc-workbench/1';
 const PROCESSOR = ['planners-ppt-hell', 'scripts', 'workbench_store.py'];
 const OPERATIONS = new Set(['get', 'state', 'save', 'feedback', 'snapshot', 'restore', 'history', 'order']);
+// 文字工作台的浏览器操作白名单：保存、派发、裁决、看锁与待核对。
+// claim / patch / complete 是模型侧动作，只允许 doc-command CLI 调用。
+const DOC_OPERATIONS = new Set(['open', 'block', 'reorder', 'asset_replace', 'feedback', 'tasks', 'conflicts', 'decide']);
 const OVERRIDES = ['root', 'project_root', 'projectRoot', 'executable', 'script', 'processor', 'python', 'argv', 'cwd', 'command_backend'];
 const INPUT_LIMIT = 1024 * 1024;
 const OUTPUT_LIMIT = 4 * 1024 * 1024;
@@ -15,7 +19,8 @@ const TIMEOUT_MS = 20000;
 const failure = (code, error) => ({ ok: false, code, error });
 
 export function commandEnabled(data) {
-  return [BACKEND, 'content-workbench/1'].includes(data?.command_backend) && Array.isArray(data.capabilities) && data.capabilities.includes('command');
+  return [BACKEND, 'content-workbench/1', DOC_BACKEND].includes(data?.command_backend)
+    && Array.isArray(data.capabilities) && data.capabilities.includes('command');
 }
 
 // Only host-owned Skill locations are searched. Neither the surface nor the
@@ -84,7 +89,8 @@ function invoke(python, args, input) {
 export async function runBrowserCommand(surface, payload) {
   if (!commandEnabled(surface?.data)) return failure('command_not_enabled', 'Surface has no supported command capability/backend');
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return failure('command_shape', 'Command must be a JSON object');
-  if (!OPERATIONS.has(payload.op)) return failure('command_operation', 'Browser command operation is not allowlisted');
+  const operations = surface.data.command_backend === DOC_BACKEND ? DOC_OPERATIONS : OPERATIONS;
+  if (!operations.has(payload.op)) return failure('command_operation', 'Browser command operation is not allowlisted');
   if (Object.hasOwn(payload, 'author') && payload.author !== 'human') return failure('browser_author', 'Browser commands cannot act as a model');
   if (OVERRIDES.some((key) => Object.hasOwn(payload, key))) return failure('command_override', 'Command cannot override host paths or execution settings');
   let input;
@@ -105,6 +111,11 @@ export async function runBrowserCommand(surface, payload) {
   if (surface.data.command_backend === 'content-workbench/1') {
     const {runContentCommand} = await import('../content-workbench.mjs');
     return runContentCommand({...surface, projectRoot: root}, payload);
+  }
+
+  if (surface.data.command_backend === DOC_BACKEND) {
+    const {runDocCommand} = await import('../doc-command.mjs');
+    return runDocCommand({...surface, projectRoot: root}, payload);
   }
 
   const processor = await resolveCommandProcessor();

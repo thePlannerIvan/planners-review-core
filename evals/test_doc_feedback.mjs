@@ -320,8 +320,8 @@ test('页面有三个反馈入口，提交前高亮将改的块，锁定时提�
   assert.match(page, /is-feedback-target/, '提交前要标出「将改的块」');
   assert.match(page, /scope = 'page'|scope: 'page'|scope === 'page'/, '整页反馈要按页换算范围');
   assert.match(page, /scope = 'doc'|scope: 'doc'|scope === 'doc'/, '整份反馈要按整份换算范围');
-  assert.match(page, /\/api\/feedback/, '提交走反馈命令');
-  assert.match(page, /\/api\/tasks/, '锁状态要随任务同步');
+  assert.match(page, /transport\.feedback\(/, '提交走反馈命令');
+  assert.match(page, /transport\.tasks\(\)/, '锁状态要随任务同步');
 
   assert.match(page, /is-locked/, '锁定块要有可见状态');
   assert.match(page, /模型正在改这一段/, '锁定提示文案要明说');

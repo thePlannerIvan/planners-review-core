@@ -389,8 +389,8 @@ test('工作台页面为待核对块给出三个裁决入口，并按块带上�
   const page = readFileSync(join(core, 'assets', 'workbench', 'doc-workbench.js'), 'utf8');
   const css = readFileSync(join(core, 'assets', 'workbench', 'doc-workbench.css'), 'utf8');
 
-  assert.match(page, /\/api\/conflicts/, '待核对状态要随任务同步');
-  assert.match(page, /\/api\/conflict\/decide/, '裁决走专用命令');
+  assert.match(page, /transport\.conflicts\(\)/, '待核对状态要随任务同步');
+  assert.match(page, /transport\.decide\(/, '裁决走专用命令');
   assert.match(page, /data-decision/, '每个出口都要有可点的标记');
   for (const label of ['保留我的', '用模型版', '放弃该块']) {
     assert.ok(page.includes(label), `缺少裁决按钮 ${label}`);

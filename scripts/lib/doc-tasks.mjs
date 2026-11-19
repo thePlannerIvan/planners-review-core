@@ -29,9 +29,43 @@ const clone = (task) => ({
  * 任务板：提交 → 处理中（锁块）→ 完成（解锁）。
  * 只做状态与锁，不碰文件；谁能改哪块由调用方先按文档校验。
  */
-export function createTaskBoard({ now = () => new Date().toISOString(), nextId = newTaskId } = {}) {
+export function createTaskBoard({ now = () => new Date().toISOString(), nextId = newTaskId, store = null } = {}) {
   const tasks = [];
   const locks = new Map(); // anchor → task id
+
+  /** 落盘形状：任务的内部字段 + 锁表。`view()` 算出来的 locked_blocks 不存。 */
+  const state = () => ({
+    tasks: tasks.map((task) => ({
+      ...task,
+      page: task.page ? { ...task.page } : null,
+      doc: { ...task.doc },
+      blocks: task.blocks.map((block) => ({ ...block })),
+    })),
+    locks: [...locks],
+  });
+  const persist = () => { if (store) store.save(state()); };
+  /** 写之前读回磁盘最新状态：另一个进程可能刚派发/取走了任务。内存板 refresh 是空操作。 */
+  const refresh = () => {
+    if (!store) return;
+    const saved = store.load();
+    tasks.length = 0;
+    locks.clear();
+    if (!saved) return;
+    if (!Array.isArray(saved.tasks) || !Array.isArray(saved.locks)) {
+      fail('board_state', '工作台任务板形状不对');
+    }
+    for (const task of saved.tasks) {
+      if (!task || typeof task !== 'object' || typeof task.id !== 'string' || !Array.isArray(task.blocks)) {
+        fail('board_state', '工作台任务板里的任务形状不对');
+      }
+      tasks.push({ ...task, blocks: task.blocks.map((block) => ({ ...block })) });
+    }
+    for (const item of saved.locks) {
+      if (!Array.isArray(item) || item.length !== 2) fail('board_state', '工作台锁表形状不对');
+      locks.set(item[0], item[1]);
+    }
+  };
+  refresh();
 
   const find = (id) => tasks.find((task) => task.id === id) ?? null;
   const requireTask = (id) => {
@@ -62,6 +96,7 @@ export function createTaskBoard({ now = () => new Date().toISOString(), nextId =
         finished_at: null,
       };
       tasks.push(task);
+      persist();
       return view(task);
     },
 
@@ -77,6 +112,7 @@ export function createTaskBoard({ now = () => new Date().toISOString(), nextId =
       for (const { anchor } of task.blocks) locks.set(anchor, task.id);
       task.status = 'processing';
       task.started_at = now();
+      persist();
       return view(task);
     },
 
@@ -91,12 +127,16 @@ export function createTaskBoard({ now = () => new Date().toISOString(), nextId =
       }
       task.status = 'done';
       task.finished_at = now();
+      persist();
       return view(task);
     },
 
     list() {
       return tasks.map(view);
     },
+
+    /** 从落盘状态读回最新任务与锁（写操作前调用）。 */
+    refresh,
 
     get(id) {
       const task = find(id);
@@ -120,6 +160,7 @@ export function createTaskBoard({ now = () => new Date().toISOString(), nextId =
         task.status = 'done';
         task.finished_at = now();
       }
+      persist();
       return view(task);
     },
 
