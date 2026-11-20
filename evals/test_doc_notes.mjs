@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
-import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -382,4 +382,246 @@ test('批注抽屉默认展开：按页列出，同一块收成计数气泡，�
   assert.match(css, /\.note-bubble\s*\{[^}]*justify-content:\s*center/, '数字居中');
   assert.match(css, /\.note-bubble:hover[^{]*\{[^}]*transform:\s*translateY\(-1px\)/, '悬停浮起');
   assert.match(css, /\.notes-panel/, '抽屉要有自己的样式');
+});
+
+// ── 归档以模型回执的 applied 为准：改到的块归档，没改到的留在右侧并标注 ────────
+test('模型写回：applied 的块上批注自动归档并留改前改后快照，没改到的标「模型没动这条」', async (t) => {
+  const { path, notesPath } = sandboxExample();
+  const server = await openWorkbench(t, path);
+  const opened = await getJson(server.url, '/api/doc');
+  const beforeRaw = opened.body.blocks.find((block) => block.anchor === 'b:7b057d').raw;
+
+  const changed = (await postJson(server.url, '/api/note', { anchor: 'b:7b057d', text: '这句太虚' })).body.note;
+  const skipped = (await postJson(server.url, '/api/note', { anchor: 'b:292f6c', text: '补一个数字' })).body.note;
+  const submitted = (await postJson(server.url, '/api/note/submit', {})).body;
+  assert.equal(submitted.ok, true, JSON.stringify(submitted));
+
+  const claimed = await postJson(server.url, '/api/task/claim', { task_id: submitted.task.id });
+  assert.equal(claimed.status, 200, JSON.stringify(claimed.body));
+
+  const patched = await postJson(server.url, '/api/patch', {
+    task_id: submitted.task.id,
+    patches: [{ anchor: 'b:7b057d', content: '主张：用 150ml 浓缩形态进入「状态调节」货架。' }],
+  });
+  assert.equal(patched.status, 200, JSON.stringify(patched.body));
+  assert.deepEqual(patched.body.applied, ['b:7b057d'], '模型只改了这一块');
+
+  const afterDoc = await getJson(server.url, '/api/doc');
+  const afterRaw = afterDoc.body.blocks.find((block) => block.anchor === 'b:7b057d').raw;
+
+  // 落盘：改到的自动进 resolved；人没点，归档由回执决定。
+  const saved = readNotesFile(notesPath);
+  const archived = saved.notes.find((note) => note.id === changed.id);
+  assert.equal(archived.state, 'resolved');
+  assert.match(archived.resolved_at, /^\d{4}-\d{2}-\d{2}T/, '归档时间就是模型回执落盘的时间');
+  assert.equal(archived.note, null, '改到了就没有「没动这条」的标注');
+  assert.deepEqual(archived.page, { chapter: 1, index: 1 }, '归档还记着当初所在页');
+  assert.deepEqual(archived.snapshot, { before: beforeRaw, after: afterRaw },
+    '快照存的是块 raw 本身：改前、改后，不是只存锚点');
+
+  const left = saved.notes.find((note) => note.id === skipped.id);
+  assert.equal(left.state, 'committed', '没改到的留在右侧，不退成草稿也不消失');
+  assert.equal(left.note, '模型没动这条');
+  assert.equal(left.snapshot, null, '没改到就没有快照');
+
+  // 两条都还读得到：列表与历史用同一份批注文件。
+  const listed = await getJson(server.url, '/api/notes');
+  assert.deepEqual(listed.body.notes.map((note) => note.state).sort(), ['committed', 'resolved']);
+  const listedArchived = listed.body.notes.find((note) => note.id === changed.id);
+  assert.deepEqual(listedArchived.snapshot, { before: beforeRaw, after: afterRaw }, '模型侧读同一个快照');
+
+  // 快照不随之后的编辑漂移：块后来又被改过，归档里仍是当时的改前/改后。
+  const edited = await postJson(server.url, '/api/block', {
+    anchor: 'b:7b057d',
+    content: '又被改了一次。',
+    base_sha256: afterDoc.body.sha256,
+  });
+  assert.equal(edited.status, 200, JSON.stringify(edited.body));
+  const drifted = readNotesFile(notesPath).notes.find((note) => note.id === changed.id);
+  assert.deepEqual(drifted.snapshot, { before: beforeRaw, after: afterRaw },
+    '块后来再被改，归档快照不跟着变成现在的内容');
+});
+
+// ── 模型没写回就完成：这批批注一条都不归档，全部标「模型没动这条」 ────────────
+test('模型 claim 后直接 complete：没改到的批注留在右侧并标「模型没动这条」', async (t) => {
+  const { path, notesPath } = sandboxExample();
+  const server = await openWorkbench(t, path);
+
+  const one = (await postJson(server.url, '/api/note', { anchor: 'b:7b057d', text: '这句太虚' })).body.note;
+  const two = (await postJson(server.url, '/api/note', { anchor: 'b:292f6c', text: '补一个数字' })).body.note;
+  const submitted = (await postJson(server.url, '/api/note/submit', {})).body;
+  await postJson(server.url, '/api/task/claim', { task_id: submitted.task.id });
+  const completed = await postJson(server.url, '/api/task/complete', { task_id: submitted.task.id });
+  assert.equal(completed.status, 200, JSON.stringify(completed.body));
+
+  const saved = readNotesFile(notesPath);
+  assert.deepEqual(saved.notes.map((note) => note.state), ['committed', 'committed'], '一条都不归档');
+  assert.deepEqual(saved.notes.map((note) => note.note), ['模型没动这条', '模型没动这条']);
+  assert.deepEqual(saved.notes.map((note) => note.id), [one.id, two.id]);
+});
+
+// ── 每条可重新打开回草稿：归档的与没动过的都能退回去 ─────────────────────────
+test('历史批注与「模型没动这条」都能重新打开回草稿', async (t) => {
+  const { path, notesPath } = sandboxExample();
+  const server = await openWorkbench(t, path);
+
+  const changed = (await postJson(server.url, '/api/note', { anchor: 'b:7b057d', text: '这句太虚' })).body.note;
+  const skipped = (await postJson(server.url, '/api/note', { anchor: 'b:292f6c', text: '补一个数字' })).body.note;
+  const submitted = (await postJson(server.url, '/api/note/submit', {})).body;
+  await postJson(server.url, '/api/task/claim', { task_id: submitted.task.id });
+  await postJson(server.url, '/api/patch', {
+    task_id: submitted.task.id,
+    patches: [{ anchor: 'b:7b057d', content: '改好了。' }],
+  });
+
+  const reopenResolved = await postJson(server.url, '/api/note/reopen', { id: changed.id });
+  assert.equal(reopenResolved.status, 200, JSON.stringify(reopenResolved.body));
+  assert.equal(reopenResolved.body.note.state, 'draft');
+  assert.equal(reopenResolved.body.note.batch, null);
+  assert.equal(reopenResolved.body.note.resolved_at, null);
+  assert.equal(reopenResolved.body.note.note, null);
+  assert.equal(reopenResolved.body.note.snapshot, null, '退回草稿就不再挂着旧快照');
+
+  const reopenSkipped = await postJson(server.url, '/api/note/reopen', { id: skipped.id });
+  assert.equal(reopenSkipped.status, 200, JSON.stringify(reopenSkipped.body));
+  assert.equal(reopenSkipped.body.note.state, 'draft');
+  assert.equal(reopenSkipped.body.note.note, null, '退回草稿就没有「模型没动这条」的标注');
+
+  const saved = readNotesFile(notesPath);
+  assert.deepEqual(saved.notes.map((note) => note.state), ['draft', 'draft']);
+
+  const unknown = await postJson(server.url, '/api/note/reopen', { id: 'n:00000000' });
+  assert.equal(unknown.status, 400, JSON.stringify(unknown.body));
+  assert.equal(unknown.body.code, 'note_missing');
+
+  const draft = await postJson(server.url, '/api/note/reopen', { id: changed.id });
+  assert.equal(draft.status, 409, JSON.stringify(draft.body));
+  assert.equal(draft.body.code, 'note_state', '还是草稿就不用重新打开');
+});
+
+// ── 文件超过 2 MB：最老的归档移到 notes-archive.json，列表照样读得到 ──────────
+test('批注文件超过 2 MB：最老的归档移进 notes-archive.json，历史仍可读、可重新打开', async (t) => {
+  const { path, notesPath } = sandboxExample();
+  const server = await openWorkbench(t, path);
+
+  // 直接写一份超过 2 MB 的批注文件：每条都带块快照，时间从老到新。
+  mkdirSync(dirname(notesPath), { recursive: true });
+  const fat = Array.from({ length: 30 }, (_, index) => ({
+    id: `n:${String(index).padStart(8, '0')}`,
+    anchor: 'b:7b057d',
+    page: { chapter: 1, index: 1 },
+    text: `第 ${index} 条历史批注`,
+    state: 'resolved',
+    batch: 'b:old',
+    created_at: `2026-01-${String(index + 1).padStart(2, '0')}T00:00:00.000Z`,
+    resolved_at: `2026-01-${String(index + 1).padStart(2, '0')}T01:00:00.000Z`,
+    note: null,
+    snapshot: { before: 'A'.repeat(90000), after: 'B'.repeat(90000) },
+  }));
+  writeFileSync(notesPath, `${JSON.stringify({ contract: 'planners-doc-notes/1', notes: fat }, null, 2)}\n`);
+  assert.ok(statSync(notesPath).size > 2 * 1024 * 1024, '前提：这份文件已经超过 2 MB');
+
+  // 任何一次保存都会顺手收口：加一条草稿触发。
+  const added = await postJson(server.url, '/api/note', { anchor: 'b:7b057d', text: '新提的草稿' });
+  assert.equal(added.status, 200, JSON.stringify(added.body));
+
+  const archivePath = join(dirname(notesPath), 'notes-archive.json');
+  const main = readNotesFile(notesPath);
+  const archive = JSON.parse(readFileSync(archivePath, 'utf8'));
+  assert.equal(archive.contract, 'planners-doc-notes/1');
+  assert.ok(statSync(notesPath).size <= 2 * 1024 * 1024, '主文件收口在 2 MB 以内');
+  assert.ok(archive.notes.length > 0, '最老的归档真的搬走了，不是原样留着');
+
+  const mainIds = new Set(main.notes.map((note) => note.id));
+  const archiveIds = new Set(archive.notes.map((note) => note.id));
+  assert.equal([...mainIds].some((id) => archiveIds.has(id)), false, '同一份批注不会同时留在两个文件里');
+  assert.equal(mainIds.size + archiveIds.size, 31, '30 条历史 + 1 条新草稿一条不丢');
+  const oldest = archive.notes.reduce((min, note) => (note.resolved_at < min ? note.resolved_at : min), archive.notes[0].resolved_at);
+  assert.equal(oldest, fat[0].resolved_at, '移走的是最老的那几条');
+  const mainResolved = main.notes.filter((note) => note.state === 'resolved');
+  if (mainResolved.length) {
+    const newestArchived = archive.notes.reduce((max, note) => (note.resolved_at > max ? note.resolved_at : max), archive.notes[0].resolved_at);
+    const oldestMain = mainResolved.reduce((min, note) => (note.resolved_at < min ? note.resolved_at : min), mainResolved[0].resolved_at);
+    assert.ok(newestArchived <= oldestMain, '档案里的都比主文件里的老');
+  }
+
+  // 列表把两边合起来读：人的历史不因为搬家而消失。
+  const listed = await getJson(server.url, '/api/notes');
+  assert.equal(listed.body.notes.filter((note) => note.state === 'resolved').length, 30);
+
+  // 归档里的那条也能重新打开：回到主文件、回草稿、快照清掉。
+  const archivedId = archive.notes[0].id;
+  const reopened = await postJson(server.url, '/api/note/reopen', { id: archivedId });
+  assert.equal(reopened.status, 200, JSON.stringify(reopened.body));
+  assert.equal(reopened.body.note.state, 'draft');
+  const afterArchive = JSON.parse(readFileSync(archivePath, 'utf8'));
+  assert.equal(afterArchive.notes.some((note) => note.id === archivedId), false, '从档案里搬回来，不留副本');
+  assert.equal(readNotesFile(notesPath).notes.find((note) => note.id === archivedId).state, 'draft');
+});
+
+// ── 历史列表只给人看「当初那句话 + 时间 + 所在页」，快照不展开 ─────────────────
+test('历史批注列表只给原话、时间、所在页；快照不展开，留给模型回查', async () => {
+  const module = await import('../assets/workbench/doc-notes.js');
+  const DocNotes = module.default ?? module;
+  const pages = [
+    { key: '1-1', chapter: '一、判断', chapterIndex: 1, index: 1, title: '品类机会' },
+    { key: '1-2', chapter: '一、判断', chapterIndex: 1, index: 2, title: '人群' },
+  ];
+  const notes = [
+    {
+      id: 'n:1', anchor: 'b:7b057d', page: { chapter: 1, index: 1 }, text: '这句太虚', state: 'resolved',
+      batch: 'b:1', created_at: '2026-11-20T08:00:00.000Z', resolved_at: '2026-11-20T09:00:00.000Z',
+      note: null, snapshot: { before: '旧块', after: '新块' },
+    },
+    {
+      id: 'n:2', anchor: 'b:292f6c', page: { chapter: 1, index: 2 }, text: '补一个数字', state: 'resolved',
+      batch: 'b:1', created_at: '2026-11-20T08:10:00.000Z', resolved_at: '2026-11-20T09:10:00.000Z',
+      note: null, snapshot: { before: '旧块二', after: '新块二' },
+    },
+    { id: 'n:3', anchor: 'b:7b057d', page: { chapter: 1, index: 1 }, text: '还在右侧', state: 'committed', batch: 'b:2', created_at: '2026-11-20T10:00:00.000Z', resolved_at: null, note: '模型没动这条', snapshot: null },
+  ];
+
+  const history = DocNotes.history(notes, { pages });
+  assert.deepEqual(history.map((item) => item.id), ['n:2', 'n:1'], '新的归档在前，没归档的不进历史');
+  assert.deepEqual(Object.keys(history[0]).sort(), ['created_at', 'id', 'page', 'resolved_at', 'text'],
+    '历史条目只有人当初那句话、时间、所在页；快照不在列表上');
+  assert.equal(history[1].text, '这句太虚');
+  assert.equal(history[1].created_at, '2026-11-20T08:00:00.000Z');
+  assert.deepEqual(history[1].page, {
+    key: '1-1', chapter: 1, index: 1, chapterTitle: '一、判断', title: '品类机会',
+  }, '历史能说清这句话当初在哪一章哪一页');
+});
+
+// ── 历史批注与版本历史同一个面板两个页签，默认停在批注 ───────────────────────
+test('历史批注与版本历史在同一个面板的两个页签，默认停在批注', async () => {
+  const html = readFileSync(join(core, 'assets', 'workbench', 'doc-workbench.html'), 'utf8');
+  const page = readFileSync(join(core, 'assets', 'workbench', 'doc-workbench.js'), 'utf8');
+  const transport = readFileSync(join(core, 'assets', 'workbench', 'doc-transport.js'), 'utf8');
+  const command = readFileSync(join(core, 'scripts', 'doc-command.mjs'), 'utf8');
+
+  assert.match(html, /id="historyTabs"/, '同一个面板里要有页签');
+  assert.match(html, /data-history-tab="notes"[^>]*aria-selected="true"/, '默认停在批注');
+  assert.match(html, /data-history-tab="versions"[^>]*aria-selected="false"/);
+  const notesPanel = html.match(/<section[^>]*id="historyNotesPanel"[^>]*>/);
+  assert.ok(notesPanel, '批注页签要有自己的面板');
+  assert.doesNotMatch(notesPanel[0], /\bhidden\b/, '默认展开的是批注，不是版本');
+  const versionsPanel = html.match(/<section[^>]*id="historyVersionsPanel"[^>]*>/);
+  assert.ok(versionsPanel, '版本历史还在同一个面板里');
+  assert.match(versionsPanel[0], /\bhidden\b/, '版本页签默认收起，但入口不丢');
+  assert.match(html, /id="historyList"/, '版本历史列表还在');
+  assert.match(html, /id="historyNotesList"/, '历史批注列表');
+
+  assert.match(page, /DocNotes\.history\(/, '历史批注按同一份分组规则列出来');
+  assert.match(page, /transport\.reopenNote\(/, '每条可重新打开，走同一条 route 词汇');
+  assert.match(page, /noteStateSection\('已提交'|已提交/, '没改到的留在右侧，标「模型没动这条」');
+  assert.match(page, /模型没动这条/);
+  assert.match(transport, /note_reopen:\s*'\/api\/note\/reopen'/, '本地路由表加一个同名动作');
+  assert.match(transport, /reopenNote:\s*\(body\)\s*=>\s*send\('note_reopen'/, '页面只发 {route, body}');
+  assert.match(command, /note_reopen:\s*\(\{ session, body \}\)\s*=>\s*session\.reopenNote\(body\)/,
+    '后端路由表与本地路由同名');
+
+  // 历史条目不展开快照：渲染函数里不出现 snapshot。
+  const historySection = page.slice(page.indexOf('function renderHistoryNotes'), page.indexOf('async function openHistory'));
+  assert.ok(historySection.length > 0, '页面里有独立的历史批注渲染函数');
+  assert.doesNotMatch(historySection, /\.snapshot\b/, '快照不在列表展开');
 });

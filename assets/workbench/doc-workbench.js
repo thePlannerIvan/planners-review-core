@@ -905,6 +905,8 @@ let notesState = [];
 let notesLoaded = false;
 let notesError = null;
 const expandedBubbles = new Set();
+// 模型看了任务却没动这一块：留在右侧并如实标出来（不是人的错觉）。
+const NOTE_UNTOUCHED_LABEL = '模型没动这条';
 
 const blockOrder = () => new Map((snapshot?.blocks ?? []).map((block, index) => [block.anchor, index]));
 
@@ -932,8 +934,17 @@ function noteRow(note, { deletable }) {
   if (note.state === 'committed') {
     const badge = document.createElement('span');
     badge.className = 'note-badge';
-    badge.textContent = '已提交';
+    badge.textContent = note.note === NOTE_UNTOUCHED_LABEL ? NOTE_UNTOUCHED_LABEL : '已提交';
+    if (note.note === NOTE_UNTOUCHED_LABEL) badge.classList.add('is-untouched');
     meta.append(badge);
+  }
+  if (note.state !== 'draft') {
+    const reopen = document.createElement('button');
+    reopen.type = 'button';
+    reopen.className = 'note-reopen';
+    reopen.textContent = '重新打开';
+    reopen.addEventListener('click', () => { void reopenNote(note.id, reopen); });
+    meta.append(reopen);
   }
   if (deletable) {
     const remove = document.createElement('button');
@@ -1049,6 +1060,7 @@ function renderNotes() {
       : drafts
         ? '草稿保存在 .doc-workbench/notes.json；提交只建任务，原文未改'
         : '草稿会留在工作目录里，关掉浏览器回来还在';
+  renderHistoryNotes();
 }
 
 async function loadNotes() {
@@ -1170,6 +1182,87 @@ const OPERATION_LABELS = {
   recover: '崩溃恢复',
 };
 
+// ── 历史批注：模型改到的自动归档；与版本历史同一个面板的两个页签，默认停在批注 ──
+function historyPageLabel(page) {
+  const chapter = page.chapterTitle || '未归章';
+  return `${chapter} · 第 ${page.index} 页 · ${page.title}`;
+}
+
+/** 历史条目只有人当初那句话、写下时间、所在页；快照是给模型回查的，不在列表展开。 */
+function historyNoteRow(note) {
+  const item = document.createElement('li');
+  item.className = 'history-note-item';
+  const text = document.createElement('p');
+  text.className = 'history-note-text';
+  text.textContent = note.text;
+  const meta = document.createElement('div');
+  meta.className = 'history-note-meta';
+  const time = document.createElement('time');
+  time.className = 'history-note-time';
+  time.dateTime = note.created_at ?? '';
+  time.textContent = noteTime(note.created_at);
+  const page = document.createElement('span');
+  page.className = 'history-note-page';
+  page.textContent = historyPageLabel(note.page);
+  meta.append(time, page);
+  const reopen = document.createElement('button');
+  reopen.type = 'button';
+  reopen.className = 'history-reopen';
+  reopen.textContent = '重新打开';
+  reopen.addEventListener('click', () => { void reopenNote(note.id, reopen); });
+  item.append(text, meta, reopen);
+  return item;
+}
+
+function renderHistoryNotes() {
+  const list = $('#historyNotesList');
+  if (!list) return;
+  const note = $('#historyNotesNote');
+  list.replaceChildren();
+  const items = DocNotes.history(notesState, { pages: snapshot?.pages ?? [] });
+  if (note) {
+    note.textContent = items.length
+      ? `共 ${items.length} 条 · 新的在前；快照留给模型回查，不在列表展开。`
+      : '还没有历史批注：模型改到的批注会自动归档到这里。';
+  }
+  for (const item of items) list.append(historyNoteRow(item));
+}
+
+/** 重新打开：归档错了或模型没动，这条退回草稿，回到右侧继续提。 */
+async function reopenNote(id, button) {
+  if (button) button.disabled = true;
+  try {
+    const receipt = await transport.reopenNote({ id });
+    if (!receipt.ok) {
+      status(`重新打开失败 · ${receipt.error ?? receipt.status ?? '未知错误'}`, true);
+      if (button) button.disabled = false;
+      return;
+    }
+    notesState = receipt.notes ?? notesState;
+    notesLoaded = true;
+    renderNotes();
+    renderHistoryNotes();
+    status('已重新打开 · 这条回到草稿，可再提交给模型');
+  } catch (error) {
+    status(`重新打开失败 · ${error.message}`, true);
+    if (button) button.disabled = false;
+  }
+}
+
+/** 打开面板默认停在批注页签，版本历史还在旁边，不丢入口。 */
+function setHistoryTab(tab) {
+  const notesPanel = $('#historyNotesPanel');
+  const versionsPanel = $('#historyVersionsPanel');
+  const showNotes = tab !== 'versions';
+  for (const button of $$('#historyTabs [data-history-tab]')) {
+    const active = button.dataset.historyTab === (showNotes ? 'notes' : 'versions');
+    button.setAttribute('aria-selected', String(active));
+    button.classList.toggle('is-active', active);
+  }
+  if (notesPanel) notesPanel.hidden = !showNotes;
+  if (versionsPanel) versionsPanel.hidden = showNotes;
+}
+
 function historyItem(version) {
   const item = document.createElement('li');
   item.className = 'history-item';
@@ -1223,6 +1316,9 @@ async function loadHistory() {
 async function openHistory() {
   if (snapshot?.readonly) { status('只读 · 旧 JSON 主稿没有历史可恢复', true); return; }
   $('#historyPanel').hidden = false;
+  setHistoryTab('notes');
+  if (notesLoaded) renderHistoryNotes();
+  else await loadNotes();
   await loadHistory();
 }
 
@@ -1248,6 +1344,9 @@ async function restoreHistory(id, button) {
 function wireHistory() {
   $('#historyOpen').addEventListener('click', () => { void openHistory(); });
   $('#historyClose').addEventListener('click', () => { $('#historyPanel').hidden = true; });
+  for (const button of $$('#historyTabs [data-history-tab]')) {
+    button.addEventListener('click', () => setHistoryTab(button.dataset.historyTab));
+  }
 }
 
 // ── 锁与待核对：处理中的块不可编辑；待核对块继续锁着，等人裁决 ────────────────

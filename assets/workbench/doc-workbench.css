@@ -185,6 +185,27 @@ body.is-readonly .page-handle { display: none; }
 }
 .history-restore:hover, .history-restore:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
 .history-restore:disabled { opacity: .55; cursor: default; }
+
+/* 历史批注与版本历史：同一个面板的两个页签，默认停在批注。 */
+.history-tabs { display: flex; gap: 4px; margin: 8px 0 6px; }
+.history-tab {
+  flex: 1; appearance: none; border: 0; border-radius: 6px; background: transparent;
+  padding: 5px 8px; font-family: var(--font); font-size: 12px; color: var(--muted); cursor: pointer;
+}
+.history-tab:hover, .history-tab:focus-visible { color: var(--ink); outline: none; }
+.history-tab.is-active { background: var(--hover); color: var(--ink); }
+.history-tabpanel[hidden] { display: none; }
+.history-note-item { border-top: 1px solid var(--line); padding-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.history-note-text { margin: 0; font-size: 12.5px; line-height: 1.6; color: var(--ink); overflow-wrap: anywhere; }
+.history-note-meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: 11px; color: var(--muted); }
+.history-note-time { font-variant-numeric: tabular-nums; }
+.history-note-page { overflow-wrap: anywhere; }
+.history-reopen {
+  align-self: flex-start; appearance: none; border: 1px solid var(--line); background: var(--surface);
+  color: var(--ink); padding: 3px 10px; border-radius: 6px; font-family: var(--font); font-size: 12px; cursor: pointer;
+}
+.history-reopen:hover, .history-reopen:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
+.history-reopen:disabled { opacity: .55; cursor: default; }
 .overall-menu {
   position: absolute; top: calc(100% + 6px); right: 0; z-index: 50;
   min-width: 136px; padding: 4px; background: var(--surface);
@@ -522,6 +543,13 @@ body.has-image-viewer { overflow: hidden; }
   padding: 0 6px; border-radius: 999px; font-size: 10.5px; line-height: 1.6;
   background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent);
 }
+.note-badge.is-untouched { background: color-mix(in srgb, #d9a514 18%, transparent); color: #8a6400; }
+.note-reopen {
+  appearance: none; border: 0; background: transparent; margin-left: auto;
+  padding: 0; font-family: var(--font); font-size: 11px; color: var(--muted); cursor: pointer;
+}
+.note-reopen:hover, .note-reopen:focus-visible { color: var(--accent); outline: none; }
+.note-reopen:disabled { opacity: .55; cursor: default; }
 .note-delete {
   appearance: none; border: 0; background: transparent; margin-left: auto;
   padding: 0; font-family: var(--font); font-size: 11px; color: var(--muted); cursor: pointer;
