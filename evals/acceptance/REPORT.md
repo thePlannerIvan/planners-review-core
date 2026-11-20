@@ -11,12 +11,12 @@
 | 往返一次不改动未编辑的块 | 通过 | 10 份语料，42/42 条断言通过；每份都做了「打开→不编辑→关闭」字节对比与「改一块」字节区间对比 |
 | 块内中文输入、撤销重做、跨块选区 | 通过 | 10/10 条通过；IME 组合 3 次，输入文本「中文输入实测，标点：。！？「引号」；」；未通过项：无 |
 | 同块双改只锁该块 | 通过 | 2 遍演练，13/13 条通过；每遍都记录派发、claim、被拒回执、patch 待核对、裁决与磁盘结果 |
-| 记录落在仓库内可复用 | 通过 | 本文件 + `evals/acceptance/records/2026-11-20T10-25-59Z.json` + 可执行入口 `evals/acceptance/run.mjs` 与语料 `evals/acceptance/corpus/` |
+| 记录落在仓库内可复用 | 通过 | 本文件 + `evals/acceptance/records/2026-11-20T10-31-48Z.json` + 可执行入口 `evals/acceptance/run.mjs` 与语料 `evals/acceptance/corpus/` |
 
 ## 运行环境
 
-- 时间：2026年11月20日星期五 18:25:59（2026-11-20T10:25:59.226Z）
-- 分支 / commit：`ticket/20-contract-v2` / `c24660a07d9a6c3b4b3f49a0b1d23515326293dc`（工作区有未提交改动）
+- 时间：2026年11月20日星期五 18:31:48（2026-11-20T10:31:48.144Z）
+- 分支 / commit：`ticket/20-contract-v2` / `58dc1f988e1d7dec7c036e058b9804c644d0d487`
 - Node：v22.22.2
 - 浏览器：Playwright（全局安装）/ Chromium 147.0.7727.15
 - 平台：darwin arm64
@@ -57,20 +57,20 @@
 
 ## 判据二：中文输入、撤销重做、跨块选区
 
-浏览器：Playwright 驱动 Chromium，块内输入走真实 DOM 与 CDP 输入事件。测试语料：`02-gwtb`，块 `b:987b5c`。
+浏览器：Playwright 驱动 Chromium，块内输入走真实 DOM 与 CDP 输入事件。测试语料：`02-gwtb`，块 `b:1ebbec`。
 
 - 输入方法：CDP Input.imeSetComposition + Input.insertText + keyboard.insertText；组合事件 3 次，随后输入中文标点「中文输入实测，标点：。！？「引号」；」。
 - 输入后 DOM 与磁盘都等于「原文 + 输入」：是。
 - 撤销：磁盘回到输入前文本（通过）；重做：磁盘恢复被撤销的输入（通过）。
-- 跨块选区：选中 3 块，页面吸附 3 块（["b:987b5c","b:f7c876","b:be6f16"]），派发回执绑定 3 块，原文 sha 不变：是。
+- 跨块选区：选中 3 块，页面吸附 3 块（["b:1ebbec","b:e55fbf","b:3732b5"]），派发回执绑定 3 块，原文 sha 不变：是。
 
 ### 块内换行、回车分块与删空合并
 
 | 动作 | 键 | 结论 | 证据 |
 |---|---|---|---|
 | 块内换行 | Shift+Enter | 通过 | HTTP 200，磁盘块 raw = `"证据：标题端内容母题高度分散，没有单一受众画像。评论端\"通勤\"\"暴走\"\"上班\"高频出现，说明实际购买者偏向实用场景。中文输入实测，标点：。！？「引号」；撤销重做\n换行之后"`，仍是同一块两行 |
-| 回车分块 | Enter | 通过 | 新锚点 `b:d08e1a`，新块 raw「分块之后」，块数 52 → 53，原块 raw 逐字不动 |
-| 删空合并 | 空块开头 Backspace | 通过 | 被删锚点 `b:d08e1a`，前一块 `b:987b5c` 的 raw 逐字不动，块数 53 → 52 |
+| 回车分块 | Enter | 通过 | 新锚点 `b:82ac1c`，新块 raw「分块之后」，块数 52 → 53，原块 raw 逐字不动 |
+| 删空合并 | 空块开头 Backspace | 通过 | 被删锚点 `b:82ac1c`，前一块 `b:1ebbec` 的 raw 逐字不动，块数 53 → 52 |
 
 回车分块与删空合并会改变块数量，所以走显式命令（`POST /api/block/split` / `POST /api/block/merge`），
 不混进「保存一块」。空块在契约里没有锚点可落（锚点必须贴内容），所以回车时为空的那一半先在页面里待定，
@@ -82,8 +82,8 @@
 
 | 遍 | A / B | claim 后锁 | 被锁改 A | 改 B（A 锁 / 待核对） | patch 待核对 | 裁决后 A | 其余块 |
 |---|---|---|---|---|---|---|---|
-| 1 | `b:c036b9` / `b:c9445a` | A=true B=false | 409 block_locked | 200 / 200 | applied=[] deferred=b:c036b9:block_changed | 模型版 | 改了 2 块，7/9 块逐字不动 |
-| 2 | `b:6e5cf4` / `b:0b67d5` | A=true B=false | 409 block_locked | 200 / 200 | applied=[] deferred=b:6e5cf4:block_changed | 模型版 | 改了 2 块，7/9 块逐字不动 |
+| 1 | `b:d66c0d` / `b:d17ded` | A=true B=false | 409 block_locked | 200 / 200 | applied=[] deferred=b:d66c0d:block_changed | 模型版 | 改了 2 块，7/9 块逐字不动 |
+| 2 | `b:caa4db` / `b:35c90a` | A=true B=false | 409 block_locked | 200 / 200 | applied=[] deferred=b:caa4db:block_changed | 模型版 | 改了 2 块，7/9 块逐字不动 |
 
 - 两遍结构性结论一致：是。
 - 待核对面板里的两版：磁盘版保留了人的 A1，模型版保留 Am；裁决 model 后磁盘落 Am，B 保留人改的两版叠加。完整回执见同次 JSON。
@@ -107,5 +107,5 @@ node evals/acceptance/corpus/build-corpus.mjs --check   # 校验语料仍与来�
 ```
 
 - 语料来源与源文件 sha256：`evals/acceptance/corpus/manifest.json`
-- 本次机器可读记录：`evals/acceptance/records/2026-11-20T10-25-59Z.json`
+- 本次机器可读记录：`evals/acceptance/records/2026-11-20T10-31-48Z.json`
 - 回退票：见上表；未修实现，只记录事实。

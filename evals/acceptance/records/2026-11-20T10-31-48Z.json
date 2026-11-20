@@ -2,12 +2,12 @@
   "contract": "acceptance-record/1",
   "ticket": "10 实测与验收",
   "spec": "07-SkillLab/workbench-redesign/SPEC.md 第 12 节",
-  "generated_at": "2026-11-20T10:25:59.226Z",
-  "generated_at_local": "2026年11月20日星期五 18:25:59",
+  "generated_at": "2026-11-20T10:31:48.144Z",
+  "generated_at_local": "2026年11月20日星期五 18:31:48",
   "git": {
-    "head": "c24660a07d9a6c3b4b3f49a0b1d23515326293dc",
+    "head": "58dc1f988e1d7dec7c036e058b9804c644d0d487",
     "branch": "ticket/20-contract-v2",
-    "dirty": true
+    "dirty": false
   },
   "environment": {
     "node": "v22.22.2",
@@ -555,8 +555,8 @@
           "name": "01-needscope：打开→不编辑→关闭，字节不变",
           "evidence": {
             "bytes": 11535,
-            "sha256_before": "deeeca944435fa651c865c852435368a1f1eda42178de14c2317a655788fbd7a",
-            "sha256_after": "deeeca944435fa651c865c852435368a1f1eda42178de14c2317a655788fbd7a",
+            "sha256_before": "37de0763664c5b154a12b8f3e5b2b539df184142d40f54a83524f5c87a1919c4",
+            "sha256_after": "37de0763664c5b154a12b8f3e5b2b539df184142d40f54a83524f5c87a1919c4",
             "adoption_repairs": 43,
             "second_open_repairs": 0
           }
@@ -566,9 +566,9 @@
           "ok": true,
           "name": "01-needscope：改一块后只有该块变",
           "evidence": {
-            "anchor": "b:fea288",
+            "anchor": "b:18af67",
             "changed_blocks": [
-              "b:fea288"
+              "b:18af67"
             ],
             "unchanged_blocks": 42,
             "total_blocks": 43
@@ -600,7 +600,7 @@
           "evidence": {
             "expected": "**这是美津浓最不可动摇的壁垒。** 消费者在\"舒服\"上的信任度极高，以至于：愿意容忍外观争议、主动向家人朋友推荐、产生品牌锁定效应（\"回不去其他牌子了\"）。（验收：只改这一块）",
             "actual": "**这是美津浓最不可动摇的壁垒。** 消费者在\"舒服\"上的信任度极高，以至于：愿意容忍外观争议、主动向家人朋友推荐、产生品牌锁定效应（\"回不去其他牌子了\"）。（验收：只改这一块）",
-            "anchor": "b:fea288",
+            "anchor": "b:18af67",
             "contract_errors": 0
           }
         },
@@ -610,8 +610,8 @@
           "name": "02-gwtb：打开→不编辑→关闭，字节不变",
           "evidence": {
             "bytes": 10853,
-            "sha256_before": "5be9166c251918e7142972dab38e21a8e0ecfa175dc590274e1354a5dd8cda48",
-            "sha256_after": "5be9166c251918e7142972dab38e21a8e0ecfa175dc590274e1354a5dd8cda48",
+            "sha256_before": "ac8e7de36b2aaeb9322f008432fee765d94d592ffc8207c7e50010cce57f1208",
+            "sha256_after": "ac8e7de36b2aaeb9322f008432fee765d94d592ffc8207c7e50010cce57f1208",
             "adoption_repairs": 52,
             "second_open_repairs": 0
           }
@@ -621,9 +621,9 @@
           "ok": true,
           "name": "02-gwtb：改一块后只有该块变",
           "evidence": {
-            "anchor": "b:2a7b1d",
+            "anchor": "b:d5b24e",
             "changed_blocks": [
-              "b:2a7b1d"
+              "b:d5b24e"
             ],
             "unchanged_blocks": 51,
             "total_blocks": 52
@@ -655,7 +655,7 @@
           "evidence": {
             "expected": "**分析日期**：2026-05-30（验收：只改这一块）",
             "actual": "**分析日期**：2026-05-30（验收：只改这一块）",
-            "anchor": "b:2a7b1d",
+            "anchor": "b:d5b24e",
             "contract_errors": 0
           }
         },
@@ -665,8 +665,8 @@
           "name": "03-annual-cycle：打开→不编辑→关闭，字节不变",
           "evidence": {
             "bytes": 3663,
-            "sha256_before": "b824fd0ab2aad0815d8cc3b72ce5212800e4b9623d4d9ed0fbb6eae4af3c1049",
-            "sha256_after": "b824fd0ab2aad0815d8cc3b72ce5212800e4b9623d4d9ed0fbb6eae4af3c1049",
+            "sha256_before": "2d6f950ee281cdc97cd2085e63b0c51cf826a9064b60a258e96d7ec3603d286b",
+            "sha256_after": "2d6f950ee281cdc97cd2085e63b0c51cf826a9064b60a258e96d7ec3603d286b",
             "adoption_repairs": 25,
             "second_open_repairs": 0
           }
@@ -676,9 +676,9 @@
           "ok": true,
           "name": "03-annual-cycle：改一块后只有该块变",
           "evidence": {
-            "anchor": "b:9218af",
+            "anchor": "b:308963",
             "changed_blocks": [
-              "b:9218af"
+              "b:308963"
             ],
             "unchanged_blocks": 24,
             "total_blocks": 25
@@ -710,7 +710,7 @@
           "evidence": {
             "expected": "- 底层依据来自日数据后验切分，不预设蓄水、转化、长尾。（验收：只改这一块）",
             "actual": "- 底层依据来自日数据后验切分，不预设蓄水、转化、长尾。（验收：只改这一块）",
-            "anchor": "b:9218af",
+            "anchor": "b:308963",
             "contract_errors": 0
           }
         },
@@ -720,8 +720,8 @@
           "name": "04-model-scene-notes：打开→不编辑→关闭，字节不变",
           "evidence": {
             "bytes": 22744,
-            "sha256_before": "244d6c36039c6d20228127d1819fb61ff557a266236aed11c32f29474b6f3b34",
-            "sha256_after": "244d6c36039c6d20228127d1819fb61ff557a266236aed11c32f29474b6f3b34",
+            "sha256_before": "06ab4db57b668a95f9a48e1e2dacaaa95be665dc646f12858bc32a7aacf78334",
+            "sha256_after": "06ab4db57b668a95f9a48e1e2dacaaa95be665dc646f12858bc32a7aacf78334",
             "adoption_repairs": 134,
             "second_open_repairs": 0
           }
@@ -731,9 +731,9 @@
           "ok": true,
           "name": "04-model-scene-notes：改一块后只有该块变",
           "evidence": {
-            "anchor": "b:acaed1",
+            "anchor": "b:84b421",
             "changed_blocks": [
-              "b:acaed1"
+              "b:84b421"
             ],
             "unchanged_blocks": 133,
             "total_blocks": 134
@@ -765,7 +765,7 @@
           "evidence": {
             "expected": "**单品 GWTB**（验收：只改这一块）",
             "actual": "**单品 GWTB**（验收：只改这一块）",
-            "anchor": "b:acaed1",
+            "anchor": "b:84b421",
             "contract_errors": 0
           }
         },
@@ -775,8 +775,8 @@
           "name": "05-delivery-notes：打开→不编辑→关闭，字节不变",
           "evidence": {
             "bytes": 2182,
-            "sha256_before": "f4258b28e4b7d50acf60e95c5aa9269a4d68da0543d8c34eac15a4436848f202",
-            "sha256_after": "f4258b28e4b7d50acf60e95c5aa9269a4d68da0543d8c34eac15a4436848f202",
+            "sha256_before": "d67dd679abb4f60b95adabf9e9c1414d8ddd31713c16623d8091b207933f98d3",
+            "sha256_after": "d67dd679abb4f60b95adabf9e9c1414d8ddd31713c16623d8091b207933f98d3",
             "adoption_repairs": 9,
             "second_open_repairs": 0
           }
@@ -786,9 +786,9 @@
           "ok": true,
           "name": "05-delivery-notes：改一块后只有该块变",
           "evidence": {
-            "anchor": "b:4792c6",
+            "anchor": "b:f1fafa",
             "changed_blocks": [
-              "b:4792c6"
+              "b:f1fafa"
             ],
             "unchanged_blocks": 8,
             "total_blocks": 9
@@ -820,7 +820,7 @@
           "evidence": {
             "expected": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（验收：只改这一块）",
             "actual": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（验收：只改这一块）",
-            "anchor": "b:4792c6",
+            "anchor": "b:f1fafa",
             "contract_errors": 0
           }
         },
@@ -830,8 +830,8 @@
           "name": "06-planners-form-compatibility：打开→不编辑→关闭，字节不变",
           "evidence": {
             "bytes": 10166,
-            "sha256_before": "f5bd07c2b4a32943c94522c26634a5ae90ba33ea95493e1bec8a0f7277d91c0e",
-            "sha256_after": "f5bd07c2b4a32943c94522c26634a5ae90ba33ea95493e1bec8a0f7277d91c0e",
+            "sha256_before": "8c1faeba8442bba4ce0bd74dcaf0817942694a6043683f3170011458f0227170",
+            "sha256_after": "8c1faeba8442bba4ce0bd74dcaf0817942694a6043683f3170011458f0227170",
             "adoption_repairs": 26,
             "second_open_repairs": 0
           }
@@ -841,9 +841,9 @@
           "ok": true,
           "name": "06-planners-form-compatibility：改一块后只有该块变",
           "evidence": {
-            "anchor": "b:340910",
+            "anchor": "b:88da67",
             "changed_blocks": [
-              "b:340910"
+              "b:88da67"
             ],
             "unchanged_blocks": 25,
             "total_blocks": 26
@@ -875,7 +875,7 @@
           "evidence": {
             "expected": "Checked: 2026-10-20（验收：只改这一块）",
             "actual": "Checked: 2026-10-20（验收：只改这一块）",
-            "anchor": "b:340910",
+            "anchor": "b:88da67",
             "contract_errors": 0
           }
         },
@@ -885,8 +885,8 @@
           "name": "07-plugins-upstream-readme：打开→不编辑→关闭，字节不变",
           "evidence": {
             "bytes": 5049,
-            "sha256_before": "52075d9b17648234a8a404ec856f2489e0ae59c57047376713792599be935029",
-            "sha256_after": "52075d9b17648234a8a404ec856f2489e0ae59c57047376713792599be935029",
+            "sha256_before": "59e7c7102912bf7b339e8b3b2ecc1bece48bf9c26b8020bbc378c4fc0f2252b5",
+            "sha256_after": "59e7c7102912bf7b339e8b3b2ecc1bece48bf9c26b8020bbc378c4fc0f2252b5",
             "adoption_repairs": 26,
             "second_open_repairs": 0
           }
@@ -896,9 +896,9 @@
           "ok": true,
           "name": "07-plugins-upstream-readme：改一块后只有该块变",
           "evidence": {
-            "anchor": "b:0a9755",
+            "anchor": "b:8b6c4c",
             "changed_blocks": [
-              "b:0a9755"
+              "b:8b6c4c"
             ],
             "unchanged_blocks": 25,
             "total_blocks": 26
@@ -930,7 +930,7 @@
           "evidence": {
             "expected": "这是给两个 DSH 社区插件做的新功能/修复，整理成标准 git 补丁，方便提交 Pull Request 回上游。（验收：只改这一块）",
             "actual": "这是给两个 DSH 社区插件做的新功能/修复，整理成标准 git 补丁，方便提交 Pull Request 回上游。（验收：只改这一块）",
-            "anchor": "b:0a9755",
+            "anchor": "b:8b6c4c",
             "contract_errors": 0
           }
         },
@@ -940,8 +940,8 @@
           "name": "08-workbench-engineering：打开→不编辑→关闭，字节不变",
           "evidence": {
             "bytes": 4311,
-            "sha256_before": "3802e25c1712e5b555d3c17ad613ac1b522addba8a2d697a1f9d78ecbe7ff97c",
-            "sha256_after": "3802e25c1712e5b555d3c17ad613ac1b522addba8a2d697a1f9d78ecbe7ff97c",
+            "sha256_before": "324134b303ba7dc54c1b535a9b9eaf46c28d6caa90fdfecc3e2171972aef4f19",
+            "sha256_after": "324134b303ba7dc54c1b535a9b9eaf46c28d6caa90fdfecc3e2171972aef4f19",
             "adoption_repairs": 34,
             "second_open_repairs": 0
           }
@@ -951,9 +951,9 @@
           "ok": true,
           "name": "08-workbench-engineering：改一块后只有该块变",
           "evidence": {
-            "anchor": "b:cae46b",
+            "anchor": "b:4f9807",
             "changed_blocks": [
-              "b:cae46b"
+              "b:4f9807"
             ],
             "unchanged_blocks": 33,
             "total_blocks": 34
@@ -985,7 +985,7 @@
           "evidence": {
             "expected": "按「先改契约、再拿 Proposal 做样板、Bypage 跟随」推进。每一步都能单独验收，不通过不进下一步。（验收：只改这一块）",
             "actual": "按「先改契约、再拿 Proposal 做样板、Bypage 跟随」推进。每一步都能单独验收，不通过不进下一步。（验收：只改这一块）",
-            "anchor": "b:cae46b",
+            "anchor": "b:4f9807",
             "contract_errors": 0
           }
         },
@@ -1134,9 +1134,9 @@
           },
           "adoption_repairs": 43,
           "noop_equal": true,
-          "noop_sha256": "deeeca944435fa651c865c852435368a1f1eda42178de14c2317a655788fbd7a",
+          "noop_sha256": "37de0763664c5b154a12b8f3e5b2b539df184142d40f54a83524f5c87a1919c4",
           "edited": {
-            "anchor": "b:fea288",
+            "anchor": "b:18af67",
             "type": "paragraph",
             "suffix": "（验收：只改这一块）",
             "receipt_status": 200,
@@ -1145,8 +1145,8 @@
             "changed": [
               {
                 "index": 13,
-                "anchor_before": "b:fea288",
-                "anchor_after": "b:fea288",
+                "anchor_before": "b:18af67",
+                "anchor_after": "b:18af67",
                 "type_before": "paragraph",
                 "type_after": "paragraph"
               }
@@ -1168,10 +1168,10 @@
             "diff_inside_target": true,
             "content_readback": "**这是美津浓最不可动摇的壁垒。** 消费者在\"舒服\"上的信任度极高，以至于：愿意容忍外观争议、主动向家人朋友推荐、产生品牌锁定效应（\"回不去其他牌子了\"）。（验收：只改这一块）",
             "anchor_kept": true,
-            "sha256_after_edit": "980e12440b0731b1cec67ed521ff734a09a8ac2bf1cefe1838b6cff177d394fc"
+            "sha256_after_edit": "2e90d08f546b60b26ee96093cc69b775f51546f20508e7d006160e4f164e6ae1"
           },
           "contract_errors_after_edit": [],
-          "baseline_sha256": "deeeca944435fa651c865c852435368a1f1eda42178de14c2317a655788fbd7a",
+          "baseline_sha256": "37de0763664c5b154a12b8f3e5b2b539df184142d40f54a83524f5c87a1919c4",
           "baseline_bytes": 11535,
           "baseline_blocks": 43,
           "baseline_tables": 4,
@@ -1212,9 +1212,9 @@
           },
           "adoption_repairs": 52,
           "noop_equal": true,
-          "noop_sha256": "5be9166c251918e7142972dab38e21a8e0ecfa175dc590274e1354a5dd8cda48",
+          "noop_sha256": "ac8e7de36b2aaeb9322f008432fee765d94d592ffc8207c7e50010cce57f1208",
           "edited": {
-            "anchor": "b:2a7b1d",
+            "anchor": "b:d5b24e",
             "type": "paragraph",
             "suffix": "（验收：只改这一块）",
             "receipt_status": 200,
@@ -1223,8 +1223,8 @@
             "changed": [
               {
                 "index": 1,
-                "anchor_before": "b:2a7b1d",
-                "anchor_after": "b:2a7b1d",
+                "anchor_before": "b:d5b24e",
+                "anchor_after": "b:d5b24e",
                 "type_before": "paragraph",
                 "type_after": "paragraph"
               }
@@ -1246,10 +1246,10 @@
             "diff_inside_target": true,
             "content_readback": "**分析日期**：2026-05-30（验收：只改这一块）",
             "anchor_kept": true,
-            "sha256_after_edit": "0b427408faa24d4860cf109a46f64878942e79c1ae677c8de9761a9a72522204"
+            "sha256_after_edit": "9d9b6156acf839f2e04ff2bea7e26811f7dfda2203443d0d33700c5d93a832d7"
           },
           "contract_errors_after_edit": [],
-          "baseline_sha256": "5be9166c251918e7142972dab38e21a8e0ecfa175dc590274e1354a5dd8cda48",
+          "baseline_sha256": "ac8e7de36b2aaeb9322f008432fee765d94d592ffc8207c7e50010cce57f1208",
           "baseline_bytes": 10853,
           "baseline_blocks": 52,
           "baseline_tables": 6,
@@ -1286,9 +1286,9 @@
           },
           "adoption_repairs": 25,
           "noop_equal": true,
-          "noop_sha256": "b824fd0ab2aad0815d8cc3b72ce5212800e4b9623d4d9ed0fbb6eae4af3c1049",
+          "noop_sha256": "2d6f950ee281cdc97cd2085e63b0c51cf826a9064b60a258e96d7ec3603d286b",
           "edited": {
-            "anchor": "b:9218af",
+            "anchor": "b:308963",
             "type": "list",
             "suffix": "（验收：只改这一块）",
             "receipt_status": 200,
@@ -1297,8 +1297,8 @@
             "changed": [
               {
                 "index": 0,
-                "anchor_before": "b:9218af",
-                "anchor_after": "b:9218af",
+                "anchor_before": "b:308963",
+                "anchor_after": "b:308963",
                 "type_before": "list",
                 "type_after": "list"
               }
@@ -1320,10 +1320,10 @@
             "diff_inside_target": true,
             "content_readback": "- 底层依据来自日数据后验切分，不预设蓄水、转化、长尾。（验收：只改这一块）",
             "anchor_kept": true,
-            "sha256_after_edit": "9d8d0e066af6f7188806adc8ef8d0f5dabdeddff99015f14b61ebbbfcaebdb47"
+            "sha256_after_edit": "0c5c1110b039029fac67532a0405e5bcb0ffeb6e6c78fb9512bd73802d6dd5cf"
           },
           "contract_errors_after_edit": [],
-          "baseline_sha256": "b824fd0ab2aad0815d8cc3b72ce5212800e4b9623d4d9ed0fbb6eae4af3c1049",
+          "baseline_sha256": "2d6f950ee281cdc97cd2085e63b0c51cf826a9064b60a258e96d7ec3603d286b",
           "baseline_bytes": 3663,
           "baseline_blocks": 25,
           "baseline_tables": 1,
@@ -1361,9 +1361,9 @@
           },
           "adoption_repairs": 134,
           "noop_equal": true,
-          "noop_sha256": "244d6c36039c6d20228127d1819fb61ff557a266236aed11c32f29474b6f3b34",
+          "noop_sha256": "06ab4db57b668a95f9a48e1e2dacaaa95be665dc646f12858bc32a7aacf78334",
           "edited": {
-            "anchor": "b:acaed1",
+            "anchor": "b:84b421",
             "type": "paragraph",
             "suffix": "（验收：只改这一块）",
             "receipt_status": 200,
@@ -1372,8 +1372,8 @@
             "changed": [
               {
                 "index": 30,
-                "anchor_before": "b:acaed1",
-                "anchor_after": "b:acaed1",
+                "anchor_before": "b:84b421",
+                "anchor_after": "b:84b421",
                 "type_before": "paragraph",
                 "type_after": "paragraph"
               }
@@ -1395,10 +1395,10 @@
             "diff_inside_target": true,
             "content_readback": "**单品 GWTB**（验收：只改这一块）",
             "anchor_kept": true,
-            "sha256_after_edit": "e46c9159ca60eb4e3e7b47348b31daf42daac604bab617215c69e9f35f4f206f"
+            "sha256_after_edit": "99125595e1f25e713b8a5ebce99f1930fe7ed64261cc244a60d1ada533838333"
           },
           "contract_errors_after_edit": [],
-          "baseline_sha256": "244d6c36039c6d20228127d1819fb61ff557a266236aed11c32f29474b6f3b34",
+          "baseline_sha256": "06ab4db57b668a95f9a48e1e2dacaaa95be665dc646f12858bc32a7aacf78334",
           "baseline_bytes": 22744,
           "baseline_blocks": 134,
           "baseline_tables": 0,
@@ -1435,9 +1435,9 @@
           },
           "adoption_repairs": 9,
           "noop_equal": true,
-          "noop_sha256": "f4258b28e4b7d50acf60e95c5aa9269a4d68da0543d8c34eac15a4436848f202",
+          "noop_sha256": "d67dd679abb4f60b95adabf9e9c1414d8ddd31713c16623d8091b207933f98d3",
           "edited": {
-            "anchor": "b:4792c6",
+            "anchor": "b:f1fafa",
             "type": "list",
             "suffix": "（验收：只改这一块）",
             "receipt_status": 200,
@@ -1446,8 +1446,8 @@
             "changed": [
               {
                 "index": 1,
-                "anchor_before": "b:4792c6",
-                "anchor_after": "b:4792c6",
+                "anchor_before": "b:f1fafa",
+                "anchor_after": "b:f1fafa",
                 "type_before": "list",
                 "type_after": "list"
               }
@@ -1469,10 +1469,10 @@
             "diff_inside_target": true,
             "content_readback": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（验收：只改这一块）",
             "anchor_kept": true,
-            "sha256_after_edit": "b997a47551ddb230132f881162391769a063de7d54fa1728995d8bcf29739b3a"
+            "sha256_after_edit": "68769dd349f848713f0cc184a190e0e8678cb72c3519e5af64e6a8c3cc11bb6e"
           },
           "contract_errors_after_edit": [],
-          "baseline_sha256": "f4258b28e4b7d50acf60e95c5aa9269a4d68da0543d8c34eac15a4436848f202",
+          "baseline_sha256": "d67dd679abb4f60b95adabf9e9c1414d8ddd31713c16623d8091b207933f98d3",
           "baseline_bytes": 2182,
           "baseline_blocks": 9,
           "baseline_tables": 1,
@@ -1510,9 +1510,9 @@
           },
           "adoption_repairs": 26,
           "noop_equal": true,
-          "noop_sha256": "f5bd07c2b4a32943c94522c26634a5ae90ba33ea95493e1bec8a0f7277d91c0e",
+          "noop_sha256": "8c1faeba8442bba4ce0bd74dcaf0817942694a6043683f3170011458f0227170",
           "edited": {
-            "anchor": "b:340910",
+            "anchor": "b:88da67",
             "type": "paragraph",
             "suffix": "（验收：只改这一块）",
             "receipt_status": 200,
@@ -1521,8 +1521,8 @@
             "changed": [
               {
                 "index": 0,
-                "anchor_before": "b:340910",
-                "anchor_after": "b:340910",
+                "anchor_before": "b:88da67",
+                "anchor_after": "b:88da67",
                 "type_before": "paragraph",
                 "type_after": "paragraph"
               }
@@ -1544,10 +1544,10 @@
             "diff_inside_target": true,
             "content_readback": "Checked: 2026-10-20（验收：只改这一块）",
             "anchor_kept": true,
-            "sha256_after_edit": "3cc4f6c12b8a41862bca4caca99f000cb9d2d8866209d6fd0da89b2dedc84050"
+            "sha256_after_edit": "039a81a5b146c33d2b9ad232f346d7b96e3ea111b5aa789048df33763db965a5"
           },
           "contract_errors_after_edit": [],
-          "baseline_sha256": "f5bd07c2b4a32943c94522c26634a5ae90ba33ea95493e1bec8a0f7277d91c0e",
+          "baseline_sha256": "8c1faeba8442bba4ce0bd74dcaf0817942694a6043683f3170011458f0227170",
           "baseline_bytes": 10166,
           "baseline_blocks": 26,
           "baseline_tables": 3,
@@ -1587,9 +1587,9 @@
           },
           "adoption_repairs": 26,
           "noop_equal": true,
-          "noop_sha256": "52075d9b17648234a8a404ec856f2489e0ae59c57047376713792599be935029",
+          "noop_sha256": "59e7c7102912bf7b339e8b3b2ecc1bece48bf9c26b8020bbc378c4fc0f2252b5",
           "edited": {
-            "anchor": "b:0a9755",
+            "anchor": "b:8b6c4c",
             "type": "paragraph",
             "suffix": "（验收：只改这一块）",
             "receipt_status": 200,
@@ -1598,8 +1598,8 @@
             "changed": [
               {
                 "index": 0,
-                "anchor_before": "b:0a9755",
-                "anchor_after": "b:0a9755",
+                "anchor_before": "b:8b6c4c",
+                "anchor_after": "b:8b6c4c",
                 "type_before": "paragraph",
                 "type_after": "paragraph"
               }
@@ -1621,10 +1621,10 @@
             "diff_inside_target": true,
             "content_readback": "这是给两个 DSH 社区插件做的新功能/修复，整理成标准 git 补丁，方便提交 Pull Request 回上游。（验收：只改这一块）",
             "anchor_kept": true,
-            "sha256_after_edit": "8e64c3524941f0b43a2896f2891aa946fd0c22786072ff74d3b747543f991d9a"
+            "sha256_after_edit": "7c3dedaf081230557a13d833592111493f376ac132b1e1fb04fca0a68128987d"
           },
           "contract_errors_after_edit": [],
-          "baseline_sha256": "52075d9b17648234a8a404ec856f2489e0ae59c57047376713792599be935029",
+          "baseline_sha256": "59e7c7102912bf7b339e8b3b2ecc1bece48bf9c26b8020bbc378c4fc0f2252b5",
           "baseline_bytes": 5049,
           "baseline_blocks": 26,
           "baseline_tables": 1,
@@ -1661,9 +1661,9 @@
           },
           "adoption_repairs": 34,
           "noop_equal": true,
-          "noop_sha256": "3802e25c1712e5b555d3c17ad613ac1b522addba8a2d697a1f9d78ecbe7ff97c",
+          "noop_sha256": "324134b303ba7dc54c1b535a9b9eaf46c28d6caa90fdfecc3e2171972aef4f19",
           "edited": {
-            "anchor": "b:cae46b",
+            "anchor": "b:4f9807",
             "type": "paragraph",
             "suffix": "（验收：只改这一块）",
             "receipt_status": 200,
@@ -1672,8 +1672,8 @@
             "changed": [
               {
                 "index": 0,
-                "anchor_before": "b:cae46b",
-                "anchor_after": "b:cae46b",
+                "anchor_before": "b:4f9807",
+                "anchor_after": "b:4f9807",
                 "type_before": "paragraph",
                 "type_after": "paragraph"
               }
@@ -1695,10 +1695,10 @@
             "diff_inside_target": true,
             "content_readback": "按「先改契约、再拿 Proposal 做样板、Bypage 跟随」推进。每一步都能单独验收，不通过不进下一步。（验收：只改这一块）",
             "anchor_kept": true,
-            "sha256_after_edit": "933c18a962ad33a35d8196fda7054036171d9e1f0fa4812418a738dfa94cea04"
+            "sha256_after_edit": "418a75642559aff24cb31eafb483a297d6086f50d99cb626151ebe6e6110a949"
           },
           "contract_errors_after_edit": [],
-          "baseline_sha256": "3802e25c1712e5b555d3c17ad613ac1b522addba8a2d697a1f9d78ecbe7ff97c",
+          "baseline_sha256": "324134b303ba7dc54c1b535a9b9eaf46c28d6caa90fdfecc3e2171972aef4f19",
           "baseline_bytes": 4311,
           "baseline_blocks": 34,
           "baseline_tables": 0,
@@ -1922,10 +1922,10 @@
             "response_status": 200,
             "receipt": {
               "ok": true,
-              "sha256": "c781a5ccd93300c8fe27cc4818e6bb2f213a70de4139a9b20d5c7a225170b155",
+              "sha256": "d87d84365678d5760c642c3be5271185e7e2896f1ad4fae23ebe37c789731bb4",
               "merged": false,
               "block": {
-                "anchor": "b:987b5c",
+                "anchor": "b:1ebbec",
                 "type": "paragraph",
                 "index": 3,
                 "page": {
@@ -1946,13 +1946,14 @@
                 "reason": null,
                 "locked": false,
                 "locked_by": null,
+                "in_sources": false,
                 "deferred": null
               }
             },
             "request_payload": {
-              "anchor": "b:987b5c",
+              "anchor": "b:1ebbec",
               "content": "证据：标题端内容母题高度分散，没有单一受众画像。评论端\"通勤\"\"暴走\"\"上班\"高频出现，说明实际购买者偏向实用场景。中文输入实测，标点：。！？「引号」；撤销重做\n换行之后",
-              "base_sha256": "0705fa365a7e032f92dd2cc46e6d0d5362c4fb6cb3515ccf92640b488b1ddf12",
+              "base_sha256": "703e8f3416b90d7b591f446271771ede4df06370661d39666d0daf5bca08d0c7",
               "base_block_sha256": "c7a9107e5b821c90ab70b7590d26a0c5795f0e167758e051129d7c613d669b7b"
             },
             "accepted_forms": [
@@ -1970,14 +1971,14 @@
           "name": "跨块选区吸附到三块整块（半句也吸）",
           "evidence": {
             "expected": [
-              "b:987b5c",
-              "b:f7c876",
-              "b:be6f16"
+              "b:1ebbec",
+              "b:e55fbf",
+              "b:3732b5"
             ],
             "actual": [
-              "b:987b5c",
-              "b:f7c876",
-              "b:be6f16"
+              "b:1ebbec",
+              "b:e55fbf",
+              "b:3732b5"
             ]
           }
         },
@@ -1999,7 +2000,7 @@
           "name": "回车分块：新块拿新锚点、原块内容不变，块数 +1",
           "evidence": {
             "response_status": 200,
-            "new_anchor": "b:d08e1a",
+            "new_anchor": "b:82ac1c",
             "new_block_raw": "分块之后",
             "original_raw_unchanged": true,
             "block_count": {
@@ -2014,8 +2015,8 @@
           "name": "空块 Backspace：并入前一块，被删块的锚点不再存在，前一块内容逐字不动",
           "evidence": {
             "response_status": 200,
-            "removed_anchor": "b:d08e1a",
-            "kept_anchor": "b:987b5c",
+            "removed_anchor": "b:82ac1c",
+            "kept_anchor": "b:1ebbec",
             "kept_raw": "证据：标题端内容母题高度分散，没有单一受众画像。评论端\"通勤\"\"暴走\"\"上班\"高频出现，说明实际购买者偏向实用场景。中文输入实测，标点：。！？「引号」；撤销重做\n换行之后",
             "block_count": {
               "before": 53,
@@ -2033,7 +2034,7 @@
             "dom_after": "证据：标题端内容母题高度分散，没有单一受众画像。评论端\"通勤\"\"暴走\"\"上班\"高频出现，说明实际购买者偏向实用场景。中文输入实测，标点：。！？「引号」；",
             "status": "已自动保存",
             "saved_raw": "证据：标题端内容母题高度分散，没有单一受众画像。评论端\"通勤\"\"暴走\"\"上班\"高频出现，说明实际购买者偏向实用场景。中文输入实测，标点：。！？「引号」；",
-            "waited_ms": 659
+            "waited_ms": 658
           },
           "undo": {
             "chunk": "撤销重做",
@@ -2052,10 +2053,10 @@
             "response_status": 200,
             "receipt": {
               "ok": true,
-              "sha256": "c781a5ccd93300c8fe27cc4818e6bb2f213a70de4139a9b20d5c7a225170b155",
+              "sha256": "d87d84365678d5760c642c3be5271185e7e2896f1ad4fae23ebe37c789731bb4",
               "merged": false,
               "block": {
-                "anchor": "b:987b5c",
+                "anchor": "b:1ebbec",
                 "type": "paragraph",
                 "index": 3,
                 "page": {
@@ -2076,13 +2077,14 @@
                 "reason": null,
                 "locked": false,
                 "locked_by": null,
+                "in_sources": false,
                 "deferred": null
               }
             },
             "request_payload": {
-              "anchor": "b:987b5c",
+              "anchor": "b:1ebbec",
               "content": "证据：标题端内容母题高度分散，没有单一受众画像。评论端\"通勤\"\"暴走\"\"上班\"高频出现，说明实际购买者偏向实用场景。中文输入实测，标点：。！？「引号」；撤销重做\n换行之后",
-              "base_sha256": "0705fa365a7e032f92dd2cc46e6d0d5362c4fb6cb3515ccf92640b488b1ddf12",
+              "base_sha256": "703e8f3416b90d7b591f446271771ede4df06370661d39666d0daf5bca08d0c7",
               "base_block_sha256": "c7a9107e5b821c90ab70b7590d26a0c5795f0e167758e051129d7c613d669b7b"
             },
             "status_text": "已自动保存",
@@ -2091,14 +2093,14 @@
           },
           "selection": {
             "anchors": [
-              "b:987b5c",
-              "b:f7c876",
-              "b:be6f16"
+              "b:1ebbec",
+              "b:e55fbf",
+              "b:3732b5"
             ],
             "highlighted": [
-              "b:987b5c",
-              "b:f7c876",
-              "b:be6f16"
+              "b:1ebbec",
+              "b:e55fbf",
+              "b:3732b5"
             ],
             "button_visible": true,
             "composer_visible": true,
@@ -2108,7 +2110,7 @@
               "ok": true,
               "task": {
                 "contract": "planners-doc-task/1",
-                "id": "t:d1aafb5e293b",
+                "id": "t:d377e59a8ad4",
                 "scope": "blocks",
                 "page": null,
                 "text": "这三块一起改：把结论提前。",
@@ -2120,27 +2122,27 @@
                 },
                 "blocks": [
                   {
-                    "anchor": "b:987b5c",
+                    "anchor": "b:1ebbec",
                     "sha256": "1fa733a30723029a52af17c6a80be04cfc61633a9d15f5c8703bf59887b6f563"
                   },
                   {
-                    "anchor": "b:f7c876",
+                    "anchor": "b:e55fbf",
                     "sha256": "115d71f0b084c3d5cff6ad44160744be4d68c645b44ad2574d86e7a688cfd60f"
                   },
                   {
-                    "anchor": "b:be6f16",
+                    "anchor": "b:3732b5",
                     "sha256": "c250b5e1b288dcaae9ffb01603f9b90914d644ad29709b6c21eb14c30a91033f"
                   }
                 ],
                 "status": "pending",
-                "created_at": "2026-11-20T10:26:06.024Z",
+                "created_at": "2026-11-20T10:31:57.018Z",
                 "started_at": null,
                 "finished_at": null,
                 "locked_blocks": []
               },
               "dispatch": {
                 "channel": "inbox",
-                "task_id": "t:d1aafb5e293b",
+                "task_id": "t:d377e59a8ad4",
                 "status": "pending",
                 "path": "<tmp>"
               }
@@ -2153,9 +2155,9 @@
             "response_status": 200,
             "receipt": {
               "ok": true,
-              "sha256": "5b52ce203032b20a176d5dec45f9eca5fd42c566841853d2b07df50774c2cf8a",
+              "sha256": "dcaa06ccecdfd0fb8fd6034e3ce620ef4538aa6dd39a0df0a357218c3d4ee7de",
               "block": {
-                "anchor": "b:987b5c",
+                "anchor": "b:1ebbec",
                 "type": "paragraph",
                 "index": 3,
                 "page": {
@@ -2176,10 +2178,11 @@
                 "reason": null,
                 "locked": false,
                 "locked_by": null,
+                "in_sources": false,
                 "deferred": null
               },
               "new_block": {
-                "anchor": "b:d08e1a",
+                "anchor": "b:82ac1c",
                 "type": "paragraph",
                 "index": 4,
                 "page": {
@@ -2200,6 +2203,7 @@
                 "reason": null,
                 "locked": false,
                 "locked_by": null,
+                "in_sources": false,
                 "deferred": null
               },
               "path": "<tmp>",
@@ -2213,7 +2217,8 @@
                   "chapterIndex": 1,
                   "index": 1,
                   "title": "原文开头",
-                  "anchor": "b:4b031c"
+                  "anchor": "b:50a340",
+                  "sources": 0
                 },
                 {
                   "key": "2-1",
@@ -2221,7 +2226,8 @@
                   "chapterIndex": 2,
                   "index": 1,
                   "title": "1.1 数据源质量判定",
-                  "anchor": "b:ed74b0"
+                  "anchor": "b:2d9ebc",
+                  "sources": 0
                 },
                 {
                   "key": "2-2",
@@ -2229,7 +2235,8 @@
                   "chapterIndex": 2,
                   "index": 2,
                   "title": "1.2 品牌高频词 Top 20（标题端）",
-                  "anchor": "b:eb4a73"
+                  "anchor": "b:d7f49e",
+                  "sources": 0
                 },
                 {
                   "key": "2-3",
@@ -2237,7 +2244,8 @@
                   "chapterIndex": 2,
                   "index": 3,
                   "title": "1.3 消费者评论高频词 Top 20",
-                  "anchor": "b:d5149a"
+                  "anchor": "b:7aeb5c",
+                  "sources": 0
                 },
                 {
                   "key": "2-4",
@@ -2245,7 +2253,8 @@
                   "chapterIndex": 2,
                   "index": 4,
                   "title": "1.4 品牌说的 vs 消费者说的——GAP 分析",
-                  "anchor": "b:e6c566"
+                  "anchor": "b:f6b6b6",
+                  "sources": 0
                 },
                 {
                   "key": "3-1",
@@ -2253,7 +2262,8 @@
                   "chapterIndex": 3,
                   "index": 1,
                   "title": "2.1 美津浓",
-                  "anchor": "b:41e964"
+                  "anchor": "b:dee91f",
+                  "sources": 0
                 },
                 {
                   "key": "3-2",
@@ -2261,7 +2271,8 @@
                   "chapterIndex": 3,
                   "index": 2,
                   "title": "2.2 竞品 GWTB 速写（基于搜索词数据 + 笔记标题，🟡 中置信）",
-                  "anchor": "b:5abadd"
+                  "anchor": "b:29c9e5",
+                  "sources": 0
                 },
                 {
                   "key": "4-1",
@@ -2269,7 +2280,8 @@
                   "chapterIndex": 4,
                   "index": 1,
                   "title": "3.1 GWTB 策略总览表",
-                  "anchor": "b:3c3fbf"
+                  "anchor": "b:50b5bc",
+                  "sources": 0
                 },
                 {
                   "key": "4-2",
@@ -2277,7 +2289,8 @@
                   "chapterIndex": 4,
                   "index": 2,
                   "title": "3.2 信息重叠检测",
-                  "anchor": "b:88560d"
+                  "anchor": "b:f6da83",
+                  "sources": 0
                 },
                 {
                   "key": "4-3",
@@ -2285,7 +2298,8 @@
                   "chapterIndex": 4,
                   "index": 3,
                   "title": "3.3 信息空白发现",
-                  "anchor": "b:0e8306"
+                  "anchor": "b:a10930",
+                  "sources": 0
                 },
                 {
                   "key": "4-4",
@@ -2293,7 +2307,8 @@
                   "chapterIndex": 4,
                   "index": 4,
                   "title": "3.4 品牌沟通一致性检验 🟢",
-                  "anchor": "b:069edf"
+                  "anchor": "b:109c60",
+                  "sources": 0
                 },
                 {
                   "key": "5-1",
@@ -2301,7 +2316,8 @@
                   "chapterIndex": 5,
                   "index": 1,
                   "title": "🟢 应该坚守的",
-                  "anchor": "b:6e7635"
+                  "anchor": "b:556345",
+                  "sources": 0
                 },
                 {
                   "key": "5-2",
@@ -2309,7 +2325,8 @@
                   "chapterIndex": 5,
                   "index": 2,
                   "title": "🟢 应该强化的",
-                  "anchor": "b:e1df6d"
+                  "anchor": "b:58b48e",
+                  "sources": 0
                 },
                 {
                   "key": "5-3",
@@ -2317,7 +2334,8 @@
                   "chapterIndex": 5,
                   "index": 3,
                   "title": "🟡 应该放弃的",
-                  "anchor": "b:b5cdef"
+                  "anchor": "b:70ecb6",
+                  "sources": 0
                 },
                 {
                   "key": "5-4",
@@ -2325,7 +2343,8 @@
                   "chapterIndex": 5,
                   "index": 4,
                   "title": "🔴 数据不足的风险",
-                  "anchor": "b:e7b712"
+                  "anchor": "b:19d1ed",
+                  "sources": 0
                 },
                 {
                   "key": "6-1",
@@ -2333,12 +2352,13 @@
                   "chapterIndex": 6,
                   "index": 1,
                   "title": "概览",
-                  "anchor": "b:fb217a"
+                  "anchor": "b:65dee0",
+                  "sources": 0
                 }
               ],
               "blocks": [
                 {
-                  "anchor": "b:4b031c",
+                  "anchor": "b:50a340",
                   "type": "quote",
                   "index": 1,
                   "page": {
@@ -2359,10 +2379,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:3c0bc5",
+                  "anchor": "b:7617b6",
                   "type": "paragraph",
                   "index": 2,
                   "page": {
@@ -2383,10 +2404,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:ed74b0",
+                  "anchor": "b:2d9ebc",
                   "type": "table",
                   "index": 1,
                   "page": {
@@ -2407,6 +2429,7 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null,
                   "table": {
                     "header": [
@@ -2446,7 +2469,7 @@
                   }
                 },
                 {
-                  "anchor": "b:eb4a73",
+                  "anchor": "b:d7f49e",
                   "type": "code",
                   "index": 1,
                   "page": {
@@ -2467,10 +2490,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:f04582",
+                  "anchor": "b:fc493d",
                   "type": "paragraph",
                   "index": 2,
                   "page": {
@@ -2491,10 +2515,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:d5149a",
+                  "anchor": "b:7aeb5c",
                   "type": "code",
                   "index": 1,
                   "page": {
@@ -2515,10 +2540,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:f0e87a",
+                  "anchor": "b:84e023",
                   "type": "paragraph",
                   "index": 2,
                   "page": {
@@ -2539,10 +2565,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:e6c566",
+                  "anchor": "b:f6b6b6",
                   "type": "code",
                   "index": 1,
                   "page": {
@@ -2563,10 +2590,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:41e964",
+                  "anchor": "b:dee91f",
                   "type": "paragraph",
                   "index": 1,
                   "page": {
@@ -2587,10 +2615,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:078a3d",
+                  "anchor": "b:9a56b4",
                   "type": "table",
                   "index": 2,
                   "page": {
@@ -2611,6 +2640,7 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null,
                   "table": {
                     "header": [
@@ -2645,7 +2675,7 @@
                   }
                 },
                 {
-                  "anchor": "b:987b5c",
+                  "anchor": "b:1ebbec",
                   "type": "paragraph",
                   "index": 3,
                   "page": {
@@ -2666,10 +2696,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:d08e1a",
+                  "anchor": "b:82ac1c",
                   "type": "paragraph",
                   "index": 4,
                   "page": {
@@ -2690,10 +2721,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:f7c876",
+                  "anchor": "b:e55fbf",
                   "type": "paragraph",
                   "index": 5,
                   "page": {
@@ -2714,10 +2746,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:be6f16",
+                  "anchor": "b:3732b5",
                   "type": "list",
                   "index": 6,
                   "page": {
@@ -2738,10 +2771,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:d5e21b",
+                  "anchor": "b:3d1252",
                   "type": "quote",
                   "index": 7,
                   "page": {
@@ -2762,10 +2796,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:27daa1",
+                  "anchor": "b:5fbe3f",
                   "type": "list",
                   "index": 8,
                   "page": {
@@ -2786,10 +2821,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:3cb5ca",
+                  "anchor": "b:b06050",
                   "type": "list",
                   "index": 9,
                   "page": {
@@ -2810,10 +2846,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:9081e8",
+                  "anchor": "b:af35f3",
                   "type": "quote",
                   "index": 10,
                   "page": {
@@ -2834,10 +2871,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:6f733a",
+                  "anchor": "b:c11d50",
                   "type": "paragraph",
                   "index": 11,
                   "page": {
@@ -2858,10 +2896,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:095496",
+                  "anchor": "b:608b0f",
                   "type": "list",
                   "index": 12,
                   "page": {
@@ -2882,10 +2921,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:794c6d",
+                  "anchor": "b:08872e",
                   "type": "list",
                   "index": 13,
                   "page": {
@@ -2906,10 +2946,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:af4004",
+                  "anchor": "b:dfd0e9",
                   "type": "list",
                   "index": 14,
                   "page": {
@@ -2930,10 +2971,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:9904d0",
+                  "anchor": "b:5446be",
                   "type": "paragraph",
                   "index": 15,
                   "page": {
@@ -2954,10 +2996,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:922a7b",
+                  "anchor": "b:195bf4",
                   "type": "paragraph",
                   "index": 16,
                   "page": {
@@ -2978,10 +3021,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:802e5f",
+                  "anchor": "b:d7ad12",
                   "type": "paragraph",
                   "index": 17,
                   "page": {
@@ -3002,10 +3046,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:c227bf",
+                  "anchor": "b:88d393",
                   "type": "paragraph",
                   "index": 18,
                   "page": {
@@ -3026,10 +3071,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:6b414f",
+                  "anchor": "b:1f1633",
                   "type": "paragraph",
                   "index": 19,
                   "page": {
@@ -3050,10 +3096,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:e827b6",
+                  "anchor": "b:384d6c",
                   "type": "list",
                   "index": 20,
                   "page": {
@@ -3074,10 +3121,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:e7d4cb",
+                  "anchor": "b:0daa9a",
                   "type": "list",
                   "index": 21,
                   "page": {
@@ -3098,10 +3146,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:d5a875",
+                  "anchor": "b:f633e9",
                   "type": "list",
                   "index": 22,
                   "page": {
@@ -3122,10 +3171,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:5abadd",
+                  "anchor": "b:29c9e5",
                   "type": "heading",
                   "index": 1,
                   "page": {
@@ -3146,10 +3196,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:7e0749",
+                  "anchor": "b:2ce47e",
                   "type": "table",
                   "index": 2,
                   "page": {
@@ -3170,6 +3221,7 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null,
                   "table": {
                     "header": [
@@ -3209,7 +3261,7 @@
                   }
                 },
                 {
-                  "anchor": "b:ea6edb",
+                  "anchor": "b:ba04ba",
                   "type": "paragraph",
                   "index": 3,
                   "page": {
@@ -3230,10 +3282,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:59d492",
+                  "anchor": "b:a9fee9",
                   "type": "heading",
                   "index": 4,
                   "page": {
@@ -3254,10 +3307,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:23d042",
+                  "anchor": "b:dbd6a3",
                   "type": "table",
                   "index": 5,
                   "page": {
@@ -3278,6 +3332,7 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null,
                   "table": {
                     "header": [
@@ -3317,7 +3372,7 @@
                   }
                 },
                 {
-                  "anchor": "b:919c4d",
+                  "anchor": "b:943354",
                   "type": "paragraph",
                   "index": 6,
                   "page": {
@@ -3338,10 +3393,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:c82fc1",
+                  "anchor": "b:01973c",
                   "type": "heading",
                   "index": 7,
                   "page": {
@@ -3362,10 +3418,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:bd0dce",
+                  "anchor": "b:ff2c83",
                   "type": "table",
                   "index": 8,
                   "page": {
@@ -3386,6 +3443,7 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null,
                   "table": {
                     "header": [
@@ -3425,7 +3483,7 @@
                   }
                 },
                 {
-                  "anchor": "b:3c3fbf",
+                  "anchor": "b:50b5bc",
                   "type": "table",
                   "index": 1,
                   "page": {
@@ -3446,6 +3504,7 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null,
                   "table": {
                     "header": [
@@ -3503,7 +3562,7 @@
                   }
                 },
                 {
-                  "anchor": "b:88560d",
+                  "anchor": "b:f6da83",
                   "type": "code",
                   "index": 1,
                   "page": {
@@ -3524,10 +3583,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:0e8306",
+                  "anchor": "b:a10930",
                   "type": "code",
                   "index": 1,
                   "page": {
@@ -3548,10 +3608,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:069edf",
+                  "anchor": "b:109c60",
                   "type": "code",
                   "index": 1,
                   "page": {
@@ -3572,10 +3633,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:6e7635",
+                  "anchor": "b:556345",
                   "type": "list",
                   "index": 1,
                   "page": {
@@ -3596,10 +3658,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:a862e6",
+                  "anchor": "b:369019",
                   "type": "list",
                   "index": 2,
                   "page": {
@@ -3620,10 +3683,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:e1df6d",
+                  "anchor": "b:58b48e",
                   "type": "list",
                   "index": 1,
                   "page": {
@@ -3644,10 +3708,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:9394c8",
+                  "anchor": "b:3e6cc8",
                   "type": "list",
                   "index": 2,
                   "page": {
@@ -3668,10 +3733,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:b5cdef",
+                  "anchor": "b:70ecb6",
                   "type": "list",
                   "index": 1,
                   "page": {
@@ -3692,10 +3758,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:e7b712",
+                  "anchor": "b:19d1ed",
                   "type": "list",
                   "index": 1,
                   "page": {
@@ -3716,10 +3783,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:fb217a",
+                  "anchor": "b:65dee0",
                   "type": "paragraph",
                   "index": 1,
                   "page": {
@@ -3740,10 +3808,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:ee8565",
+                  "anchor": "b:376d26",
                   "type": "list",
                   "index": 2,
                   "page": {
@@ -3764,10 +3833,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:608a9f",
+                  "anchor": "b:9f9443",
                   "type": "list",
                   "index": 3,
                   "page": {
@@ -3788,10 +3858,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:21a719",
+                  "anchor": "b:150293",
                   "type": "list",
                   "index": 4,
                   "page": {
@@ -3812,10 +3883,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:f5114b",
+                  "anchor": "b:d0c77f",
                   "type": "list",
                   "index": 5,
                   "page": {
@@ -3836,6 +3908,7 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 }
               ],
@@ -3846,7 +3919,7 @@
               "repairs": [],
               "errors": []
             },
-            "new_anchor": "b:d08e1a",
+            "new_anchor": "b:82ac1c",
             "new_block_raw": "分块之后",
             "block_count": {
               "before": 52,
@@ -3854,13 +3927,13 @@
             }
           },
           "merge": {
-            "removed_anchor": "b:d08e1a",
+            "removed_anchor": "b:82ac1c",
             "response_status": 200,
             "receipt": {
               "ok": true,
-              "sha256": "c781a5ccd93300c8fe27cc4818e6bb2f213a70de4139a9b20d5c7a225170b155",
+              "sha256": "d87d84365678d5760c642c3be5271185e7e2896f1ad4fae23ebe37c789731bb4",
               "block": {
-                "anchor": "b:987b5c",
+                "anchor": "b:1ebbec",
                 "type": "paragraph",
                 "index": 3,
                 "page": {
@@ -3881,9 +3954,10 @@
                 "reason": null,
                 "locked": false,
                 "locked_by": null,
+                "in_sources": false,
                 "deferred": null
               },
-              "removed": "b:d08e1a",
+              "removed": "b:82ac1c",
               "path": "<tmp>",
               "contract": "planners-doc/2",
               "doc": "storyline",
@@ -3895,7 +3969,8 @@
                   "chapterIndex": 1,
                   "index": 1,
                   "title": "原文开头",
-                  "anchor": "b:4b031c"
+                  "anchor": "b:50a340",
+                  "sources": 0
                 },
                 {
                   "key": "2-1",
@@ -3903,7 +3978,8 @@
                   "chapterIndex": 2,
                   "index": 1,
                   "title": "1.1 数据源质量判定",
-                  "anchor": "b:ed74b0"
+                  "anchor": "b:2d9ebc",
+                  "sources": 0
                 },
                 {
                   "key": "2-2",
@@ -3911,7 +3987,8 @@
                   "chapterIndex": 2,
                   "index": 2,
                   "title": "1.2 品牌高频词 Top 20（标题端）",
-                  "anchor": "b:eb4a73"
+                  "anchor": "b:d7f49e",
+                  "sources": 0
                 },
                 {
                   "key": "2-3",
@@ -3919,7 +3996,8 @@
                   "chapterIndex": 2,
                   "index": 3,
                   "title": "1.3 消费者评论高频词 Top 20",
-                  "anchor": "b:d5149a"
+                  "anchor": "b:7aeb5c",
+                  "sources": 0
                 },
                 {
                   "key": "2-4",
@@ -3927,7 +4005,8 @@
                   "chapterIndex": 2,
                   "index": 4,
                   "title": "1.4 品牌说的 vs 消费者说的——GAP 分析",
-                  "anchor": "b:e6c566"
+                  "anchor": "b:f6b6b6",
+                  "sources": 0
                 },
                 {
                   "key": "3-1",
@@ -3935,7 +4014,8 @@
                   "chapterIndex": 3,
                   "index": 1,
                   "title": "2.1 美津浓",
-                  "anchor": "b:41e964"
+                  "anchor": "b:dee91f",
+                  "sources": 0
                 },
                 {
                   "key": "3-2",
@@ -3943,7 +4023,8 @@
                   "chapterIndex": 3,
                   "index": 2,
                   "title": "2.2 竞品 GWTB 速写（基于搜索词数据 + 笔记标题，🟡 中置信）",
-                  "anchor": "b:5abadd"
+                  "anchor": "b:29c9e5",
+                  "sources": 0
                 },
                 {
                   "key": "4-1",
@@ -3951,7 +4032,8 @@
                   "chapterIndex": 4,
                   "index": 1,
                   "title": "3.1 GWTB 策略总览表",
-                  "anchor": "b:3c3fbf"
+                  "anchor": "b:50b5bc",
+                  "sources": 0
                 },
                 {
                   "key": "4-2",
@@ -3959,7 +4041,8 @@
                   "chapterIndex": 4,
                   "index": 2,
                   "title": "3.2 信息重叠检测",
-                  "anchor": "b:88560d"
+                  "anchor": "b:f6da83",
+                  "sources": 0
                 },
                 {
                   "key": "4-3",
@@ -3967,7 +4050,8 @@
                   "chapterIndex": 4,
                   "index": 3,
                   "title": "3.3 信息空白发现",
-                  "anchor": "b:0e8306"
+                  "anchor": "b:a10930",
+                  "sources": 0
                 },
                 {
                   "key": "4-4",
@@ -3975,7 +4059,8 @@
                   "chapterIndex": 4,
                   "index": 4,
                   "title": "3.4 品牌沟通一致性检验 🟢",
-                  "anchor": "b:069edf"
+                  "anchor": "b:109c60",
+                  "sources": 0
                 },
                 {
                   "key": "5-1",
@@ -3983,7 +4068,8 @@
                   "chapterIndex": 5,
                   "index": 1,
                   "title": "🟢 应该坚守的",
-                  "anchor": "b:6e7635"
+                  "anchor": "b:556345",
+                  "sources": 0
                 },
                 {
                   "key": "5-2",
@@ -3991,7 +4077,8 @@
                   "chapterIndex": 5,
                   "index": 2,
                   "title": "🟢 应该强化的",
-                  "anchor": "b:e1df6d"
+                  "anchor": "b:58b48e",
+                  "sources": 0
                 },
                 {
                   "key": "5-3",
@@ -3999,7 +4086,8 @@
                   "chapterIndex": 5,
                   "index": 3,
                   "title": "🟡 应该放弃的",
-                  "anchor": "b:b5cdef"
+                  "anchor": "b:70ecb6",
+                  "sources": 0
                 },
                 {
                   "key": "5-4",
@@ -4007,7 +4095,8 @@
                   "chapterIndex": 5,
                   "index": 4,
                   "title": "🔴 数据不足的风险",
-                  "anchor": "b:e7b712"
+                  "anchor": "b:19d1ed",
+                  "sources": 0
                 },
                 {
                   "key": "6-1",
@@ -4015,12 +4104,13 @@
                   "chapterIndex": 6,
                   "index": 1,
                   "title": "概览",
-                  "anchor": "b:fb217a"
+                  "anchor": "b:65dee0",
+                  "sources": 0
                 }
               ],
               "blocks": [
                 {
-                  "anchor": "b:4b031c",
+                  "anchor": "b:50a340",
                   "type": "quote",
                   "index": 1,
                   "page": {
@@ -4041,10 +4131,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:3c0bc5",
+                  "anchor": "b:7617b6",
                   "type": "paragraph",
                   "index": 2,
                   "page": {
@@ -4065,10 +4156,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:ed74b0",
+                  "anchor": "b:2d9ebc",
                   "type": "table",
                   "index": 1,
                   "page": {
@@ -4089,6 +4181,7 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null,
                   "table": {
                     "header": [
@@ -4128,7 +4221,7 @@
                   }
                 },
                 {
-                  "anchor": "b:eb4a73",
+                  "anchor": "b:d7f49e",
                   "type": "code",
                   "index": 1,
                   "page": {
@@ -4149,10 +4242,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:f04582",
+                  "anchor": "b:fc493d",
                   "type": "paragraph",
                   "index": 2,
                   "page": {
@@ -4173,10 +4267,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:d5149a",
+                  "anchor": "b:7aeb5c",
                   "type": "code",
                   "index": 1,
                   "page": {
@@ -4197,10 +4292,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:f0e87a",
+                  "anchor": "b:84e023",
                   "type": "paragraph",
                   "index": 2,
                   "page": {
@@ -4221,10 +4317,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:e6c566",
+                  "anchor": "b:f6b6b6",
                   "type": "code",
                   "index": 1,
                   "page": {
@@ -4245,10 +4342,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:41e964",
+                  "anchor": "b:dee91f",
                   "type": "paragraph",
                   "index": 1,
                   "page": {
@@ -4269,10 +4367,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:078a3d",
+                  "anchor": "b:9a56b4",
                   "type": "table",
                   "index": 2,
                   "page": {
@@ -4293,6 +4392,7 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null,
                   "table": {
                     "header": [
@@ -4327,7 +4427,7 @@
                   }
                 },
                 {
-                  "anchor": "b:987b5c",
+                  "anchor": "b:1ebbec",
                   "type": "paragraph",
                   "index": 3,
                   "page": {
@@ -4348,10 +4448,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:f7c876",
+                  "anchor": "b:e55fbf",
                   "type": "paragraph",
                   "index": 4,
                   "page": {
@@ -4372,10 +4473,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:be6f16",
+                  "anchor": "b:3732b5",
                   "type": "list",
                   "index": 5,
                   "page": {
@@ -4396,10 +4498,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:d5e21b",
+                  "anchor": "b:3d1252",
                   "type": "quote",
                   "index": 6,
                   "page": {
@@ -4420,10 +4523,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:27daa1",
+                  "anchor": "b:5fbe3f",
                   "type": "list",
                   "index": 7,
                   "page": {
@@ -4444,10 +4548,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:3cb5ca",
+                  "anchor": "b:b06050",
                   "type": "list",
                   "index": 8,
                   "page": {
@@ -4468,10 +4573,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:9081e8",
+                  "anchor": "b:af35f3",
                   "type": "quote",
                   "index": 9,
                   "page": {
@@ -4492,10 +4598,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:6f733a",
+                  "anchor": "b:c11d50",
                   "type": "paragraph",
                   "index": 10,
                   "page": {
@@ -4516,10 +4623,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:095496",
+                  "anchor": "b:608b0f",
                   "type": "list",
                   "index": 11,
                   "page": {
@@ -4540,10 +4648,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:794c6d",
+                  "anchor": "b:08872e",
                   "type": "list",
                   "index": 12,
                   "page": {
@@ -4564,10 +4673,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:af4004",
+                  "anchor": "b:dfd0e9",
                   "type": "list",
                   "index": 13,
                   "page": {
@@ -4588,10 +4698,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:9904d0",
+                  "anchor": "b:5446be",
                   "type": "paragraph",
                   "index": 14,
                   "page": {
@@ -4612,10 +4723,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:922a7b",
+                  "anchor": "b:195bf4",
                   "type": "paragraph",
                   "index": 15,
                   "page": {
@@ -4636,10 +4748,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:802e5f",
+                  "anchor": "b:d7ad12",
                   "type": "paragraph",
                   "index": 16,
                   "page": {
@@ -4660,10 +4773,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:c227bf",
+                  "anchor": "b:88d393",
                   "type": "paragraph",
                   "index": 17,
                   "page": {
@@ -4684,10 +4798,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:6b414f",
+                  "anchor": "b:1f1633",
                   "type": "paragraph",
                   "index": 18,
                   "page": {
@@ -4708,10 +4823,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:e827b6",
+                  "anchor": "b:384d6c",
                   "type": "list",
                   "index": 19,
                   "page": {
@@ -4732,10 +4848,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:e7d4cb",
+                  "anchor": "b:0daa9a",
                   "type": "list",
                   "index": 20,
                   "page": {
@@ -4756,10 +4873,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:d5a875",
+                  "anchor": "b:f633e9",
                   "type": "list",
                   "index": 21,
                   "page": {
@@ -4780,10 +4898,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:5abadd",
+                  "anchor": "b:29c9e5",
                   "type": "heading",
                   "index": 1,
                   "page": {
@@ -4804,10 +4923,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:7e0749",
+                  "anchor": "b:2ce47e",
                   "type": "table",
                   "index": 2,
                   "page": {
@@ -4828,6 +4948,7 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null,
                   "table": {
                     "header": [
@@ -4867,7 +4988,7 @@
                   }
                 },
                 {
-                  "anchor": "b:ea6edb",
+                  "anchor": "b:ba04ba",
                   "type": "paragraph",
                   "index": 3,
                   "page": {
@@ -4888,10 +5009,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:59d492",
+                  "anchor": "b:a9fee9",
                   "type": "heading",
                   "index": 4,
                   "page": {
@@ -4912,10 +5034,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:23d042",
+                  "anchor": "b:dbd6a3",
                   "type": "table",
                   "index": 5,
                   "page": {
@@ -4936,6 +5059,7 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null,
                   "table": {
                     "header": [
@@ -4975,7 +5099,7 @@
                   }
                 },
                 {
-                  "anchor": "b:919c4d",
+                  "anchor": "b:943354",
                   "type": "paragraph",
                   "index": 6,
                   "page": {
@@ -4996,10 +5120,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:c82fc1",
+                  "anchor": "b:01973c",
                   "type": "heading",
                   "index": 7,
                   "page": {
@@ -5020,10 +5145,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:bd0dce",
+                  "anchor": "b:ff2c83",
                   "type": "table",
                   "index": 8,
                   "page": {
@@ -5044,6 +5170,7 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null,
                   "table": {
                     "header": [
@@ -5083,7 +5210,7 @@
                   }
                 },
                 {
-                  "anchor": "b:3c3fbf",
+                  "anchor": "b:50b5bc",
                   "type": "table",
                   "index": 1,
                   "page": {
@@ -5104,6 +5231,7 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null,
                   "table": {
                     "header": [
@@ -5161,7 +5289,7 @@
                   }
                 },
                 {
-                  "anchor": "b:88560d",
+                  "anchor": "b:f6da83",
                   "type": "code",
                   "index": 1,
                   "page": {
@@ -5182,10 +5310,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:0e8306",
+                  "anchor": "b:a10930",
                   "type": "code",
                   "index": 1,
                   "page": {
@@ -5206,10 +5335,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:069edf",
+                  "anchor": "b:109c60",
                   "type": "code",
                   "index": 1,
                   "page": {
@@ -5230,10 +5360,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:6e7635",
+                  "anchor": "b:556345",
                   "type": "list",
                   "index": 1,
                   "page": {
@@ -5254,10 +5385,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:a862e6",
+                  "anchor": "b:369019",
                   "type": "list",
                   "index": 2,
                   "page": {
@@ -5278,10 +5410,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:e1df6d",
+                  "anchor": "b:58b48e",
                   "type": "list",
                   "index": 1,
                   "page": {
@@ -5302,10 +5435,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:9394c8",
+                  "anchor": "b:3e6cc8",
                   "type": "list",
                   "index": 2,
                   "page": {
@@ -5326,10 +5460,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:b5cdef",
+                  "anchor": "b:70ecb6",
                   "type": "list",
                   "index": 1,
                   "page": {
@@ -5350,10 +5485,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:e7b712",
+                  "anchor": "b:19d1ed",
                   "type": "list",
                   "index": 1,
                   "page": {
@@ -5374,10 +5510,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:fb217a",
+                  "anchor": "b:65dee0",
                   "type": "paragraph",
                   "index": 1,
                   "page": {
@@ -5398,10 +5535,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:ee8565",
+                  "anchor": "b:376d26",
                   "type": "list",
                   "index": 2,
                   "page": {
@@ -5422,10 +5560,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:608a9f",
+                  "anchor": "b:9f9443",
                   "type": "list",
                   "index": 3,
                   "page": {
@@ -5446,10 +5585,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:21a719",
+                  "anchor": "b:150293",
                   "type": "list",
                   "index": 4,
                   "page": {
@@ -5470,10 +5610,11 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 },
                 {
-                  "anchor": "b:f5114b",
+                  "anchor": "b:d0c77f",
                   "type": "list",
                   "index": 5,
                   "page": {
@@ -5494,6 +5635,7 @@
                   "reason": null,
                   "locked": false,
                   "locked_by": null,
+                  "in_sources": false,
                   "deferred": null
                 }
               ],
@@ -5512,7 +5654,7 @@
           }
         },
         "target": {
-          "anchor": "b:987b5c",
+          "anchor": "b:1ebbec",
           "original_raw": "证据：标题端内容母题高度分散，没有单一受众画像。评论端\"通勤\"\"暴走\"\"上班\"高频出现，说明实际购买者偏向实用场景。",
           "doc": "02-gwtb"
         }
@@ -5537,18 +5679,18 @@
               "applied": [],
               "deferred_blocks": [
                 {
-                  "anchor": "b:c036b9",
+                  "anchor": "b:d66c0d",
                   "reason": "block_changed",
                   "base_sha256": "28035c20ab2a733b55baa7b952b29afa920e09e6ba42574d82e2d63cc763f385",
                   "disk_sha256": "9fe45e35ea036f287fdf298d48f622f7e7ecc14f46f597e5aa291a364a7b798d"
                 }
               ],
               "task_status": "review",
-              "sha256": "e181dd47cf213e97adb9f83c10f1151f641fafa10f0c0ae00a4f591d75e0f3a0"
+              "sha256": "45753c4ba778208196a3d889a370b0832c53d9d2b01875b814e4cb5117d757a3"
             },
             "conflicts": {
               "count": 1,
-              "anchor": "b:c036b9",
+              "anchor": "b:d66c0d",
               "reason": "block_changed",
               "disk_raw": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（人改：更短）",
               "model_content": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（模型改：收紧表述）"
@@ -5615,8 +5757,8 @@
               "a_raw": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（模型改：收紧表述）",
               "b_raw": "- **画面腿无声是设计要求**，不是缺陷。若有校验工具报\"成片没有音频流\"，对这条腿属预期结果。（人改 B：先改一版）（人改 B：待核对期间再改）",
               "changed_anchors": [
-                "b:c036b9",
-                "b:c9445a"
+                "b:d66c0d",
+                "b:d17ded"
               ],
               "untouched_blocks": 7,
               "total_blocks": 9,
@@ -5630,8 +5772,8 @@
           "name": "第 1 遍：只有 A、B 两块变化，其余块逐字不动",
           "evidence": {
             "changed_anchors": [
-              "b:c036b9",
-              "b:c9445a"
+              "b:d66c0d",
+              "b:d17ded"
             ],
             "untouched_blocks": 7,
             "total_blocks": 9,
@@ -5649,18 +5791,18 @@
               "applied": [],
               "deferred_blocks": [
                 {
-                  "anchor": "b:6e5cf4",
+                  "anchor": "b:caa4db",
                   "reason": "block_changed",
                   "base_sha256": "28035c20ab2a733b55baa7b952b29afa920e09e6ba42574d82e2d63cc763f385",
                   "disk_sha256": "9fe45e35ea036f287fdf298d48f622f7e7ecc14f46f597e5aa291a364a7b798d"
                 }
               ],
               "task_status": "review",
-              "sha256": "285403ce94f253e4a115a9fef518c7bf12ef172f27c1894d41ae9f67c51e2cb2"
+              "sha256": "810522b19902f08d28a84e65948c815bbe904df578e733f7990e21f088636b1f"
             },
             "conflicts": {
               "count": 1,
-              "anchor": "b:6e5cf4",
+              "anchor": "b:caa4db",
               "reason": "block_changed",
               "disk_raw": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（人改：更短）",
               "model_content": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（模型改：收紧表述）"
@@ -5727,8 +5869,8 @@
               "a_raw": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（模型改：收紧表述）",
               "b_raw": "- **画面腿无声是设计要求**，不是缺陷。若有校验工具报\"成片没有音频流\"，对这条腿属预期结果。（人改 B：先改一版）（人改 B：待核对期间再改）",
               "changed_anchors": [
-                "b:6e5cf4",
-                "b:0b67d5"
+                "b:caa4db",
+                "b:35c90a"
               ],
               "untouched_blocks": 7,
               "total_blocks": 9,
@@ -5742,8 +5884,8 @@
           "name": "第 2 遍：只有 A、B 两块变化，其余块逐字不动",
           "evidence": {
             "changed_anchors": [
-              "b:6e5cf4",
-              "b:0b67d5"
+              "b:caa4db",
+              "b:35c90a"
             ],
             "untouched_blocks": 7,
             "total_blocks": 9,
@@ -5775,8 +5917,8 @@
       "passes": [
         {
           "doc": "05-delivery-notes.md",
-          "anchor_a": "b:c036b9",
-          "anchor_b": "b:c9445a",
+          "anchor_a": "b:d66c0d",
+          "anchor_b": "b:d17ded",
           "page_a": {
             "key": "2-1",
             "chapter": "怎么叠",
@@ -5797,12 +5939,12 @@
             "feedback": {
               "status": 200,
               "ok": true,
-              "task_id": "t:cffd1eec6200",
+              "task_id": "t:a0a6953de1e9",
               "task_status": "pending",
               "baseline_sha256": "28035c20ab2a733b55baa7b952b29afa920e09e6ba42574d82e2d63cc763f385",
               "dispatch": {
                 "channel": "inbox",
-                "task_id": "t:cffd1eec6200",
+                "task_id": "t:a0a6953de1e9",
                 "status": "pending",
                 "path": "<tmp>"
               }
@@ -5817,7 +5959,7 @@
               "ok": true,
               "task_status": "processing",
               "locked_blocks": [
-                "b:c036b9"
+                "b:d66c0d"
               ]
             },
             "blocked_edit_a": {
@@ -5837,20 +5979,20 @@
               "applied": [],
               "deferred_blocks": [
                 {
-                  "anchor": "b:c036b9",
+                  "anchor": "b:d66c0d",
                   "reason": "block_changed",
                   "base_sha256": "28035c20ab2a733b55baa7b952b29afa920e09e6ba42574d82e2d63cc763f385",
                   "disk_sha256": "9fe45e35ea036f287fdf298d48f622f7e7ecc14f46f597e5aa291a364a7b798d"
                 }
               ],
               "task_status": "review",
-              "sha256": "e181dd47cf213e97adb9f83c10f1151f641fafa10f0c0ae00a4f591d75e0f3a0"
+              "sha256": "45753c4ba778208196a3d889a370b0832c53d9d2b01875b814e4cb5117d757a3"
             },
             "conflicts": {
               "status": 200,
               "count": 1,
               "only_a": true,
-              "anchor": "b:c036b9",
+              "anchor": "b:d66c0d",
               "reason": "block_changed",
               "disk_raw": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（人改：更短）",
               "model_content": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（模型改：收紧表述）"
@@ -5885,8 +6027,8 @@
               "a_raw": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（模型改：收紧表述）",
               "b_raw": "- **画面腿无声是设计要求**，不是缺陷。若有校验工具报\"成片没有音频流\"，对这条腿属预期结果。（人改 B：先改一版）（人改 B：待核对期间再改）",
               "changed_anchors": [
-                "b:c036b9",
-                "b:c9445a"
+                "b:d66c0d",
+                "b:d17ded"
               ],
               "untouched_blocks": 7,
               "total_blocks": 9,
@@ -5904,8 +6046,8 @@
         },
         {
           "doc": "05-delivery-notes.md",
-          "anchor_a": "b:6e5cf4",
-          "anchor_b": "b:0b67d5",
+          "anchor_a": "b:caa4db",
+          "anchor_b": "b:35c90a",
           "page_a": {
             "key": "2-1",
             "chapter": "怎么叠",
@@ -5926,12 +6068,12 @@
             "feedback": {
               "status": 200,
               "ok": true,
-              "task_id": "t:f35872c79ef0",
+              "task_id": "t:70dbc0c6571a",
               "task_status": "pending",
               "baseline_sha256": "28035c20ab2a733b55baa7b952b29afa920e09e6ba42574d82e2d63cc763f385",
               "dispatch": {
                 "channel": "inbox",
-                "task_id": "t:f35872c79ef0",
+                "task_id": "t:70dbc0c6571a",
                 "status": "pending",
                 "path": "<tmp>"
               }
@@ -5946,7 +6088,7 @@
               "ok": true,
               "task_status": "processing",
               "locked_blocks": [
-                "b:6e5cf4"
+                "b:caa4db"
               ]
             },
             "blocked_edit_a": {
@@ -5966,20 +6108,20 @@
               "applied": [],
               "deferred_blocks": [
                 {
-                  "anchor": "b:6e5cf4",
+                  "anchor": "b:caa4db",
                   "reason": "block_changed",
                   "base_sha256": "28035c20ab2a733b55baa7b952b29afa920e09e6ba42574d82e2d63cc763f385",
                   "disk_sha256": "9fe45e35ea036f287fdf298d48f622f7e7ecc14f46f597e5aa291a364a7b798d"
                 }
               ],
               "task_status": "review",
-              "sha256": "285403ce94f253e4a115a9fef518c7bf12ef172f27c1894d41ae9f67c51e2cb2"
+              "sha256": "810522b19902f08d28a84e65948c815bbe904df578e733f7990e21f088636b1f"
             },
             "conflicts": {
               "status": 200,
               "count": 1,
               "only_a": true,
-              "anchor": "b:6e5cf4",
+              "anchor": "b:caa4db",
               "reason": "block_changed",
               "disk_raw": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（人改：更短）",
               "model_content": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（模型改：收紧表述）"
@@ -6014,8 +6156,8 @@
               "a_raw": "1. **两条视频对齐是零偏移的**：同帧率（30fps）、同帧数（4992）、同起点（0 帧起）。把两条轨道的第 0 帧对齐即可，不需要补偿。（模型改：收紧表述）",
               "b_raw": "- **画面腿无声是设计要求**，不是缺陷。若有校验工具报\"成片没有音频流\"，对这条腿属预期结果。（人改 B：先改一版）（人改 B：待核对期间再改）",
               "changed_anchors": [
-                "b:6e5cf4",
-                "b:0b67d5"
+                "b:caa4db",
+                "b:35c90a"
               ],
               "untouched_blocks": 7,
               "total_blocks": 9,
@@ -6043,7 +6185,7 @@
           "name": "报告含四条判据、语料与回退段",
           "evidence": {
             "report_path": "<repo>/evals/acceptance/REPORT.md",
-            "record_path": "<repo>/evals/acceptance/records/2026-11-20T10-25-59Z.json"
+            "record_path": "<repo>/evals/acceptance/records/2026-11-20T10-31-48Z.json"
           }
         },
         {
@@ -6052,7 +6194,7 @@
           "name": "报告含本次运行时间",
           "evidence": {
             "report_path": "<repo>/evals/acceptance/REPORT.md",
-            "record_path": "<repo>/evals/acceptance/records/2026-11-20T10-25-59Z.json"
+            "record_path": "<repo>/evals/acceptance/records/2026-11-20T10-31-48Z.json"
           }
         },
         {
@@ -6061,7 +6203,7 @@
           "name": "报告列出十份语料",
           "evidence": {
             "report_path": "<repo>/evals/acceptance/REPORT.md",
-            "record_path": "<repo>/evals/acceptance/records/2026-11-20T10-25-59Z.json"
+            "record_path": "<repo>/evals/acceptance/records/2026-11-20T10-31-48Z.json"
           }
         }
       ]
@@ -6107,5 +6249,5 @@
       }
     }
   },
-  "record_path": "evals/acceptance/records/2026-11-20T10-25-59Z.json"
+  "record_path": "evals/acceptance/records/2026-11-20T10-31-48Z.json"
 }
