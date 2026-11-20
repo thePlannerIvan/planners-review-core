@@ -30,6 +30,7 @@ import {
   newBatchId, removeNote as dropNote, reopenNote as reopenNoteEntry, settleModelChange,
 } from './doc-notes.mjs';
 import { atomicWrite } from './doc-io.mjs';
+import { buildDiff, readBaseline, structureOf, writeBaseline } from './doc-diff.mjs';
 import { LEGACY_READONLY_MESSAGE, legacySnapshot, readLegacyMaster } from './doc-legacy.mjs';
 import { sha256 } from '../content-review-contract.mjs';
 
@@ -850,6 +851,13 @@ function submitNotes(docPath, payload, board) {
     const repaired = persistRepairs(docPath, document);
     // 批次号先定下来再建任务：任务文案里的批次号是模型把回执与 notes.json 对上的锚。
     const batch = newBatchId();
+    // 结构 diff 的基准是模型上次取稿时看到的版本；没取过稿就无从对比，四个列表都为空。
+    const diff = buildDiff({
+      batch,
+      before: readBaseline(docPath),
+      after: structureOf(repaired.parsed),
+      orphanNotes: orphaned.map(({ note, text, reason }) => ({ note, text, reason })),
+    });
     const task = board.submit({
       scope: 'blocks',
       page: null,
@@ -865,6 +873,8 @@ function submitNotes(docPath, payload, board) {
         .map((block) => ({ anchor: block.anchor, sha256: sha256(block.raw) })),
       // 批次号也结构化存进任务：归档按它认出「这批里哪几条被改到」，不解析文案。
       batch,
+      // 结构 diff 随任务一起给模型：它醒来读 tasks 就能看到人动过什么，不必猜。
+      diff,
     });
     // 只提交有目标的那些；失去目标的留在草稿里，等它自己重新选块。
     const { notes: committed } = markDraftsCommitted(entries.map(({ note }) => note), { batch });
@@ -876,9 +886,27 @@ function submitNotes(docPath, payload, board) {
       task,
       committed: committed.map((note) => note.id),
       orphaned,
+      diff,
       notes: mergeArchived(store, state.notes),
     };
   });
+}
+
+/**
+ * 模型取稿时刷新结构 diff 的基准：它这次看到的版本，就是下一次提交的比较起点。
+ *
+ * 只读结构、不写正文；补锚点仍归打开时那次修补（拿不到写锁就退回只读，
+ * 取稿不该因为另一个工作台正在保存而失败）。旧 JSON 主稿只读，没有基准。
+ */
+function takeBaseline(docPath) {
+  let document;
+  try {
+    document = withWriteLock(docPath, () => openDocument(docPath));
+  } catch (error) {
+    if (error?.code !== 'locked') throw error;
+    document = readDocument(docPath);
+  }
+  return writeBaseline(docPath, { sha256: document.hash, parsed: document.parsed });
 }
 
 /** 启动要拿写锁；另一个工作台正在写盘时等它一下，而不是把这次打开直接判死。 */
@@ -952,6 +980,8 @@ export async function createDocSession({ docPath, faults = null, persistent = tr
     addNote: (payload) => guarded(() => addNotes(file, payload)),
     deleteNote: (payload) => guarded(() => deleteNote(file, payload)),
     submitNotes: (payload) => guarded(() => submitNotes(file, payload, board)),
+    // 模型取稿时刷新结构 diff 的基准；旧 JSON 主稿只读，没有基准可记。
+    takeBaseline: () => (legacy ? null : takeBaseline(file)),
     reopenNote: (payload) => guarded(() => reopenNote(file, payload)),
     // 侧栏每 3 秒轮询一次锁：读之前先读回磁盘，模型 CLI 在另一个进程里加的锁才看得见。
     tasks: () => { board.refresh(); return { ok: true, contract: TASK_CONTRACT, tasks: board.list() }; },

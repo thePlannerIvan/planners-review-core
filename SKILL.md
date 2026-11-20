@@ -158,12 +158,14 @@ Proposal 与 By-page 调用 `scripts/render-content-review.mjs` 的 `renderConte
 | `contracts/review-surface.schema.json` | `review-surface/2.0.0` 契约（**唯一真相源**；含可选的 `annotate` 开关） |
 | `contracts/planners-doc.md` | `planners-doc/2` 文档契约：文档头（文档名只从 `project` 出）、层级（`#` 章节 / `##` 页 / `###`–`######` 标题块）、七种块、锚点、页末引用即出处、页为空、图片、`/1`→`/2` 迁移；样例在 `contracts/examples/` |
 | `contracts/planners-doc-task.md` | `planners-doc-task/1` 块级反馈任务：只带块身份与内容指纹、任务状态机、锁、模型写回 / 待核对 / journal 判据；无插件派发的本地收件箱与旧 JSON 只读也在这里 |
+| `contracts/planners-doc-diff.md` | `planners-doc-diff/1` 结构 diff：章节 / 页 / 块相对「模型上次取稿时看到的版本」的新增、删除、改名、移动、合并、拆分，目标块被删的批注进 `orphan_notes`；基准 `planners-doc-baseline/1` 的刷新时机也在这里 |
 | `contracts/doc-assets.md` | `doc-assets/1` 图资产清单：正文派生、同名清单、换文件留上一版指纹；不碰 bypage 的素材取舍 |
 | `scripts/doc-inbox.mjs` | 模型侧收件箱命令：`list` 未处理任务（块身份 + 指纹 + 意见），`take` 把 pending 标成 processing |
 | `scripts/doc-surface.mjs` | 为一份 `planners-doc/2` 工作稿生成侧栏 `review-surface`（`doc-workbench/1`）与自包含入口；同 id 再开 = 刷新 |
 | `scripts/doc-command.mjs` | 侧栏命令后端（保存 / 派发 / 裁决 / 看锁）与模型侧 CLI（`tasks` / `claim` / `complete` / `patch` / `conflicts`），共用 `lib/doc-session.mjs` |
 | `scripts/lib/doc-session.mjs` | 两个入口共用的块级内核：解析、块级写、journal、锁与待核对的唯一实现 |
 | `scripts/lib/doc-boards.mjs` | 任务板与待核对的落盘（`.doc-workbench/state/`），让本地页 / 侧栏 / 模型 CLI 跨进程看到同一组锁 |
+| `scripts/lib/doc-diff.mjs` | 结构 diff 的唯一实现：基准落盘 / 读回，页匹配（标题 + 块锚点归属）与章节 / 页 / 块的变化判定，`orphan_notes` 原样带出 |
 | `scripts/lib/doc-history.mjs` | 历史版本：每次写盘前存上一版，按文档分桶；列出与按档恢复（恢复也是一次新编辑） |
 | `scripts/lib/doc-io.mjs` | 旁路目录与原子写（fsync + rename）的唯一实现；journal / 任务板 / 收件箱 / 资产清单 / 历史共用 |
 | `assets/workbench/doc-transport.js` | 页面到存储的唯一通道：侧栏走 `review.command` / `review.wake` / `review.asset`，无插件走 `/api/*` |
@@ -191,6 +193,7 @@ Proposal 与 By-page 调用 `scripts/render-content-review.mjs` 的 `renderConte
 | `evals/test_doc_migration.mjs` | 迁移回归（6 条）：真实 `/1` 样例迁到 `/2`（锚点与块 raw 不动、迁移后通过校验）、`--sources-to-quote`、非 `/1` 拒绝、报错不阻断、用法错误 |
 | `evals/test_doc_workbench.mjs` | 文字工作台回归（28 条）：只改一块、未编辑块逐字不动、补锚点幂等、退化显示、行内序列化；页内 / 跨页移动块、整页重排、拒绝空页空章节、锁定 / 待核对块不可拖动、历史按次存档与恢复、落点算法与目录 / 句柄接线、一处事实一个来源 |
 | `evals/test_doc_feedback.mjs` | 块级反馈与派发回归（6 条）：任务只带块身份与指纹、整页 / 整份范围、锁定期间改别的块、完成后解锁、任务状态机、半句吸成整块 |
+| `evals/test_doc_diff.mjs` | 结构 diff 回归（13 条）：模型取稿刷新基准、提交批次随附 `planners-doc-diff/1`、空 diff 照常提交、章节 / 页 / 块的新增删除改名移动合并拆分、孤儿批注、页面轮询不冲基准、模型 CLI 用 `tasks` 读得到 |
 | `evals/test_doc_assets.mjs` | 图块与资产回归（10 条）：位图 / SVG 加载与脚本隔离、未能加载文案、放大只读；清单派生 / 新增登记 / 换图留上一版；锁定图块拒绝替换；清单漂移四类；两份样例清单 |
 | `evals/test_doc_conflict.mjs` | 待核对与并发回归（5 条）：同块双改只锁该块其余落盘、裁决两个方向、跨块并发按块合并、journal 崩溃恢复、页面裁决入口 |
 | `evals/test_doc_dispatch.mjs` | 无插件派发与旧项目只读回归（5 条）：收件箱落盘 / 读回 / 重复写不重复、pending→processing、有插件与无插件同形、旧 JSON 只读拒绝且磁盘不变、界面状态如实 |

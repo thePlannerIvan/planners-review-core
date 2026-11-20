@@ -27,6 +27,15 @@
     { "anchor": "b:7b057d", "sha256": "9f2c…" },
     { "anchor": "b:81c4d0", "sha256": "41aa…" }
   ],
+  "diff": {
+    "contract": "planners-doc-diff/1",
+    "batch": "b:9f21c4",
+    "baseline_sha256": "9f2c…",
+    "chapters": [],
+    "pages": [],
+    "blocks": [],
+    "orphan_notes": []
+  },
   "status": "pending",
   "created_at": "2026-11-19T12:00:00.000Z",
   "started_at": null,
@@ -43,9 +52,13 @@
 | `text` | 人的意见原文，非空；是「要模型改什么」，不是批准或保存 |
 | `doc` | 任务对应的文档：绝对路径 + 文档头三元组。模型据此读文件 |
 | `blocks` | 任务绑定的块，**只有锚点与 `sha256(block.raw)`**。顺序即提交顺序/文档顺序 |
+| `diff` | 批注批次附带的 `planners-doc-diff/1`：章节 / 页 / 块相对「模型上次取稿时看到的版本」的结构变化。块级反馈（`/api/feedback`）没有批次，为 `null` |
 | `status` | `pending` → `processing` → `review`（有待核对块）→ `done` |
 | `locked_blocks` | 这条任务此刻还占着哪些块。`processing` 时是 `task.blocks` 的全部；写回后只剩待核对的块；`done` 为空 |
 | `created_at` / `started_at` / `finished_at` | ISO 时间；后两个在 claim / complete 时写入 |
+
+`diff` 的形状、动作与基准见 `contracts/planners-doc-diff.md`：它只说结构哪里动了，不带正文；
+模型读 `tasks` 时一并读到，不必去猜人动过什么。目标块已被删的批注进 `diff.orphan_notes`，不静默消失。
 
 `sha256(block.raw)` 是**提交那一刻**的块内容指纹，不是当前磁盘指纹。模型写回时由服务端拿它和当前磁盘指纹逐块比对：一致才应用，不一致进待核对，不静默覆盖（第 4 节）。
 
@@ -180,8 +193,8 @@ POST /api/conflict/decide
 ```
 
 - 由任务 id `t:<12 位十六进制>` 派生，文件名把 `:` 换成 `-` 以便跨平台。
-- 文件内容就是第 1 节的任务对象（含 `contract` / `id` / `blocks[].anchor` / `blocks[].sha256` / `text`），
-  不另包一层、不复制块 raw 或全文。
+- 文件内容就是第 1 节的任务对象（含 `contract` / `id` / `blocks[].anchor` / `blocks[].sha256` / `text`，
+  批注批次还含 `diff`），不另包一层、不复制块 raw 或全文。
 - **一条任务一个文件**：重复派发同一条任务只覆盖同一个文件，不产生第二个条目。
 - 收件箱是任务的落盘副本；任务板（含锁与待核对）落在 `.doc-workbench/state/`。模型在工作台运行时参与锁与写回：
   本地页走 `/api/task/claim`、`/api/patch`；侧栏或工作台不在时用 `scripts/doc-command.mjs <surface> claim|patch`，

@@ -41,7 +41,13 @@ call using one of them is rejected with a readable reason. Everything else the
 page needs is forwarded: <!-- routes:page -->`open`, `block`, `split`, `merge`, `reorder`,
 `asset_replace`, `feedback`, `tasks`, `conflicts`, `decide`, `history`, `restore`,
 `notes`, `note_add`, `note_delete`, `note_reopen`, `note_submit`<!-- /routes:page -->.
-`tasks` and `conflicts` are readable from both sides. `doc-command.mjs` exports
+`tasks` and `conflicts` are readable from both sides. When `tasks` or `open` is
+called with model identity (`browser: false`, i.e. the CLI), the backend also
+refreshes the structural-diff baseline (`.doc-workbench/state/baseline.json`);
+the browser's 3-second `tasks` poll does not, or the baseline would always chase
+the newest revision. The next batch submit carries a `planners-doc-diff/1` in the
+task's `diff` field (see `contracts/planners-doc-diff.md`), so reading `tasks` is
+the only read entry the model needs. `doc-command.mjs` exports
 that one route table (`DOC_ROUTES`) and identity set (`DOC_IDENTITY_ROUTES`);
 `review-command.mjs` imports the identity set, so the transport never keeps a
 second list of action names.
