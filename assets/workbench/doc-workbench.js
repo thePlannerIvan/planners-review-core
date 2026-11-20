@@ -682,6 +682,7 @@ function wireOverallFeedback() {
 // 直接测同一份），这里只负责把分组画出来、把动作接到同一条 route 词汇上。
 let notesState = [];
 let notesLoaded = false;
+let notesError = null;
 const expandedBubbles = new Set();
 
 const blockOrder = () => new Map((snapshot?.blocks ?? []).map((block, index) => [block.anchor, index]));
@@ -795,7 +796,12 @@ function renderNotes() {
   const notesSubmit = $('#notesSubmit');
   const drawer = DocNotes.drawer(notesState, { pages: snapshot?.pages ?? [], order: blockOrder() });
   list.replaceChildren();
-  if (!notesLoaded) {
+  if (notesError) {
+    const failed = document.createElement('p');
+    failed.className = 'notes-empty is-error';
+    failed.textContent = `读不到批注 · ${notesError}`;
+    list.append(failed);
+  } else if (!notesLoaded) {
     const loading = document.createElement('p');
     loading.className = 'notes-empty';
     loading.textContent = '正在读取批注…';
@@ -813,21 +819,29 @@ function renderNotes() {
   const readonly = Boolean(snapshot?.readonly);
   const drafts = drawer.draft.count;
   summary.textContent = drafts ? `${drafts} 条草稿` : '没有草稿';
-  notesSubmit.disabled = readonly || drafts === 0;
+  notesSubmit.disabled = readonly || Boolean(notesError) || drafts === 0;
   notesSubmit.textContent = drafts ? `提交给模型修改 · ${drafts}` : '提交给模型修改';
   hint.textContent = readonly
     ? '只读 · 旧 JSON 主稿不能提批注'
-    : drafts
-      ? '草稿保存在 .doc-workbench/notes.json；提交只建任务，原文未改'
-      : '草稿会留在工作目录里，关掉浏览器回来还在';
+    : notesError
+      ? '批注文件读不出来：先修好 .doc-workbench/notes.json，别让它被空草稿覆盖'
+      : drafts
+        ? '草稿保存在 .doc-workbench/notes.json；提交只建任务，原文未改'
+        : '草稿会留在工作目录里，关掉浏览器回来还在';
 }
 
 async function loadNotes() {
   try {
     const receipt = await transport.notes();
-    if (receipt.ok) notesState = receipt.notes ?? [];
-  } catch {
-    // 读不到批注不该挡住正文：抽屉会显示空，提交按钮保持禁用。
+    if (receipt.ok) {
+      notesState = receipt.notes ?? [];
+      notesError = null;
+    } else {
+      // 坏文件不能显示成「还没有批注」：那会让人以为草稿丢了，还会用空草稿覆盖它。
+      notesError = receipt.error ?? `读不到批注（${receipt.status ?? '未知错误'}）`;
+    }
+  } catch (error) {
+    notesError = error.message;
   }
   notesLoaded = true;
   renderNotes();

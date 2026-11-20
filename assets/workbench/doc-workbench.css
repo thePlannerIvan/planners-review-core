@@ -50,7 +50,7 @@ body.is-readonly .page-handle { display: none; }
 
 .workbench {
   display: flex; align-items: flex-start; gap: 8px;
-  max-width: 1080px; margin: 0 auto;
+  max-width: 1360px; margin: 0 auto;
 }
 
 /* 左侧目录：章节 → 页，两级；页号来自当前顺序，不写进正文。 */
@@ -433,7 +433,6 @@ body.is-reordering .doc-block:hover { background: transparent; }
 body.has-image-viewer { overflow: hidden; }
 
 /* 批注抽屉：默认展开在正文右侧；草稿按页攒，底部一次提交整批。 */
-.workbench { max-width: 1360px; }
 .notes-panel {
   position: sticky; top: 53px; flex: none;
   display: flex; flex-direction: column;
@@ -456,6 +455,7 @@ body.has-image-viewer { overflow: hidden; }
 .notes-body { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 12px 14px; }
 .notes-body[hidden] { display: none; }
 .notes-empty { margin: 6px 2px; font-size: 12px; line-height: 1.7; color: var(--muted); }
+.notes-empty.is-error { color: var(--danger); }
 .note-state + .note-state { margin-top: 14px; }
 .note-state-title {
   margin: 0 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .06em;

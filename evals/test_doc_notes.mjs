@@ -151,6 +151,7 @@ test('底部一次提交整批：一条任务装全，草稿清空，该批进�
   assert.equal(task.text.includes('这句太虚') && task.text.includes('换个动词') && task.text.includes('补一个数字'), true,
     '任务文案要装全整批，模型一次看齐');
   assert.match(task.text, /b:292f6c/);
+  assert.ok(task.text.includes(submitted.body.batch), '任务文案带上批次号：模型能把回执里的批次和 notes.json 里的 batch 对上');
 
   const saved = readNotesFile(notesPath);
   assert.deepEqual(saved.notes.map((note) => note.state), ['committed', 'committed', 'committed']);
@@ -279,7 +280,9 @@ test('侧栏桥与本地宿主：同一串批注操作同义，拒绝也同码�
   const bridgeSubmit = await api.submitNotes({});
   assert.equal(localSubmit.ok, true, JSON.stringify(localSubmit));
   assert.equal(bridgeSubmit.ok, true, JSON.stringify(bridgeSubmit));
-  assert.equal(localSubmit.task.text, bridgeSubmit.task.text, '两条路的批次文案一字不差');
+  const withoutBatch = (text) => text.replace(/b:[0-9a-f]+/g, 'b:x');
+  assert.equal(withoutBatch(localSubmit.task.text), withoutBatch(bridgeSubmit.task.text),
+    '两条路的批次文案一字不差（批次号每次生成，去掉再看）');
   assert.deepEqual(localSubmit.task.blocks, bridgeSubmit.task.blocks, '两条路绑同样的块与指纹');
   assert.deepEqual(localSubmit.committed.length, bridgeSubmit.committed.length);
   assert.equal(localSubmit.dispatch.channel, 'inbox', '本地宿主落收件箱');

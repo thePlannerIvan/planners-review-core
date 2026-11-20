@@ -27,7 +27,7 @@ import { createFileBoardStores } from './doc-boards.mjs';
 import { HISTORY_CONTRACT, listVersions, readVersion } from './doc-history.mjs';
 import {
   MAX_NOTE_TEXT, NOTES_CONTRACT, commitDrafts as markDraftsCommitted, createNoteStore, draftNote, draftsOf,
-  removeNote as dropNote,
+  newBatchId, removeNote as dropNote,
 } from './doc-notes.mjs';
 import { atomicWrite } from './doc-io.mjs';
 import { LEGACY_READONLY_MESSAGE, legacySnapshot, readLegacyMaster } from './doc-legacy.mjs';
@@ -741,8 +741,8 @@ function deleteNote(docPath, payload) {
 }
 
 /** 批次文案：模型要在一条任务里看全，所以按文档顺序把每条落到它的块锚点上。 */
-function batchTextOf(entries) {
-  const lines = [`【批注批次】共 ${entries.length} 条，按块处理；块外一个字都不要动。`];
+function batchTextOf(entries, batch) {
+  const lines = [`【批注批次 ${batch}】共 ${entries.length} 条，按块处理；块外一个字都不要动。`];
   for (const { note } of entries) lines.push(`- ${note.anchor}：${note.text}`);
   return lines.join('\n');
 }
@@ -780,10 +780,12 @@ function submitNotes(docPath, payload, board) {
       fail('block_locked', `这些块正由模型处理，等它完成再提交：${held.map(({ block }) => block.anchor).join('、')}`);
     }
     const repaired = persistRepairs(docPath, document);
+    // 批次号先定下来再建任务：任务文案里的批次号是模型把回执与 notes.json 对上的锚。
+    const batch = newBatchId();
     const task = board.submit({
       scope: 'blocks',
       page: null,
-      text: batchTextOf(entries),
+      text: batchTextOf(entries, batch),
       doc: {
         path: docPath,
         contract: repaired.parsed.front.contract ?? null,
@@ -795,7 +797,7 @@ function submitNotes(docPath, payload, board) {
         .map((block) => ({ anchor: block.anchor, sha256: sha256(block.raw) })),
     });
     // 只提交有目标的那些；失去目标的留在草稿里，等它自己重新选块。
-    const { batch, notes: committed } = markDraftsCommitted(entries.map(({ note }) => note));
+    const { notes: committed } = markDraftsCommitted(entries.map(({ note }) => note), { batch });
     store.save(state);
     return {
       ok: true,
