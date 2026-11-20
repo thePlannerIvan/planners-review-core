@@ -4,6 +4,13 @@
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 
+// 右缘批注图标：与左缘抓手同一套笔画（1.7、圆头、muted 色、14px 高）。
+const FEEDBACK_ICON = '<svg viewBox="0 0 14 14" width="14" height="14" fill="none" '
+  + 'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" '
+  + 'aria-hidden="true" focusable="false">'
+  + '<path d="M4 2.4h6a1.6 1.6 0 0 1 1.6 1.6v4A1.6 1.6 0 0 1 10 9.6H6.4L4 11.8V9.6h0A1.6 1.6 0 0 1 2.4 8V4A1.6 1.6 0 0 1 4 2.4Z"/>'
+  + '</svg>';
+
 const TOOLBAR_HTML = `
   <button type="button" data-inline="bold" title="加粗" aria-label="加粗"><strong>B</strong></button>
   <button type="button" data-inline="italic" title="斜体" aria-label="斜体"><em>I</em></button>
@@ -12,6 +19,7 @@ const TOOLBAR_HTML = `
 
 let snapshot = null;
 let transport = null; // 同一份页面两种宿主：本地 /api 或侧栏 command（doc-transport.js）
+let layout = null; // 三档布局 + 折叠键 + 滚动毛玻璃（doc-layout.js）
 let saveTimer = null;
 let saveQueue = Promise.resolve();
 const blockByAnchor = new Map();
@@ -172,7 +180,7 @@ function beginStructureEdit(node, spec) {
 
 async function renameStructure(node, spec, title, original) {
   await flushSaves();
-  status('保存中', true);
+  status('保存中');
   let receipt;
   try {
     receipt = await transport.structure({ ...spec, title, base_sha256: snapshot.sha256 });
@@ -226,7 +234,7 @@ function chapterAddButton(chapter) {
 async function addStructure(body) {
   if (snapshot?.readonly) return;
   await flushSaves();
-  status('保存中', true);
+  status('保存中');
   let receipt;
   try {
     receipt = await transport.structure({ ...body, base_sha256: snapshot.sha256 });
@@ -468,7 +476,7 @@ function attachBlockFeedback(node, block) {
   button.setAttribute('data-feedback-block', block.anchor);
   button.title = '对这一块提反馈';
   button.setAttribute('aria-label', '对这一块提反馈');
-  button.textContent = '反馈';
+  button.innerHTML = FEEDBACK_ICON;
   button.addEventListener('mousedown', (event) => event.preventDefault());
   button.addEventListener('click', (event) => {
     event.preventDefault();
@@ -535,7 +543,8 @@ function renderStructuredBlocks(root) {
         pageBlocks.push(blocks[cursor]);
         cursor += 1;
       }
-      // 空页：第一块是渲染层的待定块，输入后才落盘（文件里没有占位正文）。
+      // 空页没有块，也就没有出处区：只补一个渲染层的可写第一块。
+      // 27 的写法会先渲染出处条再把第一块接在后面，空页的第一段会掉到出处下方。
       if (empty) root.append(pendingFirstBlock(page));
       else renderPageBlocks(root, page, pageBlocks);
       root.append(pageAddButton(page));
@@ -1382,13 +1391,7 @@ async function submitNotes() {
 
 function wireNotes() {
   $('#notesSubmit').addEventListener('click', () => { void submitNotes(); });
-  $('#notesCollapse').addEventListener('click', (event) => {
-    const body = $('#notesList');
-    const collapsed = body.hidden;
-    body.hidden = !collapsed;
-    event.currentTarget.setAttribute('aria-expanded', String(collapsed));
-    event.currentTarget.textContent = collapsed ? '收起' : '展开';
-  });
+  // 折叠键在顶栏，状态与窄档滑出层都归 DocLayout；这里只接提交与写入。
   $('#feedbackNote').addEventListener('click', () => { void addNoteFromComposer(); });
 }
 
@@ -1736,7 +1739,7 @@ async function persist(node) {
     return;
   }
   if (content === entry.block.raw && !node.__dirty) return;
-  status('保存中', true);
+  status('保存中');
   let receipt;
   try {
     receipt = await transport.saveBlock({
@@ -2145,7 +2148,14 @@ function renderAll() {
   renderNotes();
 }
 
+function wireLayout() {
+  if (typeof DocLayout === 'undefined') return;
+  layout = DocLayout.createLayout({ document });
+  layout.bind();
+}
+
 async function boot() {
+  wireLayout();
   wireToolbar();
   wireHistory();
   wireComposer();

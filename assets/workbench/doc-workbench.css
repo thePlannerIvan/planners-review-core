@@ -1,38 +1,104 @@
 :root {
-  --ink: #1f2328;
-  --muted: #6b7280;
-  --line: #e5e7eb;
-  --surface: #ffffff;
-  --canvas: #f7f7f5;
-  --hover: #f1f2f0;
-  --accent: #2f6f4f;
-  --danger: #b42318;
+  color-scheme: light;
+  /* 三层底色：底（空间）/ 纸（正在写的东西）/ 凹槽（纸内更远的一层）。
+   * 浅色的凹槽与底同色——浅色下「更深一点」会读成第二种纸；深色才需要提亮一档。 */
+  --bottom: #F6F7F8;
+  --paper: #FFFFFF;
+  --trough: #F6F7F8;
+  --ink: #1F2328;
+  --muted: #6B7280;
+  --line: rgb(16 18 22 / 8%);
+  --hover: rgb(16 18 22 / 5%);
+  --accent: #2F6F4F;
+  --danger: #B42318;
+  --logics-accent: #E24B2B;
+  /* 纸的尺度只在这里：宽 760、左右各 56、正文 648、圆角 12。 */
+  --paper-w: 760px;
+  --paper-pad: 56px;
+  --paper-radius: 12px;
+  --topbar-h: 52px;
+  --rail: 240px;
+  --notes: 300px;
   --font: "Source Han Sans SC", "思源黑体", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
   --mono: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  /* 旧名字只是别名：同一层永远只有一个变量，别再长出第三套。 */
+  --surface: var(--paper);
+  --canvas: var(--bottom);
+}
+
+/* 暗色：只换三层底色与墨色，尺度与结构不动。跟随宿主的 data-ds-dark-theme。 */
+body[data-ds-dark-theme] {
+  color-scheme: dark;
+  --bottom: #18181A;
+  --paper: #242426;
+  --trough: #202024;
+  --ink: #E9E9EC;
+  --muted: #9A9AA2;
+  --line: rgb(255 255 255 / 10%);
+  --hover: rgb(255 255 255 / 6%);
+  --accent: #7FBFA0;
+  --danger: #F08076;
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; background: var(--canvas); color: var(--ink); font-family: var(--font); }
+html, body { margin: 0; padding: 0; background: var(--bottom); color: var(--ink); font-family: var(--font); }
 body { min-height: 100vh; }
 
+/* 顶栏：52px、零底线。没滚动时它就是一块「底」；滚动后才转毛玻璃，把纸透出来。 */
 .topbar {
   position: sticky; top: 0; z-index: 20;
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 16px; padding: 12px clamp(20px, 6vw, 96px);
-  background: color-mix(in srgb, var(--canvas) 92%, transparent);
-  backdrop-filter: blur(8px);
-  border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; gap: 10px;
+  height: var(--topbar-h); padding: 0 20px;
+  background: var(--bottom);
+  transition: background .18s ease;
 }
-.doc-meta { display: flex; align-items: baseline; gap: 10px; font-size: 13px; color: var(--muted); }
-.doc-meta strong { color: var(--ink); font-size: 14px; font-weight: 600; }
-.save-state { font-size: 12px; color: var(--accent); font-variant-numeric: tabular-nums; }
+body.is-scrolled .topbar {
+  background: color-mix(in srgb, var(--bottom) 74%, transparent);
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+}
+.brand { display: inline-flex; flex: none; align-items: center; color: var(--ink); }
+.brand-mark { display: block; width: 24px; height: 24px; }
+.doc-meta { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
+.doc-meta strong {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--ink); font-size: 14px; font-weight: 600;
+}
+.doc-kind {
+  flex: none; padding: 1px 8px; border-radius: 999px;
+  background: var(--hover); color: var(--muted);
+  font-size: 11px; line-height: 1.7;
+}
+.save-state {
+  display: inline-flex; align-items: center; gap: 6px; margin-right: 6px;
+  font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.save-state::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%;
+  background: currentColor; opacity: .7;
+}
 .save-state.failed { color: var(--danger); }
+.topbar-toggle {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; padding: 0;
+  appearance: none; border: 0; border-radius: 8px;
+  background: transparent; color: var(--muted); cursor: pointer;
+  transition: background .12s ease, color .12s ease;
+}
+.topbar-toggle:hover, .topbar-toggle:focus-visible { background: var(--hover); color: var(--ink); outline: none; }
+.topbar-toggle svg { width: 18px; height: 18px; }
+body.is-toc-collapsed #tocCollapse svg { transform: scaleX(-1); }
+body.is-notes-collapsed #notesCollapse svg { transform: scaleX(-1); }
+
+/* 折叠：左栏 / 右栏收起后不再占位，纸留在原来的位置。 */
+body.is-toc-collapsed .toc-panel { display: none; }
+body.is-notes-collapsed .notes-panel:not(.is-overlay) { display: none; }
 
 .structure-notice {
   display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px;
   margin: 0; padding: 8px clamp(20px, 6vw, 96px);
   font-size: 12px; line-height: 1.7; color: #6b4e00;
-  background: #fff8e1; border-bottom: 1px solid #ecd9a0;
+  background: #fff8e1;
 }
 .structure-title { font-weight: 600; }
 .structure-group { color: #8a6a12; }
@@ -43,12 +109,14 @@ body { min-height: 100vh; }
 }
 .structure-jump:hover, .structure-jump:focus-visible { background: #fff3cf; outline: none; }
 .structure-extra { color: #8a6a12; }
+/* [hidden] 是 UA 的 display:none；这里声明了 display:flex，必须自己把隐藏赢回来。 */
+.structure-notice[hidden] { display: none; }
 
 /* 旧 JSON 主稿：顶部说清楚为什么只读，正文没有编辑面、没有反馈与拖柄。 */
 .readonly-notice {
   margin: 0; padding: 9px clamp(20px, 6vw, 96px);
   font-size: 12px; line-height: 1.7; color: #6b4e00;
-  background: #fff8e1; border-bottom: 1px solid #ecd9a0;
+  background: #fff8e1;
 }
 body.is-readonly .doc-block:hover { background: transparent; }
 .doc-block.is-readonly { cursor: default; }
@@ -59,18 +127,25 @@ body.is-readonly .block-feedback,
 body.is-readonly .block-handle,
 body.is-readonly .page-handle { display: none; }
 
+/* 三栏的宽度极限由「工作台容器」决定，不看视口：侧栏能被拖宽，视口一直那么大。
+ * `container-type: inline-size` 让下方 @container 三档读的是这块的真实宽度。 */
+.workspace {
+  max-width: 1360px; margin: 0 auto;
+  container-type: inline-size;
+  container-name: workbench;
+}
 .workbench {
   display: flex; align-items: flex-start; gap: 8px;
-  max-width: 1360px; margin: 0 auto;
+  width: 100%;
 }
 
 /* 左侧目录：章节 → 页，两级；页号来自当前顺序，不写进正文。 */
 .toc-panel {
-  position: sticky; top: 53px; flex: none;
-  width: 232px; max-height: calc(100vh - 61px); overflow-y: auto;
-  padding: 28px 8px 40px 20px;
+  position: sticky; top: var(--topbar-h); flex: 0 0 var(--rail);
+  width: var(--rail); max-height: calc(100vh - var(--topbar-h)); overflow-y: auto;
+  padding: 24px 12px 40px 8px;
 }
-.toc { display: flex; flex-direction: column; gap: 1px; font-size: 13px; }
+.toc { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
 .toc-chapter {
   margin: 14px 0 3px; padding: 0 8px;
   font-size: 11px; letter-spacing: .08em; color: var(--muted);
@@ -83,19 +158,25 @@ body.is-readonly .page-handle { display: none; }
   font: inherit; text-align: left; cursor: pointer;
 }
 .toc-page:hover, .toc-page:focus-visible { background: var(--hover); outline: none; }
-.toc-page.is-current { background: #e9efe9; font-weight: 600; }
+.toc-page.is-current { background: var(--hover); font-weight: 600; }
 .toc-page.is-current .toc-number { color: var(--accent); }
 .toc-number { flex: none; min-width: 12px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 .toc-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .toc-empty { margin: 0; padding: 0 8px; color: var(--muted); font-size: 12px; }
 
+/* 纸：整高工作面，靠比底亮一档浮起来——**不投外影**。
+ * 外影沿长边会积成一条脏边，还会跟顶栏、抽屉抢层次；边界只留一条极浅内描边。 */
 .doc {
-  flex: 1; min-width: 0;
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 40px clamp(20px, 6vw, 96px) 160px;
+  flex: 0 1 var(--paper-w);
+  width: var(--paper-w); max-width: var(--paper-w); min-width: 520px;
+  margin: 20px auto 40px;
+  padding: 52px var(--paper-pad) 160px;
+  background: var(--paper); color: var(--ink);
+  border-radius: var(--paper-radius);
+  box-shadow: inset 0 0 0 1px rgb(16 18 22 / .04);
+  font-size: 17.5px; line-height: 1.75;
 }
-.workbench .doc { margin: 0; padding: 36px clamp(16px, 4vw, 48px) 160px; }
+body[data-ds-dark-theme] .doc { box-shadow: inset 0 0 0 1px rgb(255 255 255 / .06); }
 
 .page-divider { margin: 44px 0 6px; }
 .page-divider:first-child { margin-top: 0; }
@@ -117,12 +198,12 @@ body.is-readonly .page-handle { display: none; }
 .doc-block {
   position: relative;
   display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px;
-  margin: 2px 0; padding: 4px 8px; border-radius: 6px;
-  line-height: 1.75;
+  margin: 2px 0; padding: 4px 0; border-radius: 6px;
+  line-height: inherit;
 }
-.doc-block:hover { background: var(--hover); }
+/* 悬停不铺灰底：正文不被压暗，只亮起左缘抓手与右缘批注图标。 */
 .doc-block.is-heading { font-size: 19px; font-weight: 650; line-height: 1.45; margin-top: 18px; }
-.doc-block.is-quote { border-left: 3px solid var(--line); padding-left: 14px; color: #374151; font-style: italic; }
+.doc-block.is-quote { border-left: 3px solid var(--line); padding-left: 14px; color: var(--muted); font-style: italic; }
 .doc-block.is-list { padding-left: 8px; }
 .block-prefix { color: var(--muted); font-weight: 400; font-style: normal; user-select: none; padding-top: 1px; }
 /* 标题与引用的块类型已经由排版表达，不再把 #### / > 当字面文字摆出来。 */
@@ -192,18 +273,16 @@ body.is-readonly .page-handle { display: none; }
 .inline-toolbar button:hover, .inline-toolbar button:focus-visible { background: #3f4650; outline: none; }
 .inline-toolbar code { font-family: var(--mono); }
 
-/* 三处反馈入口：块尾、选中浮出、顶部整体。 */
-.top-actions { position: relative; display: flex; align-items: center; gap: 14px; }
-.overall-feedback {
-  appearance: none; border: 1px solid var(--line); background: var(--surface); color: var(--ink);
-  padding: 4px 12px; border-radius: 999px; font-family: var(--font); font-size: 12px; cursor: pointer;
+/* 三处反馈入口：块尾、选中浮出、顶部整体。顶栏这几个是控件，不描边，用悬停表态。 */
+.top-actions { position: relative; display: flex; align-items: center; gap: 4px; }
+.overall-feedback, .history-open {
+  display: inline-flex; align-items: center; gap: 6px;
+  appearance: none; border: 0; background: transparent; color: var(--muted);
+  padding: 5px 10px; border-radius: 8px; font-family: var(--font); font-size: 12px; cursor: pointer;
+  transition: background .12s ease, color .12s ease;
 }
-.overall-feedback:hover, .overall-feedback:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
-.history-open {
-  appearance: none; border: 1px solid var(--line); background: var(--surface); color: var(--ink);
-  padding: 4px 12px; border-radius: 999px; font-family: var(--font); font-size: 12px; cursor: pointer;
-}
-.history-open:hover, .history-open:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
+.overall-feedback:hover, .overall-feedback:focus-visible,
+.history-open:hover, .history-open:focus-visible { background: var(--hover); color: var(--ink); outline: none; }
 .history-open[hidden] { display: none; }
 
 /* 历史版本：每次写盘前存上一版，恢复会作为一次新编辑保存。 */
@@ -265,14 +344,29 @@ body.is-readonly .page-handle { display: none; }
 }
 .overall-menu button:hover, .overall-menu button:focus-visible { background: var(--hover); outline: none; }
 
-.block-feedback {
-  position: absolute; top: 2px; right: 2px; z-index: 2;
-  appearance: none; border: 1px solid var(--line); background: var(--surface); color: var(--muted);
-  padding: 1px 8px; border-radius: 999px; font-family: var(--font); font-size: 11px; line-height: 1.6;
-  cursor: pointer; opacity: 0; transition: opacity .12s ease;
+/* 块的两个边缘：左缘抓手、右缘批注。同一套笔画、同一尺寸、同一条显形时机——
+ * 18px 热区、14px 高、1.7 描边、muted 色、只在悬停这一块时一起亮。 */
+.block-handle, .block-feedback {
+  position: absolute; z-index: 2;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; padding: 0;
+  appearance: none; border: 0; border-radius: 4px; background: transparent;
+  color: var(--muted);
+  opacity: 0; cursor: pointer;
+  transition: opacity .12s ease, color .12s ease;
 }
-.doc-block:hover > .block-feedback, .block-feedback:focus-visible { opacity: 1; }
-.block-feedback:hover { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+.block-handle { left: -22px; top: 4px; cursor: grab; }
+.block-feedback { right: -24px; top: 4px; }
+.block-handle svg { width: 8px; height: 14px; fill: currentColor; stroke: none; }
+.block-feedback svg {
+  width: 14px; height: 14px;
+  fill: none; stroke: currentColor; stroke-width: 1.7;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.doc-block:hover > .block-handle, .doc-block:hover > .block-feedback,
+.block-handle:focus-visible, .block-feedback:focus-visible { opacity: 1; }
+.block-handle:hover, .block-feedback:hover,
+.block-handle:focus-visible, .block-feedback:focus-visible { color: var(--accent); outline: none; }
 .is-locked > .block-feedback { display: none; }
 
 .selection-feedback {
@@ -352,25 +446,18 @@ body.is-readonly .page-handle { display: none; }
 .deferred-actions button[data-decision="model"] { border-color: var(--accent); color: var(--accent); }
 .deferred-actions button:disabled { opacity: .55; cursor: default; }
 
-@media (max-width: 640px) {
-  .doc { padding-top: 24px; }
-  .page-title { font-size: 22px; }
-}
-
-/* 六点句柄：块前缀与页标题各一个，悬停才显形，不挤占正文宽度。 */
-.block-handle, .page-handle {
+/* 页标题的六点句柄：与块的抓手同一套笔画，只多一个页的身份。 */
+.page-handle {
   position: absolute; display: inline-flex; align-items: center; justify-content: center;
-  width: 16px; height: 22px; padding: 0;
+  width: 18px; height: 22px; padding: 0;
   border: 0; border-radius: 4px; background: transparent; color: var(--muted);
   opacity: 0; cursor: grab;
-  transition: opacity .12s ease;
+  transition: opacity .12s ease, color .12s ease;
 }
-.block-handle { left: -18px; top: 4px; }
 .page-handle { left: -22px; top: 8px; }
-.doc-block:hover > .block-handle, .block-handle:focus-visible,
-.page-divider:hover > .page-handle, .page-handle:focus-visible { opacity: 1; }
-.block-handle svg, .page-handle svg { fill: currentColor; }
-.block-handle:active, .page-handle:active { cursor: grabbing; }
+.page-divider:hover > .page-handle, .page-handle:focus-visible { opacity: 1; color: var(--accent); }
+.page-handle svg { fill: currentColor; stroke: none; width: 8px; height: 14px; }
+.page-handle:active { cursor: grabbing; }
 .page-divider { position: relative; }
 .page-title { cursor: grab; }
 
@@ -435,14 +522,6 @@ body.is-reordering .doc-block:hover { background: transparent; }
   box-shadow: 0 1px 2px rgb(16 18 22 / 8%), inset 0 0 0 1px rgb(47 111 79 / 14%);
   color: var(--accent);
   font-size: 11px; line-height: 1.4; white-space: nowrap;
-}
-
-@media (max-width: 900px) {
-  .toc-panel { width: 190px; }
-}
-@media (max-width: 720px) {
-  .toc-panel { display: none; }
-  .workbench .doc { padding-top: 24px; }
 }
 
 /* 图块：按正文引用就地显示；点开是只读放大层，缩放不碰正文。 */
@@ -524,26 +603,24 @@ body.has-image-viewer { overflow: hidden; }
 .page-add:hover, .page-add:focus-visible,
 .chapter-add:hover, .chapter-add:focus-visible {
   opacity: 1; color: var(--accent); background: var(--hover); outline: none;
-/* 批注抽屉：默认展开在正文右侧；草稿按页攒，底部一次提交整批。 */
+}
+
+/* 批注：宽档是纸右边的一列，落在「底」上——没有面板框、没有边界线、没有投影。
+ * 窄档变成覆盖在纸上的滑出层（见文末 @container / data-layout），那时才有投影。 */
 .notes-panel {
-  position: sticky; top: 53px; flex: none;
+  position: sticky; top: var(--topbar-h); flex: 0 0 var(--notes);
   display: flex; flex-direction: column;
-  width: 286px; max-height: calc(100vh - 61px);
-  margin: 28px 20px 40px 8px;
-  background: var(--surface);
-  border: 1px solid var(--line); border-radius: 10px;
+  width: var(--notes); max-height: calc(100vh - var(--topbar-h) - 40px);
+  margin: 20px 0 40px;
+  background: transparent;
+  border: 0; border-radius: 0;
 }
 .notes-head {
   display: flex; align-items: baseline; gap: 8px;
-  padding: 12px 14px 10px; border-bottom: 1px solid var(--line);
+  padding: 12px 12px 6px;
 }
 .notes-title { font-size: 13px; }
 .notes-summary { flex: 1; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.notes-collapse {
-  appearance: none; border: 0; background: transparent; color: var(--muted);
-  padding: 0; font-family: var(--font); font-size: 12px; cursor: pointer;
-}
-.notes-collapse:hover, .notes-collapse:focus-visible { color: var(--accent); outline: none; }
 .notes-body { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 12px 14px; }
 .notes-body[hidden] { display: none; }
 .notes-empty { margin: 6px 2px; font-size: 12px; line-height: 1.7; color: var(--muted); }
@@ -556,7 +633,7 @@ body.has-image-viewer { overflow: hidden; }
 .note-page + .note-page { margin-top: 10px; }
 .note-page-chapter { margin: 0 2px; font-size: 11px; letter-spacing: .06em; color: var(--muted); }
 .note-page-title { margin: 1px 2px 5px; font-size: 12.5px; font-weight: 600; line-height: 1.5; color: var(--ink); }
-.note-block { padding: 5px 6px; border-radius: 7px; background: var(--canvas); }
+.note-block { padding: 5px 6px; border-radius: 7px; background: var(--trough); }
 .note-block + .note-block { margin-top: 6px; }
 .note-block-head { display: flex; align-items: center; gap: 8px; }
 .note-block-preview {
@@ -603,7 +680,7 @@ body.has-image-viewer { overflow: hidden; }
 }
 .note-delete:hover, .note-delete:focus-visible { color: var(--danger); outline: none; }
 .note-delete:disabled { opacity: .55; cursor: default; }
-.notes-foot { border-top: 1px solid var(--line); padding: 10px 12px 12px; }
+.notes-foot { padding: 10px 12px 12px; }
 .notes-hint { margin: 0 0 8px; font-size: 11px; line-height: 1.6; color: var(--muted); }
 .notes-submit {
   appearance: none; width: 100%; border: 1px solid var(--accent); background: var(--accent); color: #fff;
@@ -620,9 +697,75 @@ body.has-image-viewer { overflow: hidden; }
 }
 .feedback-note:disabled { opacity: .55; cursor: default; }
 
-@media (max-width: 1180px) {
-  .notes-panel { width: 260px; }
+
+/* ── 三栏按工作台容器宽度降级：@container，不看视口 ──────────────────────────
+ * 侧栏本身能被拖宽，视口一直是整块屏幕；决定目录要不要折、批注要不要改滑出层
+ * 的是工作台容器自己的宽度。断点只有这三个，别再加视口媒体查询。 */
+@container workbench (min-width: 1180px) {
+  .toc-panel { flex-basis: 240px; width: 240px; }
+  .doc { flex-basis: 760px; width: 760px; }
+  .notes-panel { flex-basis: 300px; width: 300px; }
 }
-@media (max-width: 900px) {
-  .notes-panel { display: none; }
+
+@container workbench (max-width: 1179.98px) {
+  .toc-panel { flex-basis: 48px; width: 48px; padding: 20px 6px 40px; }
+  /* 图标条：目录只留页号；章节退成一条细线，仍能看出分组（列表脊线不算面板边界）。 */
+  .toc-chapter {
+    height: 1px; margin: 10px 6px; padding: 0;
+    overflow: hidden; font-size: 0; background: var(--line);
+  }
+  .toc-page { width: 36px; margin: 0 auto; justify-content: center; padding: 6px 0; }
+  .toc-number { min-width: 0; font-size: 12px; }
+  .toc-title { display: none; }
+  .doc { flex: 1 1 auto; width: auto; max-width: var(--paper-w); min-width: 520px; }
+  .notes-panel { flex-basis: 280px; width: 280px; }
 }
+
+@container workbench (max-width: 899.98px) {
+  /* 批注已经是滑出层；还留在列里的那一份不占位（等接线把它挪到 body 下）。 */
+  .notes-panel:not(.is-overlay) { display: none; }
+  .doc { flex: 1 1 auto; width: auto; }
+}
+
+/* 窄档的滑出层：JS 把面板挪到 body 下，@container 不再命中它，所以由 data-layout
+ * 与 .is-overlay 接管。它有投影——这是真正浮起来的临时层。 */
+.notes-panel.is-overlay {
+  position: fixed; top: var(--topbar-h); right: 0; bottom: 0; z-index: 80;
+  width: min(320px, 86vw); max-height: none;
+  margin: 0; padding-bottom: 8px;
+  background: var(--paper);
+  border-radius: 12px 0 0 12px;
+  box-shadow: 0 18px 40px -12px rgb(16 18 22 / 22%);
+  transform: translateX(100%); opacity: 0; pointer-events: none;
+  transition: transform 180ms cubic-bezier(.2,.8,.2,1), opacity 180ms ease;
+}
+body.is-notes-open .notes-panel.is-overlay { transform: none; opacity: 1; pointer-events: auto; }
+body[data-ds-dark-theme] .notes-panel.is-overlay { box-shadow: 0 18px 40px -12px rgb(0 0 0 / 55%); }
+
+/* 暗色里那些不能只靠令牌换的硬编码：代码块、表头、行内代码、图底。 */
+body[data-ds-dark-theme] .block-code { background: #101012; color: #E7E7E1; }
+body[data-ds-dark-theme] .block-text code,
+body[data-ds-dark-theme] .doc-block table code { background: var(--trough); }
+body[data-ds-dark-theme] .doc-block th { background: var(--trough); }
+body[data-ds-dark-theme] .deferred-model pre { background: var(--trough); }
+body[data-ds-dark-theme] .doc-block figure img { background: var(--paper); }
+body[data-ds-dark-theme] .structure-notice { background: rgb(217 165 20 / 12%); color: #E5C26A; }
+body[data-ds-dark-theme] .readonly-notice { background: rgb(217 165 20 / 14%); color: #E5C26A; }
+body[data-ds-dark-theme] .drop-line .drop-label { background: rgb(36 36 38 / 72%); color: var(--accent); }
+/* 暗色的强调色是浅绿：按钮文字要反过来，不然白字压浅绿看不清。 */
+body[data-ds-dark-theme] .notes-submit,
+body[data-ds-dark-theme] .feedback-submit { color: #141416; }
+/* 用墨色当底的小徽标 / 提示，在暗色里要反过来；黄条里的褐色文字也要提亮。 */
+body[data-ds-dark-theme] .selection-feedback,
+body[data-ds-dark-theme] .block-lock { color: #141416; }
+body[data-ds-dark-theme] .deferred-note { color: #E5C26A; }
+body[data-ds-dark-theme] .structure-group,
+body[data-ds-dark-theme] .structure-extra { color: #C9A94F; }
+body[data-ds-dark-theme] .structure-jump {
+  border-color: rgb(229 194 106 / 35%);
+  background: rgb(229 194 106 / 10%);
+  color: #E5C26A;
+}
+body[data-ds-dark-theme] .note-badge.is-untouched { color: #E5C26A; }
+body[data-ds-dark-theme] .is-degraded { background: var(--trough); }
+body[data-ds-dark-theme] .block-raw { color: var(--muted); }
