@@ -92,8 +92,10 @@ test('页身份只有一处定义：服务端与页面都从同一个模块取 p
     const source = read('scripts', 'lib', file);
     assert.match(source, /pageKeyOf/, `${file} 要用共享的 pageKeyOf`);
   }
+  // 抽屉不再按页分组（票 37：页名 / 章节名 / 页号都是噪声），于是它也不需要页身份：
+  // 一旦它又去拼 `${chapter}-${index}`，上面的 offenders 会立刻点出来。
   const notes = read('assets', 'workbench', 'doc-notes.js');
-  assert.match(notes, /pageKeyOf/, '批注抽屉的页分组也要用同一份页身份');
+  assert.doesNotMatch(notes, /pageKeyOf/, '抽屉不按页分组，就不再碰页身份');
 });
 
 // ── 页末落点判据：只定义一次，页面与重排共用 ───────────────────────────────────
