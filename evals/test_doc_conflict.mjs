@@ -15,12 +15,12 @@ const VALIDATOR = join(core, 'scripts', 'validate-doc.mjs');
 
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 
-const FRONT = '---\ncontract: planners-doc/1\ndoc: storyline\nproject: 测试项目\n---\n\n';
-const BODY = `# 测试文档
+const FRONT = '---\ncontract: planners-doc/2\ndoc: storyline\nproject: 测试项目\n---\n\n';
+const BODY = `
 
-## 章节
+# 章节
 
-### 页一
+## 页一
 
 第一块正文。<!-- b:aaaaaa -->
 
@@ -28,7 +28,7 @@ const BODY = `# 测试文档
 
 第三块正文，不参与。<!-- b:cccccc -->
 
-### 页二
+## 页二
 
 第四块正文。<!-- b:dddddd -->
 `;

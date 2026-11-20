@@ -1,5 +1,5 @@
 /**
- * planners-doc/1 的块模型。
+ * planners-doc/2 的块模型。
  *
  * 契约只有一份：`scripts/validate-doc.mjs` 用它校验，`scripts/doc-workbench.mjs`
  * 用它切块、补锚点、只回写被改块的 raw。两边各写一套切块规则是保真事故的源头，
@@ -16,7 +16,7 @@ import { resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
-export const VERSION = 'planners-doc/1';
+export const VERSION = 'planners-doc/2';
 export const DOC_KINDS = ['storyline', 'by-page'];
 export const TYPE_NAMES = {
   paragraph: '段落',
@@ -79,7 +79,7 @@ export function imageReference(raw) {
 const trimmedLength = (line) => line.replace(/\s+$/, '').length;
 
 /**
- * 解析一份 planners-doc/1 原文。
+ * 解析一份 planners-doc/2 原文。
  *
  * @param {string} raw 文件原文
  * @param {{docDir?: string|null, checkImages?: boolean}} [options]
@@ -153,7 +153,7 @@ export function parseDocument(raw, options = {}) {
   }
 
   // ---------- 页与块 ----------
-  const state = { title: null, chapters: [], pages: [], blocks: [], chapter: null, page: null };
+  const state = { chapters: [], pages: [], blocks: [], chapter: null, page: null };
   let open = null;
   let lastStandalone = null;
 
@@ -173,7 +173,7 @@ export function parseDocument(raw, options = {}) {
     block.page = state.page;
     state.blocks.push(block);
     if (state.page) state.page.blocks.push(block);
-    else pushError('block_outside_page', `${typeName(block.type)}必须写在某个 ### 页里`, {
+    else pushError('block_outside_page', `${typeName(block.type)}必须写在某个 ## 页里`, {
       line: block.startLine,
       block: blockLabel(block),
     });
@@ -267,8 +267,8 @@ export function parseDocument(raw, options = {}) {
     const anchorAtEnd = ANCHOR_AT_END_RE.exec(probe);
 
     if (anchorMatches.length) {
-      if (level <= 3) {
-        pushError('anchor_on_structure', '文档 / 章节 / 页的标题不是块，不能带锚点；锚点属于块', {
+      if (level <= 2) {
+        pushError('anchor_on_structure', '章节 / 页的标题不是块，不能带锚点；锚点属于块', {
           line: lineNo,
           page: pageLabel(),
           block: anchorMatches[0][1],
@@ -293,22 +293,15 @@ export function parseDocument(raw, options = {}) {
       pushError('heading_empty', `${'#'.repeat(level)} 标题不能为空`, { line: lineNo, page: pageLabel() });
     }
 
+    // `/2`：`#` 是章节、`##` 是页，`###`–`######` 回到普通标题块（任意层级都合法）。
     if (level === 1) {
-      if (state.title !== null || state.chapter || state.page) {
-        pushError('heading_order', '文档只能有一个 # 标题，且必须在最前面', { line: lineNo });
-      }
-      state.title = title;
-      return;
-    }
-    if (level === 2) {
-      if (state.title === null) pushError('heading_order', '## 章节必须写在 # 文档标题之后', { line: lineNo });
       state.chapter = { title, line: lineNo, index: state.chapters.length + 1, pages: [] };
       state.chapters.push(state.chapter);
       state.page = null;
       return;
     }
-    if (level === 3) {
-      if (!state.chapter) pushError('page_without_chapter', '### 页必须写在 ## 章节里', { line: lineNo });
+    if (level === 2) {
+      if (!state.chapter) pushError('page_without_chapter', '## 页必须写在 # 章节里', { line: lineNo });
       const page = {
         index: state.chapter ? state.chapter.pages.length + 1 : state.pages.length + 1,
         title,
@@ -321,41 +314,26 @@ export function parseDocument(raw, options = {}) {
       state.page = page;
       return;
     }
-    if (level === 4) {
-      if (!state.page) {
-        pushError('section_without_page', '#### 页内小节必须写在 ### 页里', { line: lineNo });
-      }
-      const contentLine = inlineAnchor !== null
-        ? rawLine.slice(0, anchorIndexInRaw).replace(/\s+$/, '')
-        : rawLine;
-      const block = {
-        type: 'heading',
-        level: 4,
-        text: title,
-        startLine: lineNo,
-        endLine: lineNo,
-        lines: [contentLine],
-        anchor: inlineAnchor,
-        anchorLine: inlineAnchor ? lineNo : null,
-        inlineAnchor: inlineAnchor !== null,
-        anchorStartColumn: inlineAnchor !== null ? anchorIndexInRaw : null,
-        // inlineAnchor 已经是 `b:xxxxxx`（match[1] 带前缀），这里不能再拼一个 `b:`，
-        // 否则锚点末端会多算两个字符，替换区间会吃掉下一行的开头。
-        anchorEndColumn: inlineAnchor !== null ? anchorIndexInRaw + `<!-- ${inlineAnchor} -->`.length : null,
-        contentEndColumn: inlineAnchor !== null ? contentLine.length : null,
-      };
-      addBlock(block);
-      return;
-    }
-    pushError('heading_level', '只支持到 ####；##### 及以下不在第一期契约里', { line: lineNo, page: pageLabel() });
-    addBlock({
+    const contentLine = inlineAnchor !== null
+      ? rawLine.slice(0, anchorIndexInRaw).replace(/\s+$/, '')
+      : rawLine;
+    const block = {
       type: 'heading',
       level,
       text: title,
       startLine: lineNo,
       endLine: lineNo,
-      lines: [rawLine],
-    });
+      lines: [contentLine],
+      anchor: inlineAnchor,
+      anchorLine: inlineAnchor ? lineNo : null,
+      inlineAnchor: inlineAnchor !== null,
+      anchorStartColumn: inlineAnchor !== null ? anchorIndexInRaw : null,
+      // inlineAnchor 已经是 `b:xxxxxx`（match[1] 带前缀），这里不能再拼一个 `b:`，
+      // 否则锚点末端会多算两个字符，替换区间会吃掉下一行的开头。
+      anchorEndColumn: inlineAnchor !== null ? anchorIndexInRaw + `<!-- ${inlineAnchor} -->`.length : null,
+      contentEndColumn: inlineAnchor !== null ? contentLine.length : null,
+    };
+    addBlock(block);
   };
 
   const consumeTable = (start) => {
@@ -573,8 +551,22 @@ export function parseDocument(raw, options = {}) {
     }
   }
 
+  // 出处区：位置就是语义。页内最后一个块是引用，则从它向前连续的一串引用构成出处区；
+  // 页中段的引用照常是普通引用。条数不设限，没有出处的页合法 —— 缺不缺由 Skill 判断，
+  // 校验器只认这条位置规则，不评价出处够不够（契约第 5 节）。
+  for (const page of state.pages) {
+    const sources = [];
+    for (let i = page.blocks.length - 1; i >= 0; i -= 1) {
+      const block = page.blocks[i];
+      if (block.type !== 'quote') break;
+      sources.unshift(block);
+    }
+    page.sources = sources;
+    for (const block of sources) block.inSources = true;
+  }
+
   if (state.pages.length === 0) {
-    pushWarning('document_without_pages', '文档里没有 ### 页；目录会是空的', { line: 1 });
+    pushWarning('document_without_pages', '文档里没有 ## 页；目录会是空的', { line: 1 });
   }
 
   const seenAnchors = new Map();
@@ -669,7 +661,6 @@ export function parseDocument(raw, options = {}) {
   errors.sort((a, b) => (a.line ?? 0) - (b.line ?? 0) || a.code.localeCompare(b.code));
   return {
     front,
-    title: state.title,
     chapters: state.chapters,
     pages: state.pages,
     blocks: state.blocks,
@@ -858,7 +849,7 @@ function assertNoNewErrors(beforeDocument, afterDocument, label) {
 /**
  * 在光标处把一块拆成两块：前半留在原锚点，后半拿一个新锚点，紧跟在原块之后。
  *
- * 入参的 before / after 是**块内行内 Markdown**（不含 `- ` / `> ` / `#### ` 这些块前缀），
+ * 入参的 before / after 是**块内行内 Markdown**（不含 `- ` / `> ` / `### ` 这些块前缀），
  * 块前缀由这里按原块类型补：标题拆开后，后半退成正文段落；列表与引用保持同类。
  *
  * @returns {{raw:string, block:object, newBlock:object}}
@@ -993,7 +984,7 @@ const reorderFail = (code, message) => { throw Object.assign(Error(message), { c
 const isBlankLine = (line) => (line ?? '').trim() === '';
 
 /** 块占的最后一行（1 基）：独立块的锚点单独成行，写在元素下一行，也算块的一部分。 */
-function blockEndLine(block) {
+export function blockEndLine(block) {
   return Math.max(block.endLine ?? block.startLine, block.anchorLine ?? block.endLine ?? block.startLine);
 }
 
@@ -1150,7 +1141,7 @@ export function movePage(raw, { page, to } = {}) {
   const from = parsed.pages.indexOf(sourcePage);
   const targetIndex = parsed.pages.indexOf(targetPage) + (to.position === 'after' ? 1 : 0);
   const insertAt = targetIndex > from ? targetIndex - 1 : targetIndex;
-  // 顺序没变、章节也没变才是空操作。跨过 ## 章节标题落在同一个文档位置时，
+  // 顺序没变、章节也没变才是空操作。跨过 # 章节标题落在同一个文档位置时，
   // 页序不变而归属变了——那是一次真实的移动（把页挪进相邻章节）。
   if (insertAt === from && sourcePage.chapter === targetPage.chapter) {
     return { raw: String(raw), changed: false, page: pageSignature(sourcePage) };

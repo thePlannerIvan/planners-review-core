@@ -68,6 +68,8 @@ export function viewBlock(block, lockOf = () => null, conflictOf = () => null) {
     reason: verdict.reason,
     locked: lockedBy !== null || conflict !== null,
     locked_by: lockedBy,
+    // 出处区：页末连续的引用（契约第 5 节）。位置就是语义，渲染收起成一条是工作台的事。
+    in_sources: block.inSources === true,
     ...(image ? { image } : {}),
     deferred: conflict ? { task_id: conflict.task_id, reason: conflict.reason } : null,
     ...(block.type === 'table' ? { table: tableModel(block) } : {}),
@@ -83,6 +85,8 @@ export function viewPage(page) {
     index: page.index,
     title: page.title,
     anchor: page.blocks[0]?.anchor ?? null,
+    // 出处条数：页内最后一个块是引用时，从它向前连续的引用都算出处；0 表示这页没有出处。
+    sources: (page.sources ?? []).length,
   };
 }
 
@@ -829,7 +833,7 @@ export async function createDocSession({ docPath, faults = null, persistent = tr
   if (!docPath) throw Error('需要一份文档路径');
   const file = realpathSync(resolve(docPath));
   if (!statSync(file).isFile()) throw Error(`不是文件：${file}`);
-  // 旧 JSON 主稿不进入 planners-doc/1 的读-改-写：只挂成只读快照，不补锚点、不恢复 journal。
+  // 旧 JSON 主稿不进入 planners-doc/2 的读-改-写：只挂成只读快照，不补锚点、不恢复 journal。
   const legacy = readLegacyMaster(file);
   // 先收上一次被中断的写盘，再补锚点：恢复用整份目标全文，不按块硬拼，不会生成幽灵块。
   const recovery = legacy ? { state: 'none' } : await withStartupLock(file, () => recoverJournal(file));

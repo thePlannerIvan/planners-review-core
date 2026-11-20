@@ -1223,7 +1223,7 @@ const SPLIT_TYPES = new Set(['paragraph', 'heading', 'list', 'quote']);
 const isSplittable = (block) => SPLIT_TYPES.has(block?.type);
 let pendingSeq = 0;
 
-/** 块内行内内容（不含 `- ` / `> ` / `#### ` 这些块前缀）。 */
+/** 块内行内内容（不含 `- ` / `> ` / `### ` 这些块前缀）。 */
 const inlineOf = (editable) => DocInline.serializeInline(editable);
 /** 只剩空白或硬换行的块算空块（浏览器删光文字后常留一个 <br>）。 */
 const isEmptyInline = (markdown) => String(markdown ?? '').replace(/\\\r?\n/g, '').trim() === '';

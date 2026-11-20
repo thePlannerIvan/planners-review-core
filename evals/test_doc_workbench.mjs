@@ -58,7 +58,7 @@ test('改一块后，磁盘上只有这一块的字节变化，未编辑块逐�
 
   const before = await getDoc(server.url);
   assert.equal(before.sha256, sha256(original), '刚打开且锚点齐全时不应改写文件');
-  assert.equal(before.blocks.length, 48, '样例 storyline 有 48 块');
+  assert.equal(before.blocks.length, 40, '样例 storyline 有 40 块');
   const target = before.blocks.find((block) => block.anchor === 'b:7b057d');
   assert.ok(target, '样例第一页的主张块应当带锚点 b:7b057d');
 
@@ -90,11 +90,11 @@ test('改一块后，磁盘上只有这一块的字节变化，未编辑块逐�
 
   const verdict = validate(path);
   assert.equal(verdict.code, 0, `保存后仍应通过契约校验：${verdict.stdout}${verdict.stderr}`);
-  assert.equal(verdict.out?.checked?.anchors, 48, '保存不应增删锚点');
+  assert.equal(verdict.out?.checked?.anchors, 40, '保存不应增删锚点');
 });
 
 // ── 锚点：缺的补写、重复的重建，只动锚点本身 ────────────────────────────────
-const FRONT = '---\ncontract: planners-doc/1\ndoc: storyline\nproject: 测试项目\n---\n\n';
+const FRONT = '---\ncontract: planners-doc/2\ndoc: storyline\nproject: 测试项目\n---\n\n';
 const writeDoc = (dir, name, body) => {
   const path = join(dir, name);
   writeFileSync(path, `${FRONT}${body}\n`, 'utf8');
@@ -109,11 +109,10 @@ const stripAnchors = (text) => text.replace(/\n?[ \t]*<!--\s*b:[0-9a-f]{6,12}\s*
 
 test('缺锚点的块在打开时补写，正文一个字节都不改；再打开是幂等的', async (t) => {
   const dir = scratchDir();
-  const original = `${FRONT}# 测试文档
+  const original = `${FRONT}
+# 章节
 
-## 章节
-
-### 页一
+## 页一
 
 第一段，还没有锚点。
 
@@ -130,7 +129,7 @@ test('缺锚点的块在打开时补写，正文一个字节都不改；再打�
 |---|---|
 | 瓶身 | 150ml |
 
-#### 小节标题，没有锚点
+### 小节标题，没有锚点
 
 ![示意图](assets/pic.svg)
 `;
@@ -164,11 +163,11 @@ test('缺锚点的块在打开时补写，正文一个字节都不改；再打�
 
 test('重复锚点在打开时重建，第一次出现的身份保留', async (t) => {
   const dir = scratchDir();
-  const path = writeDoc(dir, 'storyline.md', `# 测试文档
+  const path = writeDoc(dir, 'storyline.md', `
 
-## 章节
+# 章节
 
-### 页一
+## 页一
 
 第一块，先出现。<!-- b:aaaaaa -->
 
@@ -192,11 +191,11 @@ test('重复锚点在打开时重建，第一次出现的身份保留', async (t
 // ── 超出子集：退化原文显示，不静默改写，也不允许借编辑面偷改 ─────────────────
 test('超出块类型子集的写法退化为原文显示，保存被拒且磁盘不动', async (t) => {
   const dir = scratchDir();
-  const path = writeDoc(dir, 'storyline.md', `# 测试文档
+  const path = writeDoc(dir, 'storyline.md', `
 
-## 章节
+# 章节
 
-### 页一
+## 页一
 
 | 元素 | 规格 |
 |---|---|
@@ -318,11 +317,11 @@ test('改一段话时，表格对齐、代码块、图片 title 都不动', asyn
   const dir = scratchDir();
   mkdirSync(join(dir, 'assets'), { recursive: true });
   writeFileSync(join(dir, 'assets', 'pic.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>', 'utf8');
-  const path = writeDoc(dir, 'storyline.md', `# 测试文档
+  const path = writeDoc(dir, 'storyline.md', `
 
-## 章节
+# 章节
 
-### 页一
+## 页一
 
 这一段会被改。<!-- b:aaaaaa -->
 
@@ -367,11 +366,11 @@ test('改一段话时，表格对齐、代码块、图片 title 都不动', asyn
 // ── 保存边界：只换内容，不换块身份与结构 ─────────────────────────────────────
 test('借编辑面改块结构、改类型或提交过期基线都会被拒，磁盘不动', async (t) => {
   const dir = scratchDir();
-  const path = writeDoc(dir, 'storyline.md', `# 测试文档
+  const path = writeDoc(dir, 'storyline.md', `
 
-## 章节
+# 章节
 
-### 页一
+## 页一
 
 第一段，只允许换内容。<!-- b:aaaaaa -->`);
   const before = readFileSync(path, 'utf8');
@@ -455,13 +454,13 @@ test('页内拖动：块在同一页里换位置，其他块逐字不动，页�
 
   const saved = readFileSync(path, 'utf8');
   assert.notEqual(saved, original, '重排后磁盘上应当有变化');
-  const headings = (text) => text.split('\n').filter((line) => /^#{2,3} /.test(line));
+  const headings = (text) => text.split('\n').filter((line) => /^#{1,2} /.test(line));
   assert.deepEqual(headings(saved), headings(original), '章节与页标题行原样，只挪块');
-  assert.equal((saved.match(ANCHOR_COMMENTS) ?? []).length, 48, '锚点一个不增一个不减');
+  assert.equal((saved.match(ANCHOR_COMMENTS) ?? []).length, 40, '锚点一个不增一个不减');
 
   const verdict = validate(path);
   assert.equal(verdict.code, 0, `重排后仍应通过契约校验：${verdict.stdout}${verdict.stderr}`);
-  assert.equal(verdict.out?.checked?.anchors, 48);
+  assert.equal(verdict.out?.checked?.anchors, 40);
 });
 
 test('跨页拖动：块落到另一章的页里，归属跟着目标页，页序与锚点都不变', async (t) => {
@@ -507,8 +506,8 @@ test('跨页拖动：块落到另一章的页里，归属跟着目标页，页�
 
   const verdict = validate(path);
   assert.equal(verdict.code, 0, `跨页拖动后仍应合规：${verdict.stdout}${verdict.stderr}`);
-  assert.equal(verdict.out?.checked?.anchors, 48);
-  assert.equal((readFileSync(path, 'utf8').match(ANCHOR_COMMENTS) ?? []).length, 48);
+  assert.equal(verdict.out?.checked?.anchors, 40);
+  assert.equal((readFileSync(path, 'utf8').match(ANCHOR_COMMENTS) ?? []).length, 40);
 });
 
 test('页重排：拖页标题把整页连块移到另一章，页号按新顺序重排', async (t) => {
@@ -557,7 +556,7 @@ test('页重排：拖页标题把整页连块移到另一章，页号按新顺�
     assert.equal(after.blocks.find((item) => item.anchor === block.anchor)?.raw, block.raw, `块 ${block.anchor} 逐字不变`);
   }
   const saved = readFileSync(path, 'utf8');
-  assert.equal((saved.match(ANCHOR_COMMENTS) ?? []).length, 48);
+  assert.equal((saved.match(ANCHOR_COMMENTS) ?? []).length, 40);
   const verdict = validate(path);
   assert.equal(verdict.code, 0, `整页移动后仍应合规：${verdict.stdout}${verdict.stderr}`);
   assert.equal(verdict.out?.checked?.chapters, 3, '章节数不变');
@@ -565,27 +564,27 @@ test('页重排：拖页标题把整页连块移到另一章，页号按新顺�
 
 test('重排的边界：空页、空章节、过期基线、坏落点都被拒，磁盘不动', async (t) => {
   const dir = scratchDir();
-  const path = writeDoc(dir, 'storyline.md', `# 测试文档
+  const path = writeDoc(dir, 'storyline.md', `
 
-## 甲
+# 甲
 
-### 页一
+## 页一
 
 块一。<!-- b:aaaaaa -->
 
-## 乙
+# 乙
 
-### 页二
+## 页二
 
 块二。<!-- b:bbbbbb -->
 
-### 页三
+## 页三
 
 块三。<!-- b:cccccc -->
 
-## 丙
+# 丙
 
-### 页四
+## 页四
 
 块四。<!-- b:dddddd -->`);
   const before = readFileSync(path, 'utf8');
@@ -647,7 +646,7 @@ test('重排的边界：空页、空章节、过期基线、坏落点都被拒�
   assert.equal(samePlace.body.changed, false, '原位落回不算一次重排');
   assert.equal(readFileSync(path, 'utf8'), before, '原位落回不重写文件');
 
-  // 页序不变、只是跨过 ## 章节标题换了归属：这是一次真实移动，不是空操作。
+  // 页序不变、只是跨过 # 章节标题换了归属：这是一次真实移动，不是空操作。
   const changeChapter = await attempt({
     op: 'move-page', base_sha256: opened.sha256, page: { chapter: 2, index: 2 },
     to: { chapter: 3, index: 1, position: 'before' },
@@ -731,7 +730,7 @@ test('落点算法：拖动时算出「插到哪两块之间」，页落点区�
   );
   assert.deepEqual(pick(nearestGap(pageGapList, 90)), { page: '1-1', position: 'before' }, '拖到最前 → 成为第一页');
   assert.deepEqual(pick(nearestGap(pageGapList, 155)), { page: '1-1', position: 'after' }, '在页末拖 → 留在这一页之后，不换章');
-  assert.deepEqual(pick(nearestGap(pageGapList, 310)), { page: '2-1', position: 'before' }, '越过 ## 章节标题 → 进下一章第一页之前');
+  assert.deepEqual(pick(nearestGap(pageGapList, 310)), { page: '2-1', position: 'before' }, '越过 # 章节标题 → 进下一章第一页之前');
   assert.deepEqual(pick(nearestGap(pageGapList, 400)), { page: '2-1', position: 'after' }, '拖到整份最后 → 成为最后一页');
 
   function pick(gap) {
@@ -783,6 +782,234 @@ test('工作台源码：六点句柄、页标题可拖、两级目录随滚动�
   assert.match(css, /\.toc/, '目录要有左侧栏样式');
 });
 
+// ── 拖动的手感：藏原生快照、自绘幽灵、软槽落点、平滑让位（SPEC「拖动」） ──────
+// 最小 DOM 形状：只够让拖动视图接线，不模拟浏览器排版与动画。
+function dragNode(tag = 'div') {
+  const node = {
+    tagName: tag.toUpperCase(), className: '', textContent: '', hidden: false,
+    style: {}, dataset: {}, attrs: {}, children: [],
+    append(...kids) { node.children.push(...kids); for (const kid of kids) kid.parent = node; },
+    remove() {
+      node.removed = true;
+      if (node.parent) node.parent.children = node.parent.children.filter((child) => child !== node);
+    },
+    setAttribute(name, value) { node.attrs[name] = String(value); },
+    getAttribute(name) { return node.attrs[name] ?? null; },
+  };
+  // classList 与 className 是同一份东西：真浏览器里改一个另一个会跟着变。
+  const names = () => String(node.className ?? '').split(/\s+/).filter(Boolean);
+  node.classList = {
+    add: (...added) => { node.className = [...new Set([...names(), ...added])].join(' '); },
+    remove: (...removed) => { node.className = names().filter((name) => !removed.includes(name)).join(' '); },
+    contains: (name) => names().includes(name),
+    toggle: (name, force) => {
+      const on = force === undefined ? !names().includes(name) : Boolean(force);
+      if (on) node.classList.add(name); else node.classList.remove(name);
+      return on;
+    },
+  };
+  return node;
+}
+
+function dragDocument() {
+  const body = dragNode('body');
+  return { body, createElement: (tag) => dragNode(tag), getElementById: () => null };
+}
+
+/** 幽灵是几层嵌起来的：把整棵子树的文字读出来，断言看到的是被拖的内容。 */
+function dragText(node) {
+  return [node.textContent ?? '', ...(node.children ?? []).map(dragText)].join('');
+}
+
+function dragFrames() {
+  const queue = [];
+  const frame = (callback) => { queue.push(callback); return queue.length; };
+  return { frame, queue, flush() { while (queue.length) queue.shift()(); } };
+}
+
+test('拖动的手感：原生快照换成 1×1 透明图，自己画一个浮起的幽灵', async () => {
+  const { createDragView, TRANSPARENT_PIXEL } = await dragModule();
+  const doc = dragDocument();
+  const frames = dragFrames();
+  const view = createDragView({ document: doc, frame: frames.frame });
+  const block = dragNode('div');
+  block.dataset.anchor = 'b:aaaaaa';
+  block.getBoundingClientRect = () => ({ left: 120, top: 200, width: 640, height: 40 });
+  block.querySelector = (selector) => (selector === '.block-text' ? { textContent: '这一块要搬走。' } : null);
+  const shots = [];
+  const dataTransfer = { setDragImage(image, x, y) { shots.push({ image, x, y }); } };
+
+  view.begin({
+    dragging: { kind: 'block', anchor: 'b:aaaaaa', node: block },
+    point: { x: 130, y: 210 },
+    dataTransfer,
+  });
+
+  assert.equal(shots.length, 1, 'dragstart 要亲手换掉浏览器的截屏，不能留着默认快照');
+  assert.equal(shots[0].image.src, TRANSPARENT_PIXEL, '拖动图是一张透空的 1×1，看不见');
+  assert.equal(shots[0].image.width, 1);
+  assert.equal(shots[0].image.height, 1);
+  assert.ok(block.classList.contains('is-dragging'), '原位块退到后面（CSS 里是 .28）');
+  assert.ok(doc.body.children.includes(view.ghost), '幽灵节点要真的挂到页面上，不是只有一行样式');
+  assert.ok(view.ghost.classList.contains('drag-ghost'));
+  assert.equal(view.ghost.children[0].style.width, '640px', '幽灵按被拖的块取宽');
+  assert.match(dragText(view.ghost), /这一块要搬走。/, '幽灵里是被拖的那段字');
+  assert.ok(doc.body.classList.contains('is-reordering'), '整页进入拖动态');
+});
+
+test('幽灵跟手滞后一帧：一帧里连动三次，第一帧只画第一次的位置', async () => {
+  const { createDragView } = await dragModule();
+  const doc = dragDocument();
+  const frames = dragFrames();
+  const view = createDragView({ document: doc, frame: frames.frame, scroll: () => ({ x: 0, y: 0 }) });
+  const block = dragNode('div');
+  block.dataset.anchor = 'b:aaaaaa';
+  block.getBoundingClientRect = () => ({ width: 640, height: 40 });
+  block.querySelector = () => ({ textContent: '块一。' });
+  view.begin({ dragging: { kind: 'block', anchor: 'b:aaaaaa', node: block }, point: { x: 100, y: 100 } });
+  const transform = () => String(view.ghost.style.transform ?? '');
+
+  view.move({ x: 210, y: 220 });
+  assert.equal(transform(), 'translate3d(100px, 100px, 0)', '还没到下一帧，幽灵留在起点');
+  view.move({ x: 310, y: 320 });
+  view.move({ x: 410, y: 420 });
+  assert.equal(frames.queue.length, 1, '一帧里连动多次也只画一次，不追着每个事件重排');
+  frames.queue.shift()();
+  assert.equal(transform(), 'translate3d(210px, 220px, 0)', '这一帧画的是排帧时的位置，比回调时的鼠标早一帧');
+  frames.flush();
+  assert.equal(transform(), 'translate3d(410px, 420px, 0)', '下一帧才追上鼠标');
+});
+
+test('落点是一条软槽：块与整页共用同一条，整页只换标签文字', async () => {
+  const { createDragView, gapLabel } = await dragModule();
+  const doc = dragDocument();
+  const frames = dragFrames();
+  const view = createDragView({ document: doc, frame: frames.frame, scroll: () => ({ x: 0, y: 0 }) });
+  const nodes = ['b:aaaaaa', 'b:bbbbbb', 'b:cccccc'].map((anchor) => {
+    const node = dragNode('div');
+    node.dataset.anchor = anchor;
+    node.getBoundingClientRect = () => ({ width: 640, height: 40 });
+    node.querySelector = () => ({ textContent: '块一。' });
+    return node;
+  });
+  const items = [
+    { anchor: 'b:aaaaaa', page: '1-1', top: 100, bottom: 140 },
+    { anchor: 'b:bbbbbb', page: '1-1', top: 160, bottom: 200 },
+    { anchor: 'b:cccccc', page: '1-1', top: 220, bottom: 260 },
+  ];
+  const lookup = {
+    page: () => ({ title: '页一', chapter: '甲' }),
+    blockText: (anchor) => (anchor === 'b:bbbbbb' ? '第二块' : ''),
+  };
+  const origin = { left: 120, width: 640 };
+  const blockDrag = { kind: 'block', anchor: 'b:aaaaaa', node: nodes[0] };
+  const gap = { y: 300, page: '1-1', before: 'b:bbbbbb' };
+
+  view.hover({ gap, dragging: blockDrag, label: gapLabel(gap, blockDrag, lookup), items, nodes, origin });
+
+  assert.equal(view.line.hidden, false, '落点要真的显出来');
+  assert.equal(view.line.style.left, '120px', '软槽与纸同宽同左');
+  assert.equal(view.line.style.width, '640px');
+  assert.equal(view.line.style.top, '300px');
+  assert.ok(view.line.classList.contains('drop-line'));
+  assert.ok(view.line.classList.contains('is-slot'), '落点用软槽样式，不是一条实心深绿线');
+  assert.equal(view.line.classList.contains('is-page'), false, '整页不该另起一套样式');
+  assert.equal(view.label.textContent, '插到「第二块」之前', '块落点说清插到哪一块之前');
+  const blockClasses = view.line.className;
+
+  view.hover({
+    gap: { y: 520, page: '2-1', position: 'before' },
+    dragging: { kind: 'page', key: '1-1', node: nodes[0] },
+    label: gapLabel({ y: 520, page: '2-1', position: 'before' }, { kind: 'page' }, lookup),
+    items,
+    nodes,
+    origin,
+  });
+  assert.equal(view.line.className, blockClasses, '整页拖动都是同一条槽、同一套颜色');
+  assert.equal(view.label.textContent, '整页移动', '整页只换标签文字');
+  assert.equal(view.line.style.top, '520px', '整页的落点照样跟着走');
+
+  // 拖动结束（落没落成都算）要把让位与软槽一起收回去，不留半截状态。
+  view.hover({ gap: { y: 100, page: '1-1', before: 'b:aaaaaa' }, dragging: { kind: 'page', node: nodes[0] }, label: '整页移动', items, nodes, origin });
+  assert.equal(nodes[1].style.transform, 'translateY(10px)', '落点以下的块已经让开');
+  view.end();
+  assert.equal(nodes[1].style.transform, '', '拖动结束，让位收回');
+  assert.equal(view.line.hidden, true, '拖动结束，软槽收起');
+});
+
+test('让位只走 transform：落点以下的块平移一条槽，位置没变就不重启动画', async () => {
+  const { shiftPlan, applyShifts, SLOT_HEIGHT } = await dragModule();
+  const items = [
+    { anchor: 'b:aaaaaa', top: 100, bottom: 140 },
+    { anchor: 'b:bbbbbb', top: 160, bottom: 200 },
+    { anchor: 'b:cccccc', top: 220, bottom: 260 },
+  ];
+  assert.equal(SLOT_HEIGHT, 10, '让位的距离就是软槽的高度');
+  assert.deepEqual(shiftPlan(items, 210), [{ anchor: 'b:cccccc', dy: 10 }], '落点以下的块才让位');
+
+  const nodes = ['b:aaaaaa', 'b:bbbbbb', 'b:cccccc'].map((anchor) => {
+    const node = dragNode('div');
+    node.dataset.anchor = anchor;
+    return node;
+  });
+  applyShifts(nodes, shiftPlan(items, 50), nodes[0]);
+  assert.deepEqual(nodes.map((node) => node.style.transform ?? ''), ['', 'translateY(10px)', 'translateY(10px)'],
+    '被拖的那块留在原位，其余块用 transform 平移');
+  assert.ok(nodes.every((node) => node.style.background === undefined), '让位不靠铺底色，也不整行变色');
+  assert.equal(nodes[1].dataset.shift, '10', '位移记在节点上，下次量落点要减掉它');
+
+  nodes[1].style.transform = 'sentinel';
+  applyShifts(nodes, shiftPlan(items, 50), nodes[0]);
+  assert.equal(nodes[1].style.transform, 'sentinel', '同一个落点重复算，不重启动画');
+
+  applyShifts(nodes, shiftPlan(items, 300), nodes[0]);
+  assert.equal(nodes[1].style.transform, '', '落点换到所有块之下，让位收回');
+  assert.equal(nodes[1].dataset.shift, '');
+});
+
+test('拖动的样式：纸色幽灵、28% 原位、10px 软槽、180ms 平移让位', () => {
+  const css = readFileSync(join(core, 'assets', 'workbench', 'doc-workbench.css'), 'utf8');
+  const drag = readFileSync(join(core, 'assets', 'workbench', 'doc-drag.js'), 'utf8');
+  const rule = (selector) => {
+    const index = css.indexOf(selector);
+    assert.notEqual(index, -1, `CSS 里要有 ${selector}`);
+    const start = css.indexOf('{', index);
+    return css.slice(start + 1, css.indexOf('}', start));
+  };
+
+  const ghost = rule('.drag-ghost-card');
+  assert.match(ghost, /86%/, '幽灵是纸色 86% 透明');
+  assert.match(ghost, /backdrop-filter:\s*blur\(12px\)/, '幽灵后面透出模糊的正文');
+  assert.match(ghost, /0 18px 40px -12px rgb\(16 18 22 \/ 22%\)/, '阴影就是这一个，不另调');
+  assert.match(ghost, /border-radius:\s*10px/);
+  assert.match(ghost, /scale\(1\.012\)\s+rotate\(\.2deg\)/, '幽灵稍微抬起一点，不是平贴的');
+
+  assert.match(rule('.doc-block.is-dragging'), /opacity:\s*\.28/, '原位块退到 28%');
+
+  const slot = rule('.drop-line {');
+  assert.match(slot, /height:\s*10px/, '落点是 10px 高的软槽');
+  assert.match(slot, /linear-gradient\([\s\S]*transparent/, '两端渐隐的淡绿，不是一条通到底的实心线');
+  assert.match(rule('.drop-line::before'), /height:\s*1\.5px/, '软槽内侧一条 1.5px 细线');
+  assert.match(css, /@keyframes drop-slot-grow \{[\s\S]*?height:\s*2px[\s\S]*?height:\s*10px/,
+    '软槽从 2px 长到 10px');
+  assert.match(css, /animation:\s*drop-slot-grow 120ms/, '长出来用 120ms');
+
+  const label = rule('.drop-line .drop-label');
+  assert.match(label, /border-radius:\s*999px/, '标签是小胶囊');
+  assert.match(label, /backdrop-filter:\s*blur/, '标签是毛玻璃，不是实心块');
+  assert.doesNotMatch(label, /background:\s*var\(--accent\)/, '标签不再是实心深绿');
+  assert.doesNotMatch(css, /\.drop-line\.is-page/, '整页拖动不换第二套重色，还是同一条槽');
+  assert.doesNotMatch(slot + rule('.drop-line::before') + label, /b45309/, '落点不另调一套琥珀色');
+
+  assert.match(css, /\.doc-block,\s*\.page-divider \{[^}]*transition:\s*transform 180ms cubic-bezier\(\.2,\s*\.8,\s*\.2,\s*1\)/,
+    '其余块用 transform 平移让位，180ms 一条缓动');
+  assert.match(rule('body.is-reordering .doc-block:hover'), /background:\s*transparent/,
+    '拖动时经过的块不铺灰底，不整行变色');
+
+  assert.doesNotMatch(drag, /setDragImage\(dragging\.node/, '原生快照不能再是被拖的那块');
+  assert.match(drag, /setDragImage\(image,\s*0,\s*0\)/, '换成一张透空图');
+});
+
 // ── 锁定与待核对：不可编辑的块也不可拖动（SPEC 第 5 节） ─────────────────────
 const postJson = (url, path, body) => fetch(`${url}${path}`, {
   method: 'POST',
@@ -792,23 +1019,23 @@ const postJson = (url, path, body) => fetch(`${url}${path}`, {
 
 test('被模型锁住的块不能被拖动：块与整页重排都被拒，解锁后同一动作可做', async (t) => {
   const dir = scratchDir();
-  const path = writeDoc(dir, 'storyline.md', `# 测试文档
+  const path = writeDoc(dir, 'storyline.md', `
 
-## 甲
+# 甲
 
-### 页一
+## 页一
 
 块一。<!-- b:aaaaaa -->
 
-### 页二
+## 页二
 
 块二。<!-- b:bbbbbb -->
 
 块五。<!-- b:eeeeee -->
 
-## 乙
+# 乙
 
-### 页三
+## 页三
 
 块三。<!-- b:cccccc -->`);
   const original = readFileSync(path, 'utf8');
@@ -855,23 +1082,23 @@ test('被模型锁住的块不能被拖动：块与整页重排都被拒，解�
 
 test('待核对的块也不能被拖动，裁决后才恢复', async (t) => {
   const dir = scratchDir();
-  const path = writeDoc(dir, 'storyline.md', `# 测试文档
+  const path = writeDoc(dir, 'storyline.md', `
 
-## 甲
+# 甲
 
-### 页一
+## 页一
 
 块一。<!-- b:aaaaaa -->
 
-### 页二
+## 页二
 
 块二。<!-- b:bbbbbb -->
 
 块五。<!-- b:eeeeee -->
 
-## 乙
+# 乙
 
-### 页三
+## 页三
 
 块三。<!-- b:cccccc -->`);
   const server = await openWorkbench(t, path);
@@ -934,11 +1161,11 @@ const pause = () => new Promise((done) => setTimeout(done, 5));
 
 test('历史按次记录：每次写盘前把上一版存档，列出时间、指纹与摘要', async (t) => {
   const dir = scratchDir();
-  const path = writeDoc(dir, 'storyline.md', `# 测试文档
+  const path = writeDoc(dir, 'storyline.md', `
 
-## 甲
+# 甲
 
-### 页一
+## 页一
 
 原句。<!-- b:aaaaaa -->`);
   const original = readFileSync(path, 'utf8');
@@ -975,11 +1202,11 @@ test('历史按次记录：每次写盘前把上一版存档，列出时间、�
 
 test('历史恢复是一次新编辑：旧档不删，过期基线与锁定期间都被拒', async (t) => {
   const dir = scratchDir();
-  const path = writeDoc(dir, 'storyline.md', `# 测试文档
+  const path = writeDoc(dir, 'storyline.md', `
 
-## 甲
+# 甲
 
-### 页一
+## 页一
 
 原句。<!-- b:aaaaaa -->`);
   const original = readFileSync(path, 'utf8');
@@ -1122,4 +1349,22 @@ test('页面不给锁定与待核对块装拖柄，历史入口在页面上', ()
   assert.match(html, /id="historyList"/, '历史要有可查看的列表');
   assert.match(page, /transport\.history\(\)/, '历史走同一条 transport');
   assert.match(page, /transport\.restore\(/, '恢复走同一条 transport');
+});
+
+test('页末引用在数据层就是出处区：页视图给条数，块上标 in_sources', async (t) => {
+  const { path } = sandboxExample();
+  const server = await openWorkbench(t, path);
+  const doc = await getDoc(server.url);
+
+  const first = doc.pages.find((page) => page.chapterIndex === 1 && page.index === 1);
+  assert.equal(first.sources, 2, '第 1 页末连续两条引用构成出处区');
+  const sources = doc.blocks.filter((block) => block.page.key === first.key && block.in_sources);
+  assert.deepEqual(sources.map((block) => block.type), ['quote', 'quote'], '出处区里的每一条都是引用块');
+  assert.equal(sources[0].anchor, 'b:21dcae', '出处条目保留自己的锚点');
+
+  const second = doc.pages.find((page) => page.chapterIndex === 1 && page.index === 2);
+  assert.equal(second.sources, 2, '页末两条引用');
+  const midQuote = doc.blocks.find((block) => block.page.key === second.key && block.type === 'quote' && !block.in_sources);
+  assert.ok(midQuote, '页中段的引用照常显示，不标出处');
+  assert.equal(midQuote.raw, '> 我们不是在卖提神，是在卖「把状态按时调回来」。');
 });

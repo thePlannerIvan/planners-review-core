@@ -20,7 +20,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { parseDocument } from './lib/doc-blocks.mjs';
+import { VERSION as DOC_CONTRACT, parseDocument } from './lib/doc-blocks.mjs';
 import { DOC_BINDING_CONTRACT, DOC_COMMAND_BACKEND } from './doc-command.mjs';
 
 const HERE = fileURLToPath(new URL('..', import.meta.url));
@@ -87,8 +87,8 @@ export function buildDocSurface({ docPath } = {}) {
   mkdirSync(stateDir, { recursive: true });
 
   const front = frontMatterOf(file);
-  if (front.contract !== 'planners-doc/1') {
-    fail('doc_surface_contract', `侧栏工作台只认 planners-doc/1，实际 ${JSON.stringify(front.contract)}`);
+  if (front.contract !== DOC_CONTRACT) {
+    fail('doc_surface_contract', `侧栏工作台只认 ${DOC_CONTRACT}，实际 ${JSON.stringify(front.contract)}`);
   }
 
   const entryPath = join(stateDir, ENTRY_NAME);

@@ -1,6 +1,6 @@
 {
   "contract": "acceptance-corpus/1",
-  "note": "语料来源清单。前 8 份是 01-projects / 07-SkillLab 下的真实 Markdown；后 2 份是仓库内的契约样例（含图片语法）。build-corpus.mjs 按此清单生成 planners-doc/1 语料：原文文字逐行保留，只改结构（分隔线、嵌套缩进、标题层级）。",
+  "note": "语料来源清单。前 8 份是 01-projects / 07-SkillLab 下的真实 Markdown；后 2 份是仓库内的契约样例（含图片语法）。build-corpus.mjs 按此清单生成 planners-doc/2 语料：原文文字逐行保留，只改结构（分隔线、嵌套缩进、标题层级，以及文档标题退出正文）。",
   "generated_by": "evals/acceptance/corpus/build-corpus.mjs",
   "documents": [
     {
@@ -17,13 +17,14 @@
       "transformations": {
         "hr": 4,
         "headings": 19,
+        "droppedTitle": 1,
         "nestedLists": 5,
         "htmlEscaped": 0,
         "insertedPages": 2
       },
       "output": {
-        "sha256": "b375d530583307cccc7f428fb5e2719954c300fdaf4ee6c898159b2ce41fb0ad",
-        "bytes": 10860,
+        "sha256": "a229bf4668f12238eb6ac5948a8b9c2bfefb5a649a3ae8c8f702455646ded0d0",
+        "bytes": 10798,
         "chapters": 5,
         "pages": 15,
         "blocks": 43,
@@ -56,13 +57,14 @@
       "transformations": {
         "hr": 6,
         "headings": 23,
+        "droppedTitle": 1,
         "nestedLists": 0,
         "htmlEscaped": 0,
         "insertedPages": 3
       },
       "output": {
-        "sha256": "a38b8a2a10740f0955b8f9d903c670b111389959462b28e489a5f2893c597b5f",
-        "bytes": 10025,
+        "sha256": "919460a6ccc76daeee5b23f33e50faeac235dd28e1f6ec75372c6cfc0200038b",
+        "bytes": 9957,
         "chapters": 6,
         "pages": 16,
         "blocks": 52,
@@ -96,13 +98,14 @@
       "transformations": {
         "hr": 0,
         "headings": 9,
+        "droppedTitle": 1,
         "nestedLists": 0,
         "htmlEscaped": 0,
         "insertedPages": 3
       },
       "output": {
-        "sha256": "97e2d20b87625537c1be8e7b97c100374ab0c3a4f883aa493a2df27f93eb66fa",
-        "bytes": 3288,
+        "sha256": "acff9feb81d7e9686b795f07195d6efc9371fc2af3ae049a70e6a99b9fde04b6",
+        "bytes": 3237,
         "chapters": 4,
         "pages": 7,
         "blocks": 25,
@@ -132,13 +135,14 @@
       "transformations": {
         "hr": 1,
         "headings": 24,
+        "droppedTitle": 1,
         "nestedLists": 0,
         "htmlEscaped": 0,
         "insertedPages": 3
       },
       "output": {
-        "sha256": "3286f5f5c331f4c14208aff43e28d5ac0d5aae046d037fb75fcbba47b601d172",
-        "bytes": 20544,
+        "sha256": "4605166c9f01fbcf2cb503e91351493953db7d5aaf7cfbecbad9aacc7d04f3eb",
+        "bytes": 20466,
         "chapters": 7,
         "pages": 19,
         "blocks": 134,
@@ -169,13 +173,14 @@
       "transformations": {
         "hr": 0,
         "headings": 4,
+        "droppedTitle": 1,
         "nestedLists": 0,
         "htmlEscaped": 0,
         "insertedPages": 3
       },
       "output": {
-        "sha256": "133b960264cddc7fa7f273a4472ac7f222e5e2b2f7eb749d140a294d71151f9d",
-        "bytes": 2069,
+        "sha256": "2ebfa9d71895a884f4c1d5a46e16186c787ba0e9416af9a15e26b62b3dad6f34",
+        "bytes": 2028,
         "chapters": 3,
         "pages": 3,
         "blocks": 9,
@@ -205,13 +210,14 @@
       "transformations": {
         "hr": 0,
         "headings": 9,
+        "droppedTitle": 1,
         "nestedLists": 0,
         "htmlEscaped": 0,
         "insertedPages": 8
       },
       "output": {
-        "sha256": "50d5ed8533f5ab345e29c05507c4378780069b9568a9ca5654292c740682757f",
-        "bytes": 9761,
+        "sha256": "6564e667eebbc6c2b9e5ea4dfe2303cde103891a42d8fcd6ff4a777f9de74b15",
+        "bytes": 9721,
         "chapters": 7,
         "pages": 9,
         "blocks": 26,
@@ -242,13 +248,14 @@
       "transformations": {
         "hr": 0,
         "headings": 7,
+        "droppedTitle": 1,
         "nestedLists": 9,
         "htmlEscaped": 0,
-        "insertedPages": 5
+        "insertedPages": 9
       },
       "output": {
-        "sha256": "e7c791e2dc9208199906ea47a40f97450043a8738a145fc7c75f5e438025eeb4",
-        "bytes": 4621,
+        "sha256": "1678989503558be6fc6ba23a9e15deeb38c867c5adcf261a7c644a1223d05fa0",
+        "bytes": 4605,
         "chapters": 5,
         "pages": 6,
         "blocks": 26,
@@ -281,13 +288,14 @@
       "transformations": {
         "hr": 0,
         "headings": 10,
+        "droppedTitle": 1,
         "nestedLists": 0,
         "htmlEscaped": 0,
         "insertedPages": 11
       },
       "output": {
-        "sha256": "aa9d836e85bd04870f13344d964b57fbae41fa619b0988c9165a1deb76457138",
-        "bytes": 3769,
+        "sha256": "b51a15f4bfdd1336f262d6036b191cd7a07139f9e6b4bfa9a7f9406b3049e128",
+        "bytes": 3733,
         "chapters": 10,
         "pages": 10,
         "blocks": 34,
@@ -309,31 +317,30 @@
       "source": {
         "path": "contracts/examples/storyline.md",
         "scope": "repo",
-        "sha256": "0d8b8b0c0455668763107cfe9620613543ceb08ec94331da3fe60dd0c51b9fe1",
-        "bytes": 4586,
-        "lines": 104
+        "sha256": "3f32bf591ebe13836ef0da15326673c6f8f68d11bf9df3504ea0465d691e339b",
+        "bytes": 4309,
+        "lines": 97
       },
       "handling": "verbatim",
       "transformations": null,
       "output": {
-        "sha256": "0d8b8b0c0455668763107cfe9620613543ceb08ec94331da3fe60dd0c51b9fe1",
-        "bytes": 4586,
+        "sha256": "3f32bf591ebe13836ef0da15326673c6f8f68d11bf9df3504ea0465d691e339b",
+        "bytes": 4309,
         "chapters": 3,
         "pages": 8,
-        "blocks": 48,
+        "blocks": 40,
         "block_types": {
           "paragraph": 8,
-          "list": 29,
-          "heading": 8,
-          "quote": 2,
+          "list": 18,
+          "quote": 13,
           "image": 1
         },
         "tables": 0,
         "images": 1,
-        "quotes": 2,
+        "quotes": 13,
         "code": 0,
-        "headings": 8,
-        "lists": 29
+        "headings": 0,
+        "lists": 18
       }
     },
     {
@@ -342,33 +349,33 @@
       "source": {
         "path": "contracts/examples/by-page.md",
         "scope": "repo",
-        "sha256": "41f420ecfc890427452a33dee5541c6bf6f542da9b6a1795743e7ea86e56ec97",
-        "bytes": 3789,
-        "lines": 119
+        "sha256": "2c589e942139ae6fdc740ee212b144054a23d59106d2de75324e19bcdd20df1a",
+        "bytes": 3549,
+        "lines": 112
       },
       "handling": "verbatim",
       "transformations": null,
       "output": {
-        "sha256": "41f420ecfc890427452a33dee5541c6bf6f542da9b6a1795743e7ea86e56ec97",
-        "bytes": 3789,
+        "sha256": "2c589e942139ae6fdc740ee212b144054a23d59106d2de75324e19bcdd20df1a",
+        "bytes": 3549,
         "chapters": 2,
         "pages": 6,
-        "blocks": 54,
+        "blocks": 48,
         "block_types": {
-          "heading": 24,
+          "heading": 18,
           "paragraph": 12,
-          "list": 13,
+          "list": 6,
+          "quote": 8,
           "image": 1,
           "table": 2,
-          "code": 1,
-          "quote": 1
+          "code": 1
         },
         "tables": 2,
         "images": 1,
-        "quotes": 1,
+        "quotes": 8,
         "code": 1,
-        "headings": 24,
-        "lists": 13
+        "headings": 18,
+        "lists": 6
       }
     }
   ]

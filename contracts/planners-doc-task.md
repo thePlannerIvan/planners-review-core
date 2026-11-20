@@ -19,7 +19,7 @@
   "text": "把这两块写紧一点，只改这两块。",
   "doc": {
     "path": "/path/to/project/.planners/storyline.md",
-    "contract": "planners-doc/1",
+    "contract": "planners-doc/2",
     "doc": "storyline",
     "project": "朗标笔试案"
   },
@@ -39,7 +39,7 @@
 | `contract` | 固定 `planners-doc-task/1`。模型先认版本再消费 |
 | `id` | 任务身份，`t:` + 12 位小写十六进制；claim / complete 用它 |
 | `scope` | `blocks`（选区 / 块尾按钮）、`page`（整页）、`doc`（整份） |
-| `page` | 仅 `scope: "page"` 时有值：`{chapter, number, title}`，与 `planners-doc/1` 的页身份一致 |
+| `page` | 仅 `scope: "page"` 时有值：`{chapter, number, title}`，与 `planners-doc/2` 的页身份一致（章节 + 顺序 + 标题） |
 | `text` | 人的意见原文，非空；是「要模型改什么」，不是批准或保存 |
 | `doc` | 任务对应的文档：绝对路径 + 文档头三元组。模型据此读文件 |
 | `blocks` | 任务绑定的块，**只有锚点与 `sha256(block.raw)`**。顺序即提交顺序/文档顺序 |
