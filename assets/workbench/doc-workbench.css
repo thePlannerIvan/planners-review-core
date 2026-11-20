@@ -109,6 +109,8 @@ body.is-notes-collapsed .notes-panel:not(.is-overlay) { display: none; }
 }
 .structure-jump:hover, .structure-jump:focus-visible { background: #fff3cf; outline: none; }
 .structure-extra { color: #8a6a12; }
+/* [hidden] 是 UA 的 display:none；这里声明了 display:flex，必须自己把隐藏赢回来。 */
+.structure-notice[hidden] { display: none; }
 
 /* 旧 JSON 主稿：顶部说清楚为什么只读，正文没有编辑面、没有反馈与拖柄。 */
 .readonly-notice {
