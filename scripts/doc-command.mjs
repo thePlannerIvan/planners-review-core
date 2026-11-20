@@ -52,6 +52,7 @@ const ROUTES = {
   split: ({ session, body }) => session.splitBlock(body),
   merge: ({ session, body }) => session.mergeBlocks(body),
   reorder: ({ session, body }) => session.reorder(body),
+  structure: ({ session, body }) => session.structure(body),
   asset_replace: ({ session, body }) => session.replaceAsset(body),
   async feedback({ surface, session, body }) {
     const receipt = session.submitFeedback(body);
