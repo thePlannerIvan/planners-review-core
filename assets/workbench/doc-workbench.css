@@ -98,7 +98,7 @@ body.is-notes-collapsed .notes-panel:not(.is-overlay) { display: none; }
   display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px;
   margin: 0; padding: 8px clamp(20px, 6vw, 96px);
   font-size: 12px; line-height: 1.7; color: #6b4e00;
-  background: #fff8e1; border-bottom: 1px solid #ecd9a0;
+  background: #fff8e1;
 }
 .structure-title { font-weight: 600; }
 .structure-group { color: #8a6a12; }
@@ -114,7 +114,7 @@ body.is-notes-collapsed .notes-panel:not(.is-overlay) { display: none; }
 .readonly-notice {
   margin: 0; padding: 9px clamp(20px, 6vw, 96px);
   font-size: 12px; line-height: 1.7; color: #6b4e00;
-  background: #fff8e1; border-bottom: 1px solid #ecd9a0;
+  background: #fff8e1;
 }
 body.is-readonly .doc-block:hover { background: transparent; }
 .doc-block.is-readonly { cursor: default; }
@@ -723,9 +723,23 @@ body[data-ds-dark-theme] .doc-block table code { background: var(--trough); }
 body[data-ds-dark-theme] .doc-block th { background: var(--trough); }
 body[data-ds-dark-theme] .deferred-model pre { background: var(--trough); }
 body[data-ds-dark-theme] .doc-block figure img { background: var(--paper); }
-body[data-ds-dark-theme] .structure-notice { background: rgb(240 128 118 / 12%); color: #F08076; }
+body[data-ds-dark-theme] .structure-notice { background: rgb(217 165 20 / 12%); color: #E5C26A; }
 body[data-ds-dark-theme] .readonly-notice { background: rgb(217 165 20 / 14%); color: #E5C26A; }
 body[data-ds-dark-theme] .drop-line .drop-label { background: rgb(36 36 38 / 72%); color: var(--accent); }
 /* 暗色的强调色是浅绿：按钮文字要反过来，不然白字压浅绿看不清。 */
 body[data-ds-dark-theme] .notes-submit,
 body[data-ds-dark-theme] .feedback-submit { color: #141416; }
+/* 用墨色当底的小徽标 / 提示，在暗色里要反过来；黄条里的褐色文字也要提亮。 */
+body[data-ds-dark-theme] .selection-feedback,
+body[data-ds-dark-theme] .block-lock { color: #141416; }
+body[data-ds-dark-theme] .deferred-note { color: #E5C26A; }
+body[data-ds-dark-theme] .structure-group,
+body[data-ds-dark-theme] .structure-extra { color: #C9A94F; }
+body[data-ds-dark-theme] .structure-jump {
+  border-color: rgb(229 194 106 / 35%);
+  background: rgb(229 194 106 / 10%);
+  color: #E5C26A;
+}
+body[data-ds-dark-theme] .note-badge.is-untouched { color: #E5C26A; }
+body[data-ds-dark-theme] .is-degraded { background: var(--trough); }
+body[data-ds-dark-theme] .block-raw { color: var(--muted); }
