@@ -144,21 +144,11 @@ test('改章节名与页名：只有标题行变化，块 raw 与锚点逐字不
   assert.equal(validate(path).code, 0, `改名后仍合规：${validate(path).stdout}`);
 });
 
-test('改名拒绝：过期基线、空标题、找不到章节/页都不落盘；改成同名不算一次写', async (t) => {
+test('改名拒绝：空标题、找不到章节/页都不落盘；改成同名不算一次写', async (t) => {
   const { path } = scratchDoc();
   const original = readFileSync(path, 'utf8');
   const server = await openWorkbench(t, path);
   const before = await getDoc(server.url);
-
-  const stale = await postStructure(server.url, {
-    op: 'rename-page',
-    chapter: 1,
-    index: 1,
-    title: '不该落盘',
-    base_sha256: '0'.repeat(64),
-  });
-  assert.equal(stale.status, 409, JSON.stringify(stale.body));
-  assert.equal(stale.body.code, 'stale_document', '过期基线要和重排同码');
 
   const empty = await postStructure(server.url, {
     op: 'rename-chapter',
@@ -207,6 +197,64 @@ test('改名拒绝：过期基线、空标题、找不到章节/页都不落盘�
   assert.equal(same.status, 200, JSON.stringify(same.body));
   assert.equal(same.body.changed, false, '改成同名不算一次写');
   assert.equal(readFileSync(path, 'utf8'), original);
+});
+
+// ── 基线过期：自动重读并重放，不拿 409 拦人，也不覆盖别处的新改动 ──────────────
+test('结构操作基线过期时自动重读并重放：别处的新改动不被覆盖，回执说明重放过', async (t) => {
+  const { path } = scratchDoc();
+  const server = await openWorkbench(t, path);
+  const before = await getDoc(server.url);
+
+  // 另一个窗口先改了一页标题：磁盘已经不是 before 那一版。
+  const elsewhere = await postStructure(server.url, {
+    op: 'rename-page',
+    chapter: 1,
+    index: 2,
+    title: '页二 · 别处改的',
+    base_sha256: before.sha256,
+  });
+  assert.equal(elsewhere.status, 200, JSON.stringify(elsewhere.body));
+
+  // 这个窗口还拿着旧基线改第 1 页：不 409，重读当前全文再重放。
+  const replayed = await postStructure(server.url, {
+    op: 'rename-page',
+    chapter: 1,
+    index: 1,
+    title: '页一 · 重放',
+    base_sha256: before.sha256,
+  });
+  assert.equal(replayed.status, 200, JSON.stringify(replayed.body));
+  assert.equal(replayed.body.ok, true);
+  assert.equal(replayed.body.replayed, true, '回执要说明这次是在新版本上重放的');
+
+  const after = await getDoc(server.url);
+  assert.deepEqual(after.pages.map((page) => page.title), ['页一 · 重放', '页二 · 别处改的', '页三'],
+    '这次改动重放上去了，别处的新改动也还在');
+  assert.equal(validate(path).code, 0, `重放后仍是合规文档：${validate(path).stdout}`);
+
+  // 加页与加出处也走同一条语义：过期基线不拒，落点是重读后的结构。
+  const addedPage = await postStructure(server.url, {
+    op: 'add-page',
+    chapter: 1,
+    index: 2,
+    title: '页二点五',
+    base_sha256: before.sha256,
+  });
+  assert.equal(addedPage.status, 200, JSON.stringify(addedPage.body));
+  assert.equal(addedPage.body.replayed, true);
+  assert.equal(addedPage.body.page.title, '页二点五');
+  assert.equal(addedPage.body.page.index, 3, '新页插在重读后的第 2 页之后');
+
+  const addedChapter = await postStructure(server.url, {
+    op: 'add-chapter',
+    chapter: 2,
+    base_sha256: before.sha256,
+  });
+  assert.equal(addedChapter.status, 200, JSON.stringify(addedChapter.body));
+  assert.equal(addedChapter.body.replayed, true);
+  const last = await getDoc(server.url);
+  assert.deepEqual(last.chapters.map((chapter) => chapter.title), ['第一章', '第二章', '新章节'],
+    '加章落在重读后的第 2 章之后（末尾），不是旧结构的位置');
 });
 
 // ── 加页：页尾加一页，落在同章同位置；文件里是真正的空页（没有占位正文） ──────

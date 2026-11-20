@@ -22,6 +22,7 @@ import { basename, dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { VERSION as DOC_CONTRACT, parseDocument } from './lib/doc-blocks.mjs';
 import { DOC_BINDING_CONTRACT, DOC_COMMAND_BACKEND } from './doc-command.mjs';
+import { DOC_SCRIPTS, assertDocScripts } from './lib/doc-scripts.mjs';
 
 const HERE = fileURLToPath(new URL('..', import.meta.url));
 const ASSETS = join(HERE, 'assets', 'workbench');
@@ -38,20 +39,6 @@ function surfaceIdFor(file) {
 
 const fail = (code, message) => { throw Object.assign(Error(message), { code }); };
 
-/** 页面里那几段脚本的磁盘来源：与本地页 serve 的是同一批文件，侧栏只是把它们内联。 */
-const SCRIPTS = [
-  ['/vendor/marked.js', join(HERE, 'assets', 'content-review', 'marked.umd.js')],
-  ['/doc-transport.js', join(ASSETS, 'doc-transport.js')],
-  ['/doc-inline.js', join(ASSETS, 'doc-inline.js')],
-  ['/doc-drag.js', join(ASSETS, 'doc-drag.js')],
-  ['/doc-feedback.js', join(ASSETS, 'doc-feedback.js')],
-  ['/doc-images.js', join(ASSETS, 'doc-images.js')],
-  ['/doc-sources.js', join(ASSETS, 'doc-sources.js')],
-  ['/doc-notes.js', join(ASSETS, 'doc-notes.js')],
-  ['/doc-layout.js', join(ASSETS, 'doc-layout.js')],
-  ['/doc-workbench.js', join(ASSETS, 'doc-workbench.js')],
-];
-
 /** 生成自包含入口：CSS / 脚本全部内联，只留一行裸的桥注入点。 */
 export function renderDocSurfaceEntry() {
   let html = readFileSync(join(ASSETS, 'doc-workbench.html'), 'utf8');
@@ -59,7 +46,9 @@ export function renderDocSurfaceEntry() {
   const link = '<link rel="stylesheet" href="/doc-workbench.css">';
   if (!html.includes(link)) fail('doc_surface_template', '页面模板缺少样式引用，无法生成自包含入口');
   html = html.replace(link, () => `<style>\n${css}\n</style>`);
-  for (const [src, file] of SCRIPTS) {
+  // 清单唯一来源是页面模板：`doc-scripts.mjs` 解析出来的顺序就是加载顺序。
+  assertDocScripts();
+  for (const { src, file } of DOC_SCRIPTS) {
     const tag = `<script src="${src}"></script>`;
     if (!html.includes(tag)) fail('doc_surface_template', `页面模板缺少脚本 ${src}`);
     const source = readFileSync(file, 'utf8').replaceAll('</script', '<\\/script');

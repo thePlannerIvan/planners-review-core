@@ -315,7 +315,7 @@ test('页面有三个反馈入口，提交前高亮将改的块，锁定时提�
 
   assert.match(page, /data-feedback-block/, '块尾要有反馈按钮');
   assert.match(page, /data-feedback-selection/, '选中后要浮出反馈按钮');
-  assert.match(html + page, /overallFeedback|data-overall/, '顶部要有整页 / 整份反馈入口');
+  assert.match(html, /notesOverallPage|notesOverallDoc/, '批注抽屉要有整页 / 整份反馈入口');
   assert.match(page, /DocFeedback\.anchorsForRange/, '选区要经同一份吸附规则换算成块');
   assert.match(page, /is-feedback-target/, '提交前要标出「将改的块」');
   assert.match(page, /scope = 'page'|scope: 'page'|scope === 'page'/, '整页反馈要按页换算范围');

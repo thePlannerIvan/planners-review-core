@@ -186,6 +186,31 @@ test('「＋ 出处」在页尾加一条引用：进出处区、有自己的锚�
   assert.equal(validate(path).code, 0, `加出处后仍合规：${validate(path).stdout}`);
 });
 
+test('「＋ 出处」基线过期时自动重读并重放：别处改动不被覆盖', async (t) => {
+  const { path } = scratchDoc();
+  const server = await openWorkbench(t, path);
+  const before = await getDoc(server.url);
+
+  // 另一个窗口先改了第 2 页的标题：磁盘已经不是打开时那一版。
+  const elsewhere = await postStructure(server.url, {
+    op: 'rename-page', chapter: 1, index: 2, title: '页二 · 别处改的', base_sha256: before.sha256,
+  });
+  assert.equal(elsewhere.status, 200, JSON.stringify(elsewhere.body));
+
+  const added = await postStructure(server.url, {
+    op: 'add-source', chapter: 1, index: 1, base_sha256: before.sha256,
+  });
+  assert.equal(added.status, 200, JSON.stringify(added.body));
+  assert.equal(added.body.replayed, true, '回执说明是在新版本上重放的');
+
+  const after = await getDoc(server.url);
+  assert.equal(after.pages.find((page) => page.chapterIndex === 1 && page.index === 2).title, '页二 · 别处改的',
+    '别处刚改的页标题还在');
+  assert.equal(after.pages.find((page) => page.chapterIndex === 1 && page.index === 1).sources, 3,
+    '新出处加在重读后的页一末尾');
+  assert.equal(validate(path).code, 0, `重放后仍合规：${validate(path).stdout}`);
+});
+
 test('「＋ 出处」也能让没有出处区的页有一条；不是引用块就没有出处可加', async (t) => {
   const { path } = scratchDoc(`# 第一章
 
@@ -210,6 +235,44 @@ test('「＋ 出处」也能让没有出处区的页有一条；不是引用块�
   assert.equal(missing.status, 409, JSON.stringify(missing.body));
   assert.equal(missing.body.code, 'chapter_missing');
   assert.equal(validate(path).code, 0, '仍是合规文档');
+});
+
+// ── 拖到页末：正文块落在出处区之前，页末仍是引用，出处区不被拆散 ──────────────
+test('拖到页末不会拆散出处区：落点在出处区之前，页末仍是引用', async (t) => {
+  const { path } = scratchDoc();
+  const server = await openWorkbench(t, path);
+  const before = await getDoc(server.url);
+  const pageOne = before.pages.find((page) => page.chapterIndex === 1 && page.index === 1);
+  assert.equal(pageOne.sources, 2, '前提：第 1 页页末有两条出处');
+
+  const moved = await fetch(`${server.url}/api/reorder`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      op: 'move-block',
+      base_sha256: before.sha256,
+      anchor: 'b:aa0005',
+      to: { chapter: 1, index: 1, before: null },
+    }),
+  });
+  const receipt = await moved.json();
+  assert.equal(moved.status, 200, JSON.stringify(receipt));
+  assert.equal(receipt.ok, true);
+
+  const after = await getDoc(server.url);
+  const nowPageOne = after.pages.find((page) => page.chapterIndex === 1 && page.index === 1);
+  assert.equal(nowPageOne.sources, 2, '出处区仍是两条：拖进来的正文没有把页末改成非引用');
+  const ordered = pageBlocks(after, nowPageOne).map((block) => block.anchor);
+  assert.deepEqual(ordered, ['b:aa0001', 'b:aa0005', 'b:aa0002', 'b:aa0003'],
+    '正文块落在出处区之前，两条出处仍连续排在页末');
+  const dropped = pageBlocks(after, nowPageOne).find((block) => block.anchor === 'b:aa0005');
+  assert.equal(dropped.in_sources, false, '拖进来的正文不是出处');
+  assert.deepEqual(
+    pageBlocks(after, nowPageOne).filter((block) => block.in_sources).map((block) => block.anchor),
+    ['b:aa0002', 'b:aa0003'],
+    '原来那两条出处没有被拆开或改写',
+  );
+  assert.equal(validate(path).code, 0, `拖完仍是合规文档：${validate(path).stdout}`);
 });
 
 // ── 服务端快照 → 摆法：数据层认出来的出处区，界面照着它摆 ────────────────────
@@ -279,8 +342,8 @@ test('工作台按摆法渲染：页面加载 doc-sources、收起状态按页�
 
   assert.match(html, /<script src="\/doc-sources\.js"><\/script>/, '页面先加载出处模块');
   assert.ok(html.indexOf('/doc-sources.js') < html.indexOf('/doc-workbench.js'), '出处模块先于页面逻辑');
-  assert.match(surface, /doc-sources\.js/, '侧栏自包含入口也要内联同一份模块');
-  assert.match(server, /doc-sources\.js/, '本地宿主也要发这一份');
+  assert.match(surface, /DOC_SCRIPTS|assertDocScripts/, '侧栏自包含入口按唯一脚本清单内联同一份模块');
+  assert.match(server, /DOC_SCRIPT_SOURCES|docScriptFile/, '本地宿主按唯一脚本清单发这一份');
 
   assert.match(page, /DocSources\.layoutPage\(/, '正文按同一份摆法渲染，不在页面里另判一遍');
   assert.match(page, /expandedSources/, '展开是页面状态，重画后不丢');

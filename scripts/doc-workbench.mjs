@@ -44,6 +44,7 @@ import { spawn } from 'node:child_process';
 import { imageMime, realPathInside, resolveInside } from './lib/doc-assets.mjs';
 import { createTaskDispatcher } from './lib/doc-dispatch.mjs';
 import { createDocSession } from './lib/doc-session.mjs';
+import { DOC_SCRIPT_SOURCES, docScriptFile } from './lib/doc-scripts.mjs';
 
 const HERE = fileURLToPath(new URL('..', import.meta.url));
 const ASSETS = join(HERE, 'assets', 'workbench');
@@ -156,6 +157,24 @@ export async function startDocWorkbench({
   // 派发的唯一出口：有插件走唤醒，没有插件写本地收件箱；两条路径拿到同一条任务。
   const dispatch = session.readonly ? null : createTaskDispatcher({ docPath: file, onTask });
 
+  /**
+   * 派发失败只报错，不让已创建的任务消失（人还能在 /api/tasks 里看到它）。
+   * 块级反馈与整批批注共用这一段：以前两条路由各抄一份逐字相同的 try/catch。
+   */
+  async function deliver(task) {
+    try {
+      return await dispatch(task);
+    } catch (error) {
+      console.error(`派发失败：${error?.message ?? error}`);
+      return {
+        channel: typeof onTask === 'function' ? 'wake' : 'inbox',
+        task_id: task.id,
+        status: task.status,
+        error: error?.message ?? String(error),
+      };
+    }
+  }
+
   const server = createServer(async (request, response) => {
     const url = new URL(request.url || '/', `http://${host}`);
     try {
@@ -204,20 +223,8 @@ export async function startDocWorkbench({
         if (!allowWrite(request, response, server, host, 'feedback')) return;
         const payload = JSON.parse((await readBody(request)) || '{}');
         const receipt = session.submitFeedback(payload);
-        // 派发出口只有一处：任务先建成同一个形状，再选择唤醒或写收件箱。
-        // 派发失败只报错，不让已创建的任务消失（人还能在 /api/tasks 里看到它）。
-        let delivery;
-        try {
-          delivery = await dispatch(receipt.task);
-        } catch (error) {
-          delivery = {
-            channel: typeof onTask === 'function' ? 'wake' : 'inbox',
-            task_id: receipt.task.id,
-            status: receipt.task.status,
-            error: error?.message ?? String(error),
-          };
-          console.error(`派发失败：${error?.message ?? error}`);
-        }
+        // 派发出口只有一处：任务先建成同一个形状，再交给 deliver 选择唤醒或写收件箱。
+        const delivery = await deliver(receipt.task);
         return json(response, 200, { ...receipt, dispatch: delivery });
       }
       if (url.pathname === '/api/notes') {
@@ -241,19 +248,8 @@ export async function startDocWorkbench({
         if (!allowWrite(request, response, server, host, 'note')) return;
         const payload = JSON.parse((await readBody(request)) || '{}');
         const receipt = session.submitNotes(payload);
-        // 派发出口与块级反馈同一个：先建任务，再按宿主唤醒或写收件箱。
-        let delivery;
-        try {
-          delivery = await dispatch(receipt.task);
-        } catch (error) {
-          delivery = {
-            channel: typeof onTask === 'function' ? 'wake' : 'inbox',
-            task_id: receipt.task.id,
-            status: receipt.task.status,
-            error: error?.message ?? String(error),
-          };
-          console.error(`派发失败：${error?.message ?? error}`);
-        }
+        // 派发出口与块级反馈同一个：先建任务，再交给 deliver。
+        const delivery = await deliver(receipt.task);
         return json(response, 200, { ...receipt, dispatch: delivery });
       }
       if (url.pathname === '/api/note/reopen') {
@@ -307,12 +303,12 @@ export async function startDocWorkbench({
       if (url.pathname === '/' || url.pathname === '/index.html') {
         return serveFile(response, join(ASSETS, 'doc-workbench.html'));
       }
-      if (url.pathname === '/doc-transport.js' || url.pathname === '/doc-workbench.js' || url.pathname === '/doc-inline.js'
-        || url.pathname === '/doc-drag.js' || url.pathname === '/doc-feedback.js'
-        || url.pathname === '/doc-images.js' || url.pathname === '/doc-sources.js'
-        || url.pathname === '/doc-notes.js' || url.pathname === '/doc-layout.js'
-        || url.pathname === '/doc-workbench.css') {
-        return serveFile(response, join(ASSETS, url.pathname.slice(1)));
+      // 脚本清单唯一来源是页面模板（`lib/doc-scripts.mjs`）；清单外的脚本名一律 404。
+      if (DOC_SCRIPT_SOURCES.has(url.pathname)) {
+        return serveFile(response, docScriptFile(url.pathname));
+      }
+      if (url.pathname === '/doc-workbench.css') {
+        return serveFile(response, join(ASSETS, 'doc-workbench.css'));
       }
       if (url.pathname === '/vendor/marked.js') {
         return serveFile(response, join(HERE, 'assets', 'content-review', 'marked.umd.js'));

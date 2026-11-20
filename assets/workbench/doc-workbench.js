@@ -787,10 +787,10 @@ function renderReadonlyState() {
   // 只读主稿没有编辑面：结构提醒（页外块 / 空页）对它没有意义。
   const structure = $('#structureNotice');
   if (structure) { structure.hidden = true; structure.replaceChildren(); }
-  const feedback = $('#overallFeedback');
-  feedback.disabled = true;
-  feedback.hidden = true;
-  $('#overallMenu').hidden = true;
+  for (const id of ['#notesOverallPage', '#notesOverallDoc']) {
+    const button = $(id);
+    if (button) button.disabled = true;
+  }
   $('#selectionFeedback').hidden = true;
   $('#historyOpen').hidden = true;
   $('#historyPanel').hidden = true;
@@ -1072,7 +1072,7 @@ function wireSelectionFeedback() {
   document.addEventListener('selectionchange', scheduleSelectionTargets);
 }
 
-// ── 顶部整体反馈：整页按当前视野最近的块定页，整份绑定所有块 ───────────────────
+// ── 整体反馈（批注抽屉）：整页按当前视野最近的块定页，整份绑定所有块 ───────────
 function currentPage() {
   const nodes = blockNodes().filter((node) => blockEntry(node)?.block?.page);
   if (!nodes.length) return null;
@@ -1087,49 +1087,42 @@ function currentPage() {
   return best ? blockEntry(best).block.page : null;
 }
 
-const pageKeyOf = (page) => `${page?.chapter ?? ''}\u0000${page?.number ?? ''}\u0000${page?.title ?? ''}`;
-
 function anchorsOfPage(page) {
   return snapshot.blocks
-    .filter((block) => block.anchor && pageKeyOf(block.page) === pageKeyOf(page))
+    .filter((block) => block.anchor && block.page?.key === page.key)
     .map((block) => block.anchor);
 }
 
+/**
+ * 整体反馈并进批注抽屉：整页 / 整份的入口在抽屉底部，和「提交给模型修改」同一个出口。
+ * 顶栏只留规格列出的五项；这里复用同一个写反馈的输入框与同一条 feedback 命令。
+ */
 function wireOverallFeedback() {
-  const button = $('#overallFeedback');
-  const menu = $('#overallMenu');
-  const close = () => {
-    menu.hidden = true;
-    button.setAttribute('aria-expanded', 'false');
-  };
-  button.addEventListener('click', (event) => {
-    event.stopPropagation();
-    const open = menu.hidden;
-    menu.hidden = !open;
-    button.setAttribute('aria-expanded', String(open));
-  });
-  menu.addEventListener('click', (event) => {
-    const choice = event.target.closest('[data-overall]');
-    if (!choice) return;
-    close();
+  const pageButton = $('#notesOverallPage');
+  const docButton = $('#notesOverallDoc');
+  pageButton?.addEventListener('click', () => {
     if (!snapshot) return;
-    if (choice.dataset.overall === 'doc') {
-      const anchors = snapshot.blocks.filter((block) => block.anchor).map((block) => block.anchor);
-      openComposer(anchors, { scope: 'doc', label: `将改整份 · ${anchors.length} 块` });
-      return;
-    }
     const page = currentPage();
-    if (!page) return;
+    if (!page) { status('找不到当前页；先滚到正文再点', true); return; }
     const anchors = anchorsOfPage(page);
+    if (!anchors.length) { status('这一页还没有可反馈的块', true); return; }
     openComposer(anchors, {
       scope: 'page',
       page: { chapter: page.chapter, number: page.number, title: page.title },
       label: `将改这一页 · ${page.title}`,
     });
   });
-  document.addEventListener('click', (event) => {
-    if (!menu.hidden && !event.target.closest('.top-actions')) close();
+
+  docButton?.addEventListener('click', () => {
+    if (!snapshot) return;
+    const anchors = snapshot.blocks.filter((block) => block.anchor).map((block) => block.anchor);
+    if (!anchors.length) { status('这份稿还没有可反馈的块', true); return; }
+    openComposer(anchors, { scope: 'doc', label: `将改整份 · ${anchors.length} 块` });
   });
+
+  for (const button of [pageButton, docButton]) {
+    if (button) button.disabled = Boolean(snapshot?.readonly);
+  }
 }
 
 // ── 批注：草稿攒在右侧抽屉里，底部一次提交整批 ────────────────────────────────
@@ -1142,7 +1135,8 @@ let notesLoaded = false;
 let notesError = null;
 const expandedBubbles = new Set();
 // 模型看了任务却没动这一块：留在右侧并如实标出来（不是人的错觉）。
-const NOTE_UNTOUCHED_LABEL = '模型没动这条';
+// 状态来自服务端结构化的 `model_state`；这里只负责把状态翻成一句给人看的话。
+const NOTE_UNTOUCHED_TEXT = '模型没动这条';
 
 const blockOrder = () => new Map((snapshot?.blocks ?? []).map((block, index) => [block.anchor, index]));
 
@@ -1168,10 +1162,11 @@ function noteRow(note, { deletable }) {
   time.textContent = noteTime(note.created_at);
   meta.append(time);
   if (note.state === 'committed') {
+    const untouched = note.model_state === 'untouched';
     const badge = document.createElement('span');
     badge.className = 'note-badge';
-    badge.textContent = note.note === NOTE_UNTOUCHED_LABEL ? NOTE_UNTOUCHED_LABEL : '已提交';
-    if (note.note === NOTE_UNTOUCHED_LABEL) badge.classList.add('is-untouched');
+    badge.textContent = untouched ? NOTE_UNTOUCHED_TEXT : '已提交';
+    if (untouched) badge.classList.add('is-untouched');
     meta.append(badge);
   }
   if (note.state !== 'draft') {

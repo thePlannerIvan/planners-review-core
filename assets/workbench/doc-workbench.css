@@ -57,7 +57,7 @@ body.is-scrolled .topbar {
   backdrop-filter: blur(14px) saturate(1.2);
   -webkit-backdrop-filter: blur(14px) saturate(1.2);
 }
-.brand { display: inline-flex; flex: none; align-items: center; color: var(--ink); }
+.brand { display: flex; flex: 1; min-width: 0; align-items: center; gap: 10px; color: var(--ink); }
 .brand-mark { display: block; width: 24px; height: 24px; }
 .doc-meta { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
 .doc-meta strong {
@@ -128,7 +128,7 @@ body.is-readonly .block-handle,
 body.is-readonly .page-handle { display: none; }
 
 /* 三栏的宽度极限由「工作台容器」决定，不看视口：侧栏能被拖宽，视口一直那么大。
- * `container-type: inline-size` 让下方 @container 三档读的是这块的真实宽度。 */
+ * `container-type: inline-size` 让 doc-layout 生成的三档 @container 读这块的真实宽度。 */
 .workspace {
   max-width: 1360px; margin: 0 auto;
   container-type: inline-size;
@@ -273,15 +273,14 @@ body[data-ds-dark-theme] .doc { box-shadow: inset 0 0 0 1px rgb(255 255 255 / .0
 .inline-toolbar button:hover, .inline-toolbar button:focus-visible { background: #3f4650; outline: none; }
 .inline-toolbar code { font-family: var(--mono); }
 
-/* 三处反馈入口：块尾、选中浮出、顶部整体。顶栏这几个是控件，不描边，用悬停表态。 */
+/* 顶栏控件：不含整体反馈（它在批注抽屉里）。 */
 .top-actions { position: relative; display: flex; align-items: center; gap: 4px; }
-.overall-feedback, .history-open {
+.history-open {
   display: inline-flex; align-items: center; gap: 6px;
   appearance: none; border: 0; background: transparent; color: var(--muted);
   padding: 5px 10px; border-radius: 8px; font-family: var(--font); font-size: 12px; cursor: pointer;
   transition: background .12s ease, color .12s ease;
 }
-.overall-feedback:hover, .overall-feedback:focus-visible,
 .history-open:hover, .history-open:focus-visible { background: var(--hover); color: var(--ink); outline: none; }
 .history-open[hidden] { display: none; }
 
@@ -332,17 +331,6 @@ body[data-ds-dark-theme] .doc { box-shadow: inset 0 0 0 1px rgb(255 255 255 / .0
 }
 .history-reopen:hover, .history-reopen:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
 .history-reopen:disabled { opacity: .55; cursor: default; }
-.overall-menu {
-  position: absolute; top: calc(100% + 6px); right: 0; z-index: 50;
-  min-width: 136px; padding: 4px; background: var(--surface);
-  border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
-}
-.overall-menu[hidden] { display: none; }
-.overall-menu button {
-  display: block; width: 100%; text-align: left; appearance: none; border: 0; background: transparent;
-  padding: 7px 10px; border-radius: 5px; font-family: var(--font); font-size: 13px; color: var(--ink); cursor: pointer;
-}
-.overall-menu button:hover, .overall-menu button:focus-visible { background: var(--hover); outline: none; }
 
 /* 块的两个边缘：左缘抓手、右缘批注。同一套笔画、同一尺寸、同一条显形时机——
  * 18px 热区、14px 高、1.7 描边、muted 色、只在悬停这一块时一起亮。 */
@@ -686,6 +674,15 @@ body.has-image-viewer { overflow: hidden; }
 }
 .note-delete:hover, .note-delete:focus-visible { color: var(--danger); outline: none; }
 .note-delete:disabled { opacity: .55; cursor: default; }
+.notes-overall { display: flex; gap: 6px; margin: 0 0 8px; }
+.notes-scope {
+  flex: 1; appearance: none; border: 1px solid var(--line); background: var(--surface); color: var(--muted);
+  padding: 4px 8px; border-radius: 6px; font-family: var(--font); font-size: 11.5px; cursor: pointer;
+  transition: border-color .12s ease, color .12s ease;
+}
+.notes-scope:hover, .notes-scope:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
+.notes-scope:disabled { opacity: .5; cursor: default; }
+body.is-readonly .notes-overall { display: none; }
 .notes-foot { padding: 10px 12px 12px; }
 .notes-hint { margin: 0 0 8px; font-size: 11px; line-height: 1.6; color: var(--muted); }
 .notes-submit {
@@ -704,35 +701,9 @@ body.has-image-viewer { overflow: hidden; }
 .feedback-note:disabled { opacity: .55; cursor: default; }
 
 
-/* ── 三栏按工作台容器宽度降级：@container，不看视口 ──────────────────────────
- * 侧栏本身能被拖宽，视口一直是整块屏幕；决定目录要不要折、批注要不要改滑出层
- * 的是工作台容器自己的宽度。断点只有这三个，别再加视口媒体查询。 */
-@container workbench (min-width: 1180px) {
-  .toc-panel { flex-basis: 240px; width: 240px; }
-  .doc { flex-basis: 760px; width: 760px; }
-  .notes-panel { flex-basis: 300px; width: 300px; }
-}
-
-@container workbench (max-width: 1179.98px) {
-  .toc-panel { flex-basis: 48px; width: 48px; padding: 20px 6px 40px; }
-  /* 图标条：目录只留页号；章节退成一条细线，仍能看出分组（列表脊线不算面板边界）。 */
-  .toc-chapter {
-    height: 1px; margin: 10px 6px; padding: 0;
-    overflow: hidden; font-size: 0; background: var(--line);
-  }
-  .toc-page { width: 36px; margin: 0 auto; justify-content: center; padding: 6px 0; }
-  .toc-number { min-width: 0; font-size: 12px; }
-  .toc-title { display: none; }
-  .doc { flex: 1 1 auto; width: auto; max-width: var(--paper-w); min-width: 520px; }
-  .notes-panel { flex-basis: 280px; width: 280px; }
-}
-
-@container workbench (max-width: 899.98px) {
-  /* 批注已经是滑出层；还留在列里的那一份不占位（等接线把它挪到 body 下）。 */
-  .notes-panel:not(.is-overlay) { display: none; }
-  .doc { flex: 1 1 auto; width: auto; }
-}
-
+/* ── 三栏按工作台容器宽度降级 ────────────────────────────────────────────────
+ * 断点与每档尺寸只在 `assets/workbench/doc-layout.js` 的 `containerCSS()` 定义一次；
+ * 页面启动时由它生成 `@container` 规则插进 <head>，这里不再写第二份数字。 */
 /* 窄档的滑出层：JS 把面板挪到 body 下，@container 不再命中它，所以由 data-layout
  * 与 .is-overlay 接管。它有投影——这是真正浮起来的临时层。 */
 .notes-panel.is-overlay {

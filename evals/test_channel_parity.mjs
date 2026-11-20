@@ -275,9 +275,9 @@ test('侧栏桥与本地宿主：结构操作的拒绝同码同句，且都不�
 
   const cases = [
     {
-      name: '过期基线',
-      body: { op: 'rename-chapter', chapter: 1, title: '不该落盘', base_sha256: '0'.repeat(64) },
-      code: 'stale_document',
+      name: '找不到这一章',
+      body: { op: 'rename-chapter', chapter: 99, title: '不该落盘', base_sha256: opened.sha256 },
+      code: 'chapter_missing',
     },
     {
       name: '找不到这一页',

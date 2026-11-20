@@ -47,7 +47,7 @@ function layoutNode(tag = 'div') {
   return node;
 }
 
-function layoutDocument(width = 1280) {
+function layoutDocument(width = 1360) {
   const body = layoutNode('body');
   const workspace = layoutNode('div');
   workspace.getBoundingClientRect = () => ({ width, height: 800 });
@@ -69,11 +69,13 @@ function layoutDocument(width = 1280) {
 }
 
 // ── 三档按容器宽度分，不看视口 ────────────────────────────────────────────────
-test('布局档位按容器宽度分三档：≥1180 / 900–1180 / <900', async () => {
-  const { layoutMode } = await layoutModule();
+test('布局档位按容器宽度分三档：≥1316 / 900–1316 / <900', async () => {
+  const { layoutMode, LAYOUT_WIDE, LAYOUT_MEDIUM } = await layoutModule();
+  assert.equal(LAYOUT_WIDE, 1316, '常驻三栏的宽度是算出来的：240 + 760 + 300 + 2×8');
+  assert.equal(LAYOUT_MEDIUM, 900);
   assert.equal(layoutMode(1360), 'wide');
-  assert.equal(layoutMode(1180), 'wide', '1180 正好进常驻三栏');
-  assert.equal(layoutMode(1179), 'medium', '差一像素就降一档');
+  assert.equal(layoutMode(1316), 'wide', '1316 正好放得下 240 + 760 + 300 与两条 8px 间隔');
+  assert.equal(layoutMode(1315), 'medium', '差一像素就降一档');
   assert.equal(layoutMode(900), 'medium');
   assert.equal(layoutMode(899), 'narrow', '900 以下批注改滑出层');
   assert.equal(layoutMode(640), 'narrow');
@@ -82,7 +84,7 @@ test('布局档位按容器宽度分三档：≥1180 / 900–1180 / <900', async
 // ── 折叠键：点一下左栏真的收、再点一下真的开 ──────────────────────────────────
 test('折叠键收起左右两栏：点一下收、再点一下开，aria 跟着走', async () => {
   const { createLayout } = await layoutModule();
-  const { doc, body, buttons } = layoutDocument(1280);
+  const { doc, body, buttons } = layoutDocument(1360);
   const layout = createLayout({ document: doc });
   layout.bind();
 
@@ -112,7 +114,7 @@ test('折叠键收起左右两栏：点一下收、再点一下开，aria 跟着
 // ── 窄容器：批注默认收起，点开是滑出层而不是再挤一列 ──────────────────────────
 test('窄容器下批注默认收起，点折叠键改成滑出层打开', async () => {
   const { createLayout } = await layoutModule();
-  const { doc, body, buttons } = layoutDocument(1280);
+  const { doc, body, buttons } = layoutDocument(1360);
   const layout = createLayout({ document: doc });
   layout.bind();
   const notesButton = buttons[1];
@@ -132,13 +134,13 @@ test('窄容器下批注默认收起，点折叠键改成滑出层打开', async
   doc.listeners.click[0]({ target: notesButton });
   assert.equal(body.classList.contains('is-notes-open'), false, '再点一下滑出层收起');
 
-  layout.measure(1280);
+  layout.measure(1360);
   assert.equal(body.dataset.layout, 'wide', '容器被拖宽后回到常驻三栏');
   assert.equal(body.classList.contains('is-notes-open'), false, '人收起过的批注，拖宽也不会偷偷打开');
 
   doc.listeners.click[0]({ target: notesButton });
   layout.measure(860);
-  layout.measure(1280);
+  layout.measure(1360);
   assert.ok(body.classList.contains('is-notes-open'), '人打开过的批注，拖窄再拖宽仍按人的意思展开');
 });
 
@@ -161,31 +163,60 @@ test('滚动后顶栏毛玻璃：滚动之前不挂 is-scrolled，滚起来才�
   assert.equal(body.classList.contains('is-scrolled'), false, '滚回顶部还原，不留半截状态');
 });
 
-// ── 顶栏五项：logo、文档名 + 类型标签、保存态、折叠左、折叠右、历史批注 ────────
-test('顶栏结构：logo 在左上，文档名 + 类型标签、保存态、两个折叠键、历史批注都在', () => {
+// ── 顶栏严格五项：logo + 文档名/类型、保存态、折叠左、折叠右、历史批注 ─────────
+test('顶栏结构：五项都在，且不多出第六项（整体反馈不在顶栏）', () => {
   const html = read('doc-workbench.html');
   const header = html.match(/<header class="topbar"[\s\S]*?<\/header>/);
   assert.ok(header, '页面要有一层顶栏');
   const bar = header[0];
 
-  const logo = bar.match(/<svg[^>]*class="brand-mark"|<svg[^>]*aria-label="Logics"[\s\S]*?<\/svg>/);
-  assert.ok(logo, 'logo 是内联 SVG，不是外链图片');
-  assert.match(bar, /<svg[^>]*viewBox="16 16 68 68"/, '用 Logics 标记本体');
-  assert.match(bar, /width="24"[^>]*height="24"|height="24"[^>]*width="24"/, 'logo 是 24px');
-  assert.match(bar, /id="projectName"/, '文档名');
-  assert.match(bar, /class="doc-kind"[^>]*id="docKind"|id="docKind"[^>]*class="doc-kind"/, '文档名后面跟类型标签');
+  // 五项 = 身份区（logo + 文档名 + 类型标签）、保存态、折叠左、折叠右、历史。
+  const brand = bar.match(/<div class="brand"[\s\S]*?<\/div>\s*<div class="top-actions"/);
+  assert.ok(brand, '顶栏要有一个身份区，把 logo 与文档名放在一起');
+  assert.match(brand[0], /<svg[^>]*viewBox="16 16 68 68"/, '用 Logics 标记本体');
+  assert.match(brand[0], /width="24"[^>]*height="24"|height="24"[^>]*width="24"/, 'logo 是 24px');
+  assert.match(brand[0], /id="projectName"/, '文档名');
+  assert.match(brand[0], /class="doc-kind"[^>]*id="docKind"|id="docKind"[^>]*class="doc-kind"/, '文档名后面跟类型标签');
+
   assert.match(bar, /id="saveState"[^>]*role="status"/, '保存态要可朗读');
   assert.match(bar, /id="tocCollapse"[^>]*data-collapse="toc"/, '折叠左');
   assert.match(bar, /id="notesCollapse"[^>]*data-collapse="notes"/, '折叠右');
   assert.match(bar, /id="historyOpen"/, '历史批注入口');
 
+  // 不多于五项：保存态之外，顶栏的按钮只有折叠左 / 折叠右 / 历史这三个。
+  const topActions = bar.match(/<div class="top-actions"[^>]*>([\s\S]*?)<\/div>/);
+  assert.ok(topActions, '控件区要在顶栏里');
+  const buttons = [...topActions[1].matchAll(/<button\b[^>]*\bid="([^"]+)"/g)].map((match) => match[1]);
+  assert.deepEqual(buttons, ['tocCollapse', 'notesCollapse', 'historyOpen'],
+    '顶栏按钮只有三个：折叠左、折叠右、历史批注；多一个都不行');
+  assert.doesNotMatch(bar, /overall|整体反馈|反馈这一页|反馈整份/, '整体反馈不占顶栏的第六项');
+
   // 顺序就是顶栏的读法：logo → 文档名 → 保存态 → 折叠左 → 折叠右 → 历史。
-  const order = ['brand-mark', 'id="projectName"', 'id="saveState"', 'id="tocCollapse"', 'id="notesCollapse"', 'id="historyOpen"']
+  const order = ['class="brand"', 'id="projectName"', 'id="saveState"', 'id="tocCollapse"', 'id="notesCollapse"', 'id="historyOpen"']
     .map((needle) => bar.indexOf(needle));
   assert.ok(order.every((index) => index >= 0), '顶栏五项都要齐');
   assert.deepEqual([...order].sort((a, b) => a - b), order, '顶栏顺序：logo 在左上，保存态在折叠键前');
 
   assert.match(html, /<script src="\/doc-layout.js"><\/script>/, '本地页要加载布局接线');
+});
+
+test('整体反馈并进批注抽屉：整页 / 整份的入口在抽屉里，走同一条反馈命令', () => {
+  const html = read('doc-workbench.html');
+  const page = read('doc-workbench.js');
+  const notesPanel = html.match(/<aside[^>]*id="notesPanel"[\s\S]*?<\/aside>/);
+  assert.ok(notesPanel, '正文右侧要有批注抽屉');
+  assert.match(notesPanel[0], /id="notesOverallPage"/, '抽屉里要有「反馈这一页」');
+  assert.match(notesPanel[0], /id="notesOverallDoc"/, '抽屉里要有「反馈整份」');
+
+  // 两个入口都接回已有的反馈命令，scope 分别是 page / doc。
+  const wiring = page.match(/function wireOverallFeedback[\s\S]*?\n}/);
+  assert.ok(wiring, '整体反馈仍有一段接线');
+  assert.match(wiring[0], /notesOverallPage/, '页入口接在抽屉按钮上');
+  assert.match(wiring[0], /notesOverallDoc/, '整份入口接在抽屉按钮上');
+  assert.match(wiring[0], /scope: 'page'/, '整页范围');
+  assert.match(wiring[0], /scope: 'doc'/, '整份范围');
+  assert.match(wiring[0], /openComposer/, '复用同一个写反馈的输入框');
+  assert.doesNotMatch(wiring[0], /overallMenu|overallFeedback/, '不再有顶栏下拉菜单');
 });
 
 // ── 样式：三层底色、纸的尺度、纸不投外影 ────────────────────────────────────
@@ -245,7 +276,7 @@ test('纸靠明度差 + 极浅内描边界定，纸本身不投外影；投影�
 
   // 扫一遍所有 box-shadow：不只是纸，任何常驻表面都不许投外影。
   const transient = new Set([
-    '.inline-toolbar', '.history-panel', '.overall-menu', '.feedback-composer',
+    '.inline-toolbar', '.history-panel', '.feedback-composer',
     '.drag-ghost-card', '.drop-line .drop-label', '.image-viewer-image',
     '.note-bubble:hover, .note-bubble:focus-visible', '.notes-panel.is-overlay',
     'body[data-ds-dark-theme] .notes-panel.is-overlay',
@@ -263,26 +294,35 @@ test('纸靠明度差 + 极浅内描边界定，纸本身不投外影；投影�
   assert.ok(outer.length > 0, '幽灵、气泡、下拉、历史面板、滑出层都要有投影');
 });
 
-// ── 三栏按容器宽度降级 ──────────────────────────────────────────────────────
-test('三栏按 @container 降级：≥1180 常驻、900–1180 目录折成 48、<900 批注改滑出层', () => {
+// ── 三栏按容器宽度降级：断点只在 doc-layout 里定义一次，宽度由浏览器真实排版量 ──
+test('三栏断点只有一个定义：doc-layout 生成 @container，CSS 里不再写第二份数字', async () => {
   const css = read('doc-workbench.css');
+  const { containerCSS, LAYOUT_WIDE, LAYOUT_MEDIUM } = await layoutModule();
+
   const workspace = ruleOf(css, '.workspace {');
   assert.match(workspace, /container-type:\s*inline-size/, '工作台容器自己当查询容器');
   assert.match(workspace, /container-name:\s*workbench/);
 
-  const wide = atBlockOf(css, '@container workbench (min-width: 1180px)');
-  assert.match(wide, /\.toc-panel\s*\{[^}]*240px/, '宽档目录 240');
-  assert.match(wide, /\.doc\s*\{[^}]*760px/, '宽档纸 760');
-  assert.match(wide, /\.notes-panel\s*\{[^}]*300px/, '宽档批注 300');
+  // 断点数字只在 doc-layout 里：CSS 文件里出现任何 @container 的像素值都是第二份。
+  assert.doesNotMatch(css, /@container workbench \(\s*(?:min|max)-width:\s*\d/,
+    '断点不许再在 CSS 里写一份；由 doc-layout 按同一组常量生成');
+  assert.doesNotMatch(css, /@media[^{]*\{[^}]*\.(toc-panel|notes-panel)\s*\{/, '三栏不许看视口宽度');
 
-  const medium = atBlockOf(css, '@container workbench (max-width: 1179.98px)');
-  assert.match(medium, /\.toc-panel\s*\{[^}]*48px/, '中档目录折成 48 图标条');
-  assert.match(medium, /\.doc\s*\{[^}]*min-width:\s*520px/, '纸不低于 520');
-  assert.match(medium, /\.notes-panel\s*\{[^}]*280px/, '中档批注 280');
-  assert.match(medium, /\.toc-title\s*\{\s*display:\s*none/, '图标条只留页号');
-
-  const narrow = atBlockOf(css, '@container workbench (max-width: 899.98px)');
-  assert.match(narrow, /\.notes-panel:not\(\.is-overlay\)\s*\{\s*display:\s*none/, '窄档不再给批注留列');
+  const generated = containerCSS();
+  assert.match(generated, new RegExp(`@container workbench \\(min-width: ${LAYOUT_WIDE}px\\)`),
+    '宽档断点就是 240 + 760 + 300 + 2×8');
+  assert.match(generated, /\.toc-panel\s*\{[^}]*240px/, '宽档目录 240');
+  assert.match(generated, /\.doc\s*\{[^}]*760px/, '宽档纸 760');
+  assert.match(generated, /\.notes-panel\s*\{[^}]*300px/, '宽档批注 300');
+  assert.match(generated, new RegExp(`@container workbench \\(max-width: ${LAYOUT_WIDE - 0.02}px\\)`),
+    '中档从宽档差一像素开始');
+  assert.match(generated, /\.toc-panel\s*\{[^}]*48px/, '中档目录折成 48 图标条');
+  assert.match(generated, /\.doc\s*\{[^}]*min-width:\s*520px/, '纸不低于 520');
+  assert.match(generated, /\.notes-panel\s*\{[^}]*280px/, '中档批注 280');
+  assert.match(generated, /\.toc-title\s*\{\s*display:\s*none/, '图标条只留页号');
+  assert.match(generated, new RegExp(`@container workbench \\(max-width: ${LAYOUT_MEDIUM - 0.02}px\\)`),
+    '窄档从 900 以下开始');
+  assert.match(generated, /\.notes-panel:not\(\.is-overlay\)\s*\{\s*display:\s*none/, '窄档不再给批注留列');
 
   const drawer = ruleOf(css, '.notes-panel.is-overlay {');
   assert.match(drawer, /position:\s*fixed/, '滑出层覆盖在纸上');
@@ -290,8 +330,73 @@ test('三栏按 @container 降级：≥1180 常驻、900–1180 目录折成 48�
   assert.match(drawer, /box-shadow:/, '浮起来的临时层才有投影');
   assert.match(css, /body\.is-notes-open \.notes-panel\.is-overlay\s*\{[^}]*transform:\s*none/,
     '点开才滑进来');
+});
 
-  assert.doesNotMatch(css, /@media[^{]*\{[^}]*\.(toc-panel|notes-panel)\s*\{/, '三栏不许再看视口宽度');
+// 真实渲染宽度：把容器钉在断点上，量三栏各自的 border-box 宽度。
+// 不读 CSS 字面量：断点算错了、间距漏掉了、某栏被挤扁，都会在这里露出来。
+test('三栏宽度用真实渲染量：1316 是 240 + 760 + 300 + 两条 8px 间隔', async (t) => {
+  const { loadPlaywright } = await import('./acceptance/lib/harness.mjs');
+  const browserInfo = await loadPlaywright();
+  if (!browserInfo.available) {
+    t.skip(`跳过真实排版测量：${browserInfo.reason}`);
+    return;
+  }
+
+  const { mkdtempSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const dir = mkdtempSync(join(tmpdir(), 'planners-layout-'));
+  const docPath = join(dir, 'storyline.md');
+  writeFileSync(docPath, '---\ncontract: planners-doc/2\ndoc: storyline\nproject: 布局测量\n---\n\n'
+    + '# 第一章\n\n## 页一\n\n正文。<!-- b:aa0001 -->\n', 'utf8');
+  const { startDocWorkbench } = await import('../scripts/doc-workbench.mjs');
+  const server = await startDocWorkbench({ docPath, port: 0 });
+
+  const browser = await browserInfo.playwright.chromium.launch({ headless: true });
+  t.after(async () => {
+    await browser.close();
+    await server.close();
+  });
+  const browserPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await browserPage.goto(server.url, { waitUntil: 'networkidle' });
+  await browserPage.waitForFunction(() => document.body.dataset.layout === 'wide');
+
+  const measure = (width) => browserPage.evaluate(async (value) => {
+    const workspace = document.querySelector('#workspace');
+    workspace.style.maxWidth = 'none';
+    workspace.style.width = `${value}px`;
+    await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+    const box = (selector) => {
+      const node = document.querySelector(selector);
+      if (!node) return null;
+      const rect = node.getBoundingClientRect();
+      return { width: Math.round(rect.width), display: getComputedStyle(node).display };
+    };
+    return {
+      container: Math.round(workspace.getBoundingClientRect().width),
+      toc: box('.toc-panel'),
+      doc: box('.doc'),
+      notes: box('.notes-panel'),
+      layout: document.body.dataset.layout,
+    };
+  }, width);
+
+  const wide = await measure(1316);
+  assert.equal(wide.container, 1316);
+  assert.equal(wide.toc.width, 240, `宽档目录真实宽度应为 240，实际 ${wide.toc.width}`);
+  assert.equal(wide.doc.width, 760, `宽档纸真实宽度应为 760，实际 ${wide.doc.width}`);
+  assert.equal(wide.notes.width, 300, `宽档批注真实宽度应为 300，实际 ${wide.notes.width}`);
+  assert.equal(wide.toc.width + wide.doc.width + wide.notes.width + 2 * 8, 1316,
+    '三栏加两条 8px 间隔刚好等于 1316，不多不少');
+
+  const medium = await measure(1315);
+  assert.equal(medium.layout, 'medium', '1315 差一像素就降一档');
+  assert.equal(medium.toc.width, 48, '中档目录折成 48 图标条');
+  assert.equal(medium.notes.width, 280, '中档批注 280');
+  assert.ok(medium.doc.width >= 520, `中档纸不低于 520，实际 ${medium.doc.width}`);
+
+  const narrow = await measure(899);
+  assert.equal(narrow.layout, 'narrow', '900 以下批注改滑出层');
+  assert.equal(narrow.toc.width, 48, '窄档目录仍是 48 图标条');
 });
 
 // ── 悬停：不铺灰底，只亮两枚同一套的图标 ────────────────────────────────────

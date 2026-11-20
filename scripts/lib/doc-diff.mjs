@@ -13,6 +13,9 @@
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { atomicWrite, stateDirFor } from './doc-io.mjs';
+import DocIdentity from '../../assets/workbench/doc-identity.js';
+
+const { pageKeyOf } = DocIdentity;
 
 export const DIFF_CONTRACT = 'planners-doc-diff/1';
 export const BASELINE_CONTRACT = 'planners-doc-baseline/1';
@@ -91,9 +94,9 @@ export function writeBaseline(docPath, { sha256, parsed, now = () => new Date().
 
 const pageRef = (page) => ({ chapter: page.chapter, index: page.index, title: page.title });
 const chapterRef = (chapter) => ({ index: chapter.index, title: chapter.title });
-const pageKey = (page) => `${page.chapter ?? 0}-${page.index}`;
-/** 块上记的页是 `{chapter, page}`（与 diff 的块形状一致），和页对象的键只差字段名。 */
-const blockPageKey = (page) => `${page.chapter ?? 0}-${page.page ?? page.index ?? 0}`;
+const pageKey = (page) => pageKeyOf(page);
+/** 块上记的页是 `{chapter, page}`（与 diff 的块形状一致）；同一个 pageKeyOf 认得它。 */
+const blockPageKey = (page) => pageKeyOf(page);
 
 function chapterAnchorsOf(pages) {
   const map = new Map();

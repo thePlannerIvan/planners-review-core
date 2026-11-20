@@ -5,7 +5,7 @@
  *
  *   { contract, notes: [{ id, anchor, page: {chapter, index}, text,
  *                         state: 'draft' | 'committed' | 'resolved',
- *                         batch, created_at, resolved_at, note, snapshot }] }
+ *                         batch, created_at, resolved_at, model_state, snapshot }] }
  *
  * 为什么落盘而不是只留在页面里：人关掉浏览器、第二天回来，草稿还得在；模型在另一个
  * 进程里读任务时，看到的也必须是同一份批注。写盘仍由文档写锁串行化（调用方持有）。
@@ -27,8 +27,11 @@ export const NOTES_CONTRACT = 'planners-doc-notes/1';
 export const NOTE_STATES = ['draft', 'committed', 'resolved'];
 export const MAX_NOTE_TEXT = 2000;
 
-/** 模型看了任务却没动这一块：留在右侧，并如实标出来（不是人的错觉）。 */
-export const NOTE_UNTOUCHED = '模型没动这条';
+/**
+ * 模型看了任务却没动这一块：留在右侧，并如实标出来（不是人的错觉）。
+ * 这是**结构化状态**，不是一句文案：页面按它渲染，不靠文本相等判断。
+ */
+export const MODEL_UNTOUCHED = 'untouched';
 
 /** 主文件上限；超了就按归档时间从老到新搬进档案。 */
 export const MAX_NOTES_BYTES = 2 * 1024 * 1024;
@@ -151,7 +154,7 @@ export function draftNote({ anchor, page, text, id = newNoteId(), now = new Date
     batch: null,
     created_at: now,
     resolved_at: null,
-    note: null,
+    model_state: null,
     snapshot: null,
   };
 }
@@ -185,11 +188,11 @@ export function settleModelChange(notes, { batch, snapshots = new Map(), markUnt
     if (shot) {
       note.state = 'resolved';
       note.resolved_at = now;
-      note.note = null;
+      note.model_state = null;
       note.snapshot = { before: shot.before, after: shot.after };
       resolved.push(note);
-    } else if (markUntouched && note.note !== NOTE_UNTOUCHED) {
-      note.note = NOTE_UNTOUCHED;
+    } else if (markUntouched && note.model_state !== MODEL_UNTOUCHED) {
+      note.model_state = MODEL_UNTOUCHED;
       untouched.push(note);
     }
   }
@@ -205,7 +208,7 @@ export function reopenNote(notes, id) {
   note.state = 'draft';
   note.batch = null;
   note.resolved_at = null;
-  note.note = null;
+  note.model_state = null;
   note.snapshot = null;
   return note;
 }
