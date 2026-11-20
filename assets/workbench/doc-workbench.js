@@ -528,23 +528,16 @@ function renderStructuredBlocks(root) {
     // 章节标题下的页外块：先于本章的页出现。
     cursor = renderOrphanRun(root, blocks, cursor, chapter.index);
     for (const page of pages.filter((item) => item.chapterIndex === chapter.index)) {
-<<<<<<< HEAD
       const empty = page.blocks === 0;
       root.append(pageHeading({ ...page, empty }, { editable: true }));
-=======
-      root.append(pageHeading(page, { editable: true }));
       const pageBlocks = [];
->>>>>>> ticket/22-sources
       while (cursor < blocks.length && blocks[cursor].page?.key === page.key) {
         pageBlocks.push(blocks[cursor]);
         cursor += 1;
       }
-<<<<<<< HEAD
       // 空页：第一块是渲染层的待定块，输入后才落盘（文件里没有占位正文）。
       if (empty) root.append(pendingFirstBlock(page));
-=======
-      renderPageBlocks(root, page, pageBlocks);
->>>>>>> ticket/22-sources
+      else renderPageBlocks(root, page, pageBlocks);
       root.append(pageAddButton(page));
     }
     root.append(chapterAddButton(chapter));
