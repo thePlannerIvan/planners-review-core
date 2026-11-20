@@ -1,21 +1,30 @@
 /**
- * 结构编辑：改章节名 / 页名、在页尾加页、在章节尾加章。
+ * 结构编辑：改章节名 / 页名、在页尾加页、在章节尾加章、在页尾出处区加一条引用。
  *
- * 结构不是块：`#` 章节与 `##` 页没有锚点（契约第 2 节），所以这里不碰块 raw、不生成
- * 除「新页的第一块」以外的任何块身份。所有操作都是**对原文的行级补丁**：只替换标题行
- * 或在一个结构边界前插入新行，其余字节逐字保留（含 CRLF 与文件末尾换行）。
+ * 结构不是块：`#` 章节与 `##` 页没有锚点（契约第 2 节），所以这里不碰既有块 raw、
+ * 不生成除「新块」以外的任何块身份。所有操作都是**对原文的行级补丁**：只替换标题行
+ * 或在一个边界处插入新行，其余字节逐字保留（含 CRLF 与文件末尾换行）。
  *
- * 四个动作名与本地路由表 / 命令后端同名：`rename-chapter` / `rename-page` /
- * `add-page` / `add-chapter`。回执里给出新结构的 `{chapter, page}`，页面据此定位并聚焦。
+ * 五个动作名与本地路由表 / 命令后端同名：`rename-chapter` / `rename-page` /
+ * `add-page` / `add-chapter` / `add-source`。回执里给出新结构的 `{chapter, page}`
+ * 或新块 `{source}`，页面据此定位并聚焦。
  */
-import { parseDocument } from './doc-blocks.mjs';
+import { generateAnchor, parseDocument } from './doc-blocks.mjs';
 
-export const STRUCTURE_OPS = new Set(['rename-chapter', 'rename-page', 'add-page', 'add-chapter']);
+export const STRUCTURE_OPS = new Set([
+  'rename-chapter', 'rename-page', 'add-page', 'add-chapter', 'add-source',
+]);
 export const NEW_CHAPTER_TITLE = '新章节';
 export const NEW_PAGE_TITLE = '新页';
 // 新页就是**真正的空页**：文件里只有 `## 标题`，没有任何占位正文、也没有块身份。
 // 空页在编辑时合法（ADR 0006），交付校验器会报 `page_empty`，写不写由模型/人补。
 // 页面上那句「在这里写这一页。」是渲染层的 pending 块，输入后才落成真正的第一块。
+/** 新出处条目的占位文字：加完就能直接改，不用再点一次。 */
+const NEW_SOURCE_BLOCK = '在这里写这条出处。';
+/** 新块的身份：避开文档里已经存在的锚点。 */
+const freshAnchor = (parsed) => generateAnchor(
+  new Set((parsed.blocks ?? []).map((block) => block.anchor).filter(Boolean)),
+);
 
 const fail = (code, message) => { throw Object.assign(Error(message), { code }); };
 
@@ -69,7 +78,7 @@ function pageAt(parsed, chapter, value) {
 export function applyStructure(raw, payload) {
   const op = payload?.op;
   if (!STRUCTURE_OPS.has(op)) {
-    fail('structure_op', '结构操作只接受 rename-chapter / rename-page / add-page / add-chapter');
+    fail('structure_op', '结构操作只接受 rename-chapter / rename-page / add-page / add-chapter / add-source');
   }
   const source = String(raw ?? '');
   const bom = source.startsWith('\uFEFF') ? '\uFEFF' : '';
@@ -123,6 +132,23 @@ export function applyStructure(raw, payload) {
       raw: bom + output,
       changed: true,
       page: { chapter: chapter.index, index: page.index + 1, title, key: `${chapter.index}-${page.index + 1}` },
+    };
+  }
+
+  // add-source：页尾加一条引用。页末的引用就是出处区（契约第 5 节），所以这一条
+  // 并进已有出处区的末尾；没有出处区的页由此得到一条。
+  if (op === 'add-source') {
+    const chapter = chapterAt(parsed, payload.chapter);
+    const page = pageAt(parsed, chapter, payload.index);
+    const last = page.blocks[page.blocks.length - 1];
+    if (!last) fail('page_empty', `页「${page.title}」没有任何块，加不了出处；先写正文`);
+    const anchor = freshAnchor(parsed);
+    const insert = `${eol}${eol}> ${NEW_SOURCE_BLOCK}<!-- ${anchor} -->`;
+    const output = text.slice(0, last.endOffset) + insert + text.slice(last.endOffset);
+    return {
+      raw: bom + output,
+      changed: true,
+      source: { anchor, page: { chapter: chapter.index, index: page.index, title: page.title } },
     };
   }
 

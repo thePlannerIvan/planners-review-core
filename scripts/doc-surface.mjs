@@ -46,6 +46,7 @@ const SCRIPTS = [
   ['/doc-drag.js', join(ASSETS, 'doc-drag.js')],
   ['/doc-feedback.js', join(ASSETS, 'doc-feedback.js')],
   ['/doc-images.js', join(ASSETS, 'doc-images.js')],
+  ['/doc-sources.js', join(ASSETS, 'doc-sources.js')],
   ['/doc-notes.js', join(ASSETS, 'doc-notes.js')],
   ['/doc-layout.js', join(ASSETS, 'doc-layout.js')],
   ['/doc-workbench.js', join(ASSETS, 'doc-workbench.js')],
