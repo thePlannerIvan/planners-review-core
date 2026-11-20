@@ -57,7 +57,7 @@ function png(rgb) {
 const svg = (text, extra = '') => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 160">`
   + `<rect width="320" height="160" fill="#fffdf8"/><text x="16" y="48">${text}</text>${extra}</svg>`;
 
-const FRONT = '---\ncontract: planners-doc/1\ndoc: storyline\nproject: 图块测试\n---\n\n';
+const FRONT = '---\ncontract: planners-doc/2\ndoc: storyline\nproject: 图块测试\n---\n\n';
 
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'planners-assets-'));
@@ -66,11 +66,10 @@ function fixture() {
   writeFileSync(join(dir, 'assets', 'pixel.png'), png([47, 111, 79]));
   writeFileSync(join(dir, 'assets', 'chart.svg'), svg('结构图'));
   const path = join(dir, 'storyline.md');
-  writeFileSync(path, `${FRONT}# 图块测试
+  writeFileSync(path, `${FRONT}
+# 一、图
 
-## 一、图
-
-### 页一
+## 页一
 
 ![数据图](assets/pixel.png)
 <!-- b:aaaaaa -->
@@ -327,11 +326,10 @@ test('新增一张图：正文引用出现后，打开工作台即登记，旧�
   writeFileSync(join(dir, 'assets', 'chart.svg'), svg('结构图'));
   writeFileSync(join(dir, 'assets', 'later.png'), png([20, 20, 20]));
   const path = join(dir, 'storyline.md');
-  writeFileSync(path, `${FRONT}# 图块测试
+  writeFileSync(path, `${FRONT}
+# 一、图
 
-## 一、图
-
-### 页一
+## 页一
 
 ![结构图](assets/chart.svg)
 <!-- b:bbbbbb -->

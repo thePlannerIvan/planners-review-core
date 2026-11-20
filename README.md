@@ -68,7 +68,7 @@ node scripts/review-host.mjs start path/to/review-surface.json
 
 ## 单独使用：打开一份工作稿
 
-`planners-doc/1` 工作稿（`.planners/storyline.md`、`.planners/by-page.md`）可以直接用工作台打开：
+`planners-doc/2` 工作稿（`.planners/storyline.md`、`.planners/by-page.md`）可以直接用工作台打开：
 
 ```bash
 node scripts/doc-workbench.mjs path/to/.planners/storyline.md --open
@@ -112,7 +112,7 @@ echo '{"task_id":"<任务 id>","patches":[{"anchor":"b:7b057d","content":"新的
   | node scripts/doc-command.mjs path/to/.planners/.doc-workbench/review-surface.json patch
 ```
 
-旧的 `.proposal-work/page-architecture.json` / `.bypage-work/page-architecture.json` 也能打开，但**只读**：页面顶部写明原因，保存、重排、派发都被拒绝，磁盘一个字节都不动。旧项目不迁移，新的工作稿要按 `planners-doc/1` 重建。
+旧的 `.proposal-work/page-architecture.json` / `.bypage-work/page-architecture.json` 也能打开，但**只读**：页面顶部写明原因，保存、重排、派发都被拒绝，磁盘一个字节都不动。旧项目不迁移，新的工作稿要按 `planners-doc/2` 重建。
 
 
 ---
@@ -168,7 +168,7 @@ planners-review-core/
 ├── SECURITY.md
 ├── contracts/
 │   ├── review-surface.schema.json      # review-surface/2.0.0 权威契约
-│   ├── planners-doc.md                 # planners-doc/1 文档契约（工作稿结构）
+│   ├── planners-doc.md                 # planners-doc/2 文档契约（工作稿结构）
 │   ├── doc-assets.md                   # doc-assets/1 图资产清单契约（派生索引）
 │   ├── planners-doc-task.md            # planners-doc-task/1 块级反馈任务形状
 │   └── examples/                       # 两份真实样例：storyline / by-page
@@ -180,7 +180,8 @@ planners-review-core/
 ├── scripts/
 │   ├── open-artifact.mjs               # 任意 HTML 一键建批注面入口
 │   ├── validate-surface.mjs            # surface 结构与包含性校验器
-│   ├── validate-doc.mjs                # planners-doc/1 文档校验器
+│   ├── validate-doc.mjs                # planners-doc/2 文档校验器
+│   ├── migrate-doc.mjs                 # /1 → /2 迁移器（标题层级上移一位）
 │   ├── validate-doc-assets.mjs         # doc-assets/1 资产清单校验器
 │   ├── review-host.mjs                 # 本地宿主生命周期唯一 CLI
 │   ├── serve-review.mjs                # 无 DSH 插件时的本地浏览器宿主

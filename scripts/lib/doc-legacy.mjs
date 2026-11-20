@@ -1,7 +1,7 @@
 /**
  * 旧项目主稿（`.proposal-work/page-architecture.json` 这类 JSON）的只读挂载。
  *
- * 新工作台只认 `planners-doc/1` 的 Markdown：旧 JSON 不迁移、不兼容读取，也绝不被写。
+ * 新工作台只认 `planners-doc/2` 的 Markdown：旧 JSON 不迁移、不兼容读取，也绝不被写。
  * 但人仍需要能把旧主稿打开看一眼，确认「这是它」，所以这里把旧 JSON 变成一份**只读快照**：
  * 同样的 `pages` / `blocks` 形状，块上没有锚点、不可编辑；任何写入由工作台在入口拒绝。
  *
@@ -13,7 +13,7 @@ import { extname } from 'node:path';
 import { sha256 } from '../content-review-contract.mjs';
 
 export const LEGACY_REASON = 'legacy-json';
-export const LEGACY_READONLY_MESSAGE = '旧 JSON 主稿只读：这份文件用的是旧存储，新工作台只写 planners-doc/1 的 Markdown，不会修改它。'
+export const LEGACY_READONLY_MESSAGE = '旧 JSON 主稿只读：这份文件用的是旧存储，新工作台只写 planners-doc/2 的 Markdown，不会修改它。'
   + '要在这个工作台里改，请先按新契约重建 storyline.md / by-page.md。';
 
 const textOf = (value) => (typeof value === 'string' ? value : '');

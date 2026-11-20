@@ -162,7 +162,7 @@ ${JSON.stringify(newline.receipt ?? {}, null, 2)}
   return `# 文字工作台 · 验收记录（票 10「实测与验收」）
 
 > 生成方式：\`node evals/acceptance/run.mjs\`。下列时间、sha256、条数、块数均为本次运行的实际输出；重跑会覆盖本文件，并在 \`records/\` 下留一份同次运行的 JSON。
-> 语料不是手搓样例：8 份来自 \`01-projects\` 与 \`07-SkillLab\` 的真实项目 Markdown，2 份是仓库内的契约样例（覆盖图片语法）。真实文档按 \`planners-doc/1\` 做结构适配，原文文字逐行保留、只改结构；来源、源文件 sha256 与适配计数见下表与 \`corpus/manifest.json\`。
+> 语料不是手搓样例：8 份来自 \`01-projects\` 与 \`07-SkillLab\` 的真实项目 Markdown，2 份是仓库内的契约样例（覆盖图片语法）。真实文档按 \`planners-doc/2\` 做结构适配，原文文字逐行保留、只改结构；来源、源文件 sha256 与适配计数见下表与 \`corpus/manifest.json\`。
 ${record.partial ? `> 本次只跑了 ${record.partial.join('、')}，其余判据的结论不完整。` : ''}
 
 ## 结论

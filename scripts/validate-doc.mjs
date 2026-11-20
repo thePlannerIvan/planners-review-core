@@ -1,16 +1,18 @@
 #!/usr/bin/env node
 /**
- * planners-doc/1 的唯一校验器。
+ * planners-doc/2 的唯一校验器。
  *
  * 用法：node validate-doc.mjs <storyline.md|by-page.md> [--text]
  *
  * 它挡的是**契约层面的结构漂移**：
  *   · 文档头缺字段、版本不对、doc 不认识
- *   · 页与章节的层级顺序不对（# 文档 / ## 章节 / ### 页 / #### 页内小节）
+ *   · 页与章节的层级顺序不对（# 章节 / ## 页；###–###### 是块，不是结构）
  *   · 锚点写法、位置、重复
  *   · 七种块之外的块（原始 HTML、分隔线、嵌套块……）
  *   · 图片不是相对路径、或相对路径指向的文件不存在
  *   · 页为空
+ *
+ * 它只**认定**页末连续引用是出处区，不检查出处够不够、有几条：没有出处的页合法。
  *
  * 它**不评价**内容：判断好不好、来源可不可信、表格排得好不好看，都不归它管。
  * 切块规则只有一份，在工作台共用的 `lib/doc-blocks.mjs` 里。
@@ -46,6 +48,7 @@ const checked = {
   pages: pages.length,
   blocks: blocks.length,
   anchors: blocks.filter((block) => block.anchor).length,
+  sources: pages.reduce((total, page) => total + page.sources.length, 0),
 };
 
 if (textOutput) {

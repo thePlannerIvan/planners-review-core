@@ -12,12 +12,12 @@ const core = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 
-const FRONT = '---\ncontract: planners-doc/1\ndoc: storyline\nproject: 测试项目\n---\n\n';
-const BODY = `# 测试文档
+const FRONT = '---\ncontract: planners-doc/2\ndoc: storyline\nproject: 测试项目\n---\n\n';
+const BODY = `
 
-## 章节
+# 章节
 
-### 页一
+## 页一
 
 第一块正文。<!-- b:aaaaaa -->
 
@@ -25,7 +25,7 @@ const BODY = `# 测试文档
 
 第三块正文，不动。<!-- b:cccccc -->
 
-### 页二
+## 页二
 
 第四块正文。<!-- b:dddddd -->
 `;
@@ -94,7 +94,7 @@ test('块级反馈任务只携带被选块的身份与内容指纹，不携带�
   assert.equal(task.status, 'pending', '刚提交的任务等人/模型开始处理');
   assert.ok(!Number.isNaN(Date.parse(task.created_at)), '任务要带可解析的创建时间');
   assert.equal(task.doc.path, realpathSync(path), '任务指向工作稿本身，模型据此读文件');
-  assert.equal(task.doc.contract, 'planners-doc/1');
+  assert.equal(task.doc.contract, 'planners-doc/2');
   assert.equal(task.doc.doc, 'storyline');
 
   assert.deepEqual(task.blocks, [

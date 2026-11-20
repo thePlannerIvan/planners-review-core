@@ -58,7 +58,7 @@ test('改一块后，磁盘上只有这一块的字节变化，未编辑块逐�
 
   const before = await getDoc(server.url);
   assert.equal(before.sha256, sha256(original), '刚打开且锚点齐全时不应改写文件');
-  assert.equal(before.blocks.length, 48, '样例 storyline 有 48 块');
+  assert.equal(before.blocks.length, 40, '样例 storyline 有 40 块');
   const target = before.blocks.find((block) => block.anchor === 'b:7b057d');
   assert.ok(target, '样例第一页的主张块应当带锚点 b:7b057d');
 
@@ -90,11 +90,11 @@ test('改一块后，磁盘上只有这一块的字节变化，未编辑块逐�
 
   const verdict = validate(path);
   assert.equal(verdict.code, 0, `保存后仍应通过契约校验：${verdict.stdout}${verdict.stderr}`);
-  assert.equal(verdict.out?.checked?.anchors, 48, '保存不应增删锚点');
+  assert.equal(verdict.out?.checked?.anchors, 40, '保存不应增删锚点');
 });
 
 // ── 锚点：缺的补写、重复的重建，只动锚点本身 ────────────────────────────────
-const FRONT = '---\ncontract: planners-doc/1\ndoc: storyline\nproject: 测试项目\n---\n\n';
+const FRONT = '---\ncontract: planners-doc/2\ndoc: storyline\nproject: 测试项目\n---\n\n';
 const writeDoc = (dir, name, body) => {
   const path = join(dir, name);
   writeFileSync(path, `${FRONT}${body}\n`, 'utf8');
@@ -109,11 +109,10 @@ const stripAnchors = (text) => text.replace(/\n?[ \t]*<!--\s*b:[0-9a-f]{6,12}\s*
 
 test('缺锚点的块在打开时补写，正文一个字节都不改；再打开是幂等的', async (t) => {
   const dir = scratchDir();
-  const original = `${FRONT}# 测试文档
+  const original = `${FRONT}
+# 章节
 
-## 章节
-
-### 页一
+## 页一
 
 第一段，还没有锚点。
 
@@ -130,7 +129,7 @@ test('缺锚点的块在打开时补写，正文一个字节都不改；再打�
 |---|---|
 | 瓶身 | 150ml |
 
-#### 小节标题，没有锚点
+### 小节标题，没有锚点
 
 ![示意图](assets/pic.svg)
 `;
@@ -164,11 +163,11 @@ test('缺锚点的块在打开时补写，正文一个字节都不改；再打�
 
 test('重复锚点在打开时重建，第一次出现的身份保留', async (t) => {
   const dir = scratchDir();
-  const path = writeDoc(dir, 'storyline.md', `# 测试文档
+  const path = writeDoc(dir, 'storyline.md', `
 
-## 章节
+# 章节
 
-### 页一
+## 页一
 
 第一块，先出现。<!-- b:aaaaaa -->
 
@@ -192,11 +191,11 @@ test('重复锚点在打开时重建，第一次出现的身份保留', async (t
 // ── 超出子集：退化原文显示，不静默改写，也不允许借编辑面偷改 ─────────────────
 test('超出块类型子集的写法退化为原文显示，保存被拒且磁盘不动', async (t) => {
   const dir = scratchDir();
-  const path = writeDoc(dir, 'storyline.md', `# 测试文档
+  const path = writeDoc(dir, 'storyline.md', `
 
-## 章节
+# 章节
 
-### 页一
+## 页一
 
 | 元素 | 规格 |
 |---|---|
@@ -318,11 +317,11 @@ test('改一段话时，表格对齐、代码块、图片 title 都不动', asyn
   const dir = scratchDir();
   mkdirSync(join(dir, 'assets'), { recursive: true });
   writeFileSync(join(dir, 'assets', 'pic.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>', 'utf8');
-  const path = writeDoc(dir, 'storyline.md', `# 测试文档
+  const path = writeDoc(dir, 'storyline.md', `
 
-## 章节
+# 章节
 
-### 页一
+## 页一
 
 这一段会被改。<!-- b:aaaaaa -->
 
@@ -367,11 +366,11 @@ test('改一段话时，表格对齐、代码块、图片 title 都不动', asyn
 // ── 保存边界：只换内容，不换块身份与结构 ─────────────────────────────────────
 test('借编辑面改块结构、改类型或提交过期基线都会被拒，磁盘不动', async (t) => {
   const dir = scratchDir();
-  const path = writeDoc(dir, 'storyline.md', `# 测试文档
+  const path = writeDoc(dir, 'storyline.md', `
 
-## 章节
+# 章节
 
-### 页一
+## 页一
 
 第一段，只允许换内容。<!-- b:aaaaaa -->`);
   const before = readFileSync(path, 'utf8');
@@ -455,13 +454,13 @@ test('页内拖动：块在同一页里换位置，其他块逐字不动，页�
 
   const saved = readFileSync(path, 'utf8');
   assert.notEqual(saved, original, '重排后磁盘上应当有变化');
-  const headings = (text) => text.split('\n').filter((line) => /^#{2,3} /.test(line));
+  const headings = (text) => text.split('\n').filter((line) => /^#{1,2} /.test(line));
   assert.deepEqual(headings(saved), headings(original), '章节与页标题行原样，只挪块');
-  assert.equal((saved.match(ANCHOR_COMMENTS) ?? []).length, 48, '锚点一个不增一个不减');
+  assert.equal((saved.match(ANCHOR_COMMENTS) ?? []).length, 40, '锚点一个不增一个不减');
 
   const verdict = validate(path);
   assert.equal(verdict.code, 0, `重排后仍应通过契约校验：${verdict.stdout}${verdict.stderr}`);
-  assert.equal(verdict.out?.checked?.anchors, 48);
+  assert.equal(verdict.out?.checked?.anchors, 40);
 });
 
 test('跨页拖动：块落到另一章的页里，归属跟着目标页，页序与锚点都不变', async (t) => {
@@ -507,8 +506,8 @@ test('跨页拖动：块落到另一章的页里，归属跟着目标页，页�
 
   const verdict = validate(path);
   assert.equal(verdict.code, 0, `跨页拖动后仍应合规：${verdict.stdout}${verdict.stderr}`);
-  assert.equal(verdict.out?.checked?.anchors, 48);
-  assert.equal((readFileSync(path, 'utf8').match(ANCHOR_COMMENTS) ?? []).length, 48);
+  assert.equal(verdict.out?.checked?.anchors, 40);
+  assert.equal((readFileSync(path, 'utf8').match(ANCHOR_COMMENTS) ?? []).length, 40);
 });
 
 test('页重排：拖页标题把整页连块移到另一章，页号按新顺序重排', async (t) => {
@@ -557,7 +556,7 @@ test('页重排：拖页标题把整页连块移到另一章，页号按新顺�
     assert.equal(after.blocks.find((item) => item.anchor === block.anchor)?.raw, block.raw, `块 ${block.anchor} 逐字不变`);
   }
   const saved = readFileSync(path, 'utf8');
-  assert.equal((saved.match(ANCHOR_COMMENTS) ?? []).length, 48);
+  assert.equal((saved.match(ANCHOR_COMMENTS) ?? []).length, 40);
   const verdict = validate(path);
   assert.equal(verdict.code, 0, `整页移动后仍应合规：${verdict.stdout}${verdict.stderr}`);
   assert.equal(verdict.out?.checked?.chapters, 3, '章节数不变');
@@ -565,27 +564,27 @@ test('页重排：拖页标题把整页连块移到另一章，页号按新顺�
 
 test('重排的边界：空页、空章节、过期基线、坏落点都被拒，磁盘不动', async (t) => {
   const dir = scratchDir();
-  const path = writeDoc(dir, 'storyline.md', `# 测试文档
+  const path = writeDoc(dir, 'storyline.md', `
 
-## 甲
+# 甲
 
-### 页一
+## 页一
 
 块一。<!-- b:aaaaaa -->
 
-## 乙
+# 乙
 
-### 页二
+## 页二
 
 块二。<!-- b:bbbbbb -->
 
-### 页三
+## 页三
 
 块三。<!-- b:cccccc -->
 
-## 丙
+# 丙
 
-### 页四
+## 页四
 
 块四。<!-- b:dddddd -->`);
   const before = readFileSync(path, 'utf8');
@@ -647,7 +646,7 @@ test('重排的边界：空页、空章节、过期基线、坏落点都被拒�
   assert.equal(samePlace.body.changed, false, '原位落回不算一次重排');
   assert.equal(readFileSync(path, 'utf8'), before, '原位落回不重写文件');
 
-  // 页序不变、只是跨过 ## 章节标题换了归属：这是一次真实移动，不是空操作。
+  // 页序不变、只是跨过 # 章节标题换了归属：这是一次真实移动，不是空操作。
   const changeChapter = await attempt({
     op: 'move-page', base_sha256: opened.sha256, page: { chapter: 2, index: 2 },
     to: { chapter: 3, index: 1, position: 'before' },
@@ -731,7 +730,7 @@ test('落点算法：拖动时算出「插到哪两块之间」，页落点区�
   );
   assert.deepEqual(pick(nearestGap(pageGapList, 90)), { page: '1-1', position: 'before' }, '拖到最前 → 成为第一页');
   assert.deepEqual(pick(nearestGap(pageGapList, 155)), { page: '1-1', position: 'after' }, '在页末拖 → 留在这一页之后，不换章');
-  assert.deepEqual(pick(nearestGap(pageGapList, 310)), { page: '2-1', position: 'before' }, '越过 ## 章节标题 → 进下一章第一页之前');
+  assert.deepEqual(pick(nearestGap(pageGapList, 310)), { page: '2-1', position: 'before' }, '越过 # 章节标题 → 进下一章第一页之前');
   assert.deepEqual(pick(nearestGap(pageGapList, 400)), { page: '2-1', position: 'after' }, '拖到整份最后 → 成为最后一页');
 
   function pick(gap) {
@@ -792,23 +791,23 @@ const postJson = (url, path, body) => fetch(`${url}${path}`, {
 
 test('被模型锁住的块不能被拖动：块与整页重排都被拒，解锁后同一动作可做', async (t) => {
   const dir = scratchDir();
-  const path = writeDoc(dir, 'storyline.md', `# 测试文档
+  const path = writeDoc(dir, 'storyline.md', `
 
-## 甲
+# 甲
 
-### 页一
+## 页一
 
 块一。<!-- b:aaaaaa -->
 
-### 页二
+## 页二
 
 块二。<!-- b:bbbbbb -->
 
 块五。<!-- b:eeeeee -->
 
-## 乙
+# 乙
 
-### 页三
+## 页三
 
 块三。<!-- b:cccccc -->`);
   const original = readFileSync(path, 'utf8');
@@ -855,23 +854,23 @@ test('被模型锁住的块不能被拖动：块与整页重排都被拒，解�
 
 test('待核对的块也不能被拖动，裁决后才恢复', async (t) => {
   const dir = scratchDir();
-  const path = writeDoc(dir, 'storyline.md', `# 测试文档
+  const path = writeDoc(dir, 'storyline.md', `
 
-## 甲
+# 甲
 
-### 页一
+## 页一
 
 块一。<!-- b:aaaaaa -->
 
-### 页二
+## 页二
 
 块二。<!-- b:bbbbbb -->
 
 块五。<!-- b:eeeeee -->
 
-## 乙
+# 乙
 
-### 页三
+## 页三
 
 块三。<!-- b:cccccc -->`);
   const server = await openWorkbench(t, path);
@@ -934,11 +933,11 @@ const pause = () => new Promise((done) => setTimeout(done, 5));
 
 test('历史按次记录：每次写盘前把上一版存档，列出时间、指纹与摘要', async (t) => {
   const dir = scratchDir();
-  const path = writeDoc(dir, 'storyline.md', `# 测试文档
+  const path = writeDoc(dir, 'storyline.md', `
 
-## 甲
+# 甲
 
-### 页一
+## 页一
 
 原句。<!-- b:aaaaaa -->`);
   const original = readFileSync(path, 'utf8');
@@ -975,11 +974,11 @@ test('历史按次记录：每次写盘前把上一版存档，列出时间、�
 
 test('历史恢复是一次新编辑：旧档不删，过期基线与锁定期间都被拒', async (t) => {
   const dir = scratchDir();
-  const path = writeDoc(dir, 'storyline.md', `# 测试文档
+  const path = writeDoc(dir, 'storyline.md', `
 
-## 甲
+# 甲
 
-### 页一
+## 页一
 
 原句。<!-- b:aaaaaa -->`);
   const original = readFileSync(path, 'utf8');
@@ -1122,4 +1121,22 @@ test('页面不给锁定与待核对块装拖柄，历史入口在页面上', ()
   assert.match(html, /id="historyList"/, '历史要有可查看的列表');
   assert.match(page, /transport\.history\(\)/, '历史走同一条 transport');
   assert.match(page, /transport\.restore\(/, '恢复走同一条 transport');
+});
+
+test('页末引用在数据层就是出处区：页视图给条数，块上标 in_sources', async (t) => {
+  const { path } = sandboxExample();
+  const server = await openWorkbench(t, path);
+  const doc = await getDoc(server.url);
+
+  const first = doc.pages.find((page) => page.chapterIndex === 1 && page.index === 1);
+  assert.equal(first.sources, 2, '第 1 页末连续两条引用构成出处区');
+  const sources = doc.blocks.filter((block) => block.page.key === first.key && block.in_sources);
+  assert.deepEqual(sources.map((block) => block.type), ['quote', 'quote'], '出处区里的每一条都是引用块');
+  assert.equal(sources[0].anchor, 'b:21dcae', '出处条目保留自己的锚点');
+
+  const second = doc.pages.find((page) => page.chapterIndex === 1 && page.index === 2);
+  assert.equal(second.sources, 2, '页末两条引用');
+  const midQuote = doc.blocks.find((block) => block.page.key === second.key && block.type === 'quote' && !block.in_sources);
+  assert.ok(midQuote, '页中段的引用照常显示，不标出处');
+  assert.equal(midQuote.raw, '> 我们不是在卖提神，是在卖「把状态按时调回来」。');
 });
