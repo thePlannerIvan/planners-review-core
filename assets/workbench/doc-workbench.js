@@ -150,9 +150,11 @@ function beginStructureEdit(node, spec) {
       node.textContent = original;
       return;
     }
+    // 删空即消失（票 39）：标题被删空、又失焦了，这一页 / 这一章就没了。
+    // 先把文字复原 —— 删不成（块被占住、文档已变）时不能留一个空标题在页面上。
     if (!title) {
       node.textContent = original;
-      status('改名失败 · 标题不能为空', true);
+      void deleteStructureTitle(spec);
       return;
     }
     node.textContent = title;
@@ -188,6 +190,34 @@ function focusAutoPage(retype) {
   if (!title) return false;
   beginStructureEdit(title, { op: 'rename-page', chapter: auto.chapter, index: auto.index });
   return true;
+}
+
+/**
+ * 结构标题删空失焦（票 39）：这一页 / 这一章从文件里消失。
+ *
+ * 与改名走同一条 `structure` 命令、同一份基线：只是动作名换成 delete-page /
+ * delete-chapter。页里的块由服务端按「上一页 → 下一章第一页 → 文末页外块」安置，
+ * 页面拿到整份快照重画，不自己猜块去了哪里。
+ */
+async function deleteStructureTitle(spec) {
+  await flushSaves();
+  status('保存中');
+  const body = spec.op === 'rename-chapter'
+    ? { op: 'delete-chapter', chapter: spec.chapter }
+    : { op: 'delete-page', chapter: spec.chapter, index: spec.index };
+  let receipt;
+  try {
+    receipt = await transport.structure({ ...body, base_sha256: snapshot.sha256 });
+  } catch (error) {
+    status(`删除失败 · ${error.message}`, true);
+    return;
+  }
+  if (!receipt.ok) {
+    status(`删除失败 · ${receipt.error ?? receipt.status ?? '未知错误'}`, true);
+    return;
+  }
+  if (receipt.blocks && receipt.pages) applySnapshot(receipt);
+  status(spec.op === 'rename-chapter' ? '已删除 · 这一章没了' : '已删除 · 这一页没了');
 }
 
 async function renameStructure(node, spec, title, original) {
@@ -1952,6 +1982,32 @@ function enqueueSave(node) {
   return saveQueue;
 }
 
+/**
+ * 内容被删空、失焦的那一块从文件里消失（票 39）。走的是与改名同一条 `structure`
+ * 命令：服务端按块身份删掉它，回执带整份快照，页面据此重画（页可能因此变成空页）。
+ */
+async function deleteBlockContent(node, entry) {
+  status('保存中');
+  let receipt;
+  try {
+    receipt = await transport.structure({
+      op: 'delete-block',
+      anchor: entry.block.anchor,
+      base_sha256: snapshot.sha256,
+    });
+  } catch (error) {
+    status(`删除失败 · ${error.message}`, true);
+    return;
+  }
+  if (!receipt.ok) {
+    status(`删除失败 · ${receipt.error ?? receipt.status ?? '未知错误'}`, true);
+    return;
+  }
+  node.__dirty = false;
+  if (receipt.blocks && receipt.pages) applySnapshot(receipt);
+  status('已删除');
+}
+
 async function persist(node) {
   const entry = blockByAnchor.get(node.dataset.anchor);
   if (!entry || !node.__compose) return;
@@ -1964,14 +2020,18 @@ async function persist(node) {
     return;
   }
   let content = node.__compose();
-  // 删空块时，浏览器常在编辑面里留一个 <br>，序列化后成了硬换行（`\`）。这种「只剩
-  // 浏览器残渣」的内容不能当成正文：标题 / 列表 / 引用退回前缀（反悔），段落照旧报空。
+  // 内容被删空（只剩浏览器残渣的 <br>）又失焦了：这一块从文件里消失（票 39 的
+  // 「删空即消失」）。表格不算 —— 清空一个单元格不是删掉整张表；图片块没有编辑面。
   const editable = node.querySelector('[contenteditable="true"]');
   const emptyInline = editable ? isEmptyInline(inlineOf(editable)) : false;
+  if (emptyInline && DELETABLE_TYPES.has(entry.block.type)) {
+    await deleteBlockContent(node, entry);
+    return;
+  }
   if (emptyInline && ['heading', 'list', 'quote'].includes(entry.block.type) && entry.block.prefix) {
     content = entry.block.prefix.trimEnd();
   }
-  if (!content || !content.trim() || (emptyInline && entry.block.type === 'paragraph')) {
+  if (!content || !content.trim()) {
     status('保存失败 · 块不能为空', true);
     return;
   }
@@ -2049,6 +2109,8 @@ async function flushSaves() {
 // 前半为空」先在页面里放一个待定块，第一次输入才带着内容调一次 split。空块永远不落盘。
 const SPLIT_TYPES = new Set(['paragraph', 'heading', 'list', 'quote']);
 const isSplittable = (block) => SPLIT_TYPES.has(block?.type);
+/** 内容删空、失焦就从文件里消失的块（票 39）。表格清空一个单元格不算删整张表。 */
+const DELETABLE_TYPES = new Set(['paragraph', 'heading', 'list', 'quote', 'code']);
 let pendingSeq = 0;
 
 /** 块内行内内容（不含 `- ` / `> ` / `### ` 这些块前缀）。 */
