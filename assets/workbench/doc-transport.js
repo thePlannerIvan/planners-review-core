@@ -35,6 +35,10 @@
     decide: '/api/conflict/decide',
     history: '/api/history',
     restore: '/api/history/restore',
+    notes: '/api/notes',
+    note_add: '/api/note',
+    note_delete: '/api/note/delete',
+    note_submit: '/api/note/submit',
   };
 
   function bridgeUsable() {
@@ -81,6 +85,10 @@
       decide: (body) => send('decide', body),
       history: () => send('history'),
       restore: (body) => send('restore', body),
+      notes: () => send('notes'),
+      addNote: (body) => send('note_add', body),
+      deleteNote: (body) => send('note_delete', body),
+      submitNotes: (body) => send('note_submit', body),
       // 同源，浏览器直接取；版本参数让换过文件的图不吃旧缓存。
       imageUrl: (path, version) => {
         const base = `/asset?path=${encodeURIComponent(path)}`;
@@ -118,6 +126,10 @@
       decide: (body) => send('decide', body),
       history: () => send('history'),
       restore: (body) => send('restore', body),
+      notes: () => send('notes'),
+      addNote: (body) => send('note_add', body),
+      deleteNote: (body) => send('note_delete', body),
+      submitNotes: (body) => send('note_submit', body),
       async feedback(payload) {
         const receipt = await send('feedback', payload);
         const dispatch = receipt.dispatch || {};

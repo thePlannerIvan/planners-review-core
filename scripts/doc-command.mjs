@@ -67,6 +67,14 @@ const ROUTES = {
   decide: ({ session, body }) => session.decide(body),
   history: ({ session }) => session.history(),
   restore: ({ session, body }) => session.restore(body),
+  notes: ({ session }) => session.notes(),
+  note_add: ({ session, body }) => session.addNote(body),
+  note_delete: ({ session, body }) => session.deleteNote(body),
+  async note_submit({ surface, session }) {
+    const receipt = session.submitNotes();
+    const dispatch = await dispatchFor(surface, receipt.task);
+    return { ...receipt, dispatch };
+  },
 };
 
 /** 通道认识的每一个动作名（页面 + 模型侧），只有这一份。 */

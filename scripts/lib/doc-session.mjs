@@ -26,6 +26,10 @@ import { commitDocument, journalPathFor, recoverJournal, withWriteLock } from '.
 import { createFileBoardStores } from './doc-boards.mjs';
 import { applyStructure } from './doc-structure.mjs';
 import { HISTORY_CONTRACT, listVersions, readVersion } from './doc-history.mjs';
+import {
+  MAX_NOTE_TEXT, NOTES_CONTRACT, commitDrafts as markDraftsCommitted, createNoteStore, draftNote, draftsOf,
+  newBatchId, removeNote as dropNote,
+} from './doc-notes.mjs';
 import { atomicWrite } from './doc-io.mjs';
 import { LEGACY_READONLY_MESSAGE, legacySnapshot, readLegacyMaster } from './doc-legacy.mjs';
 import { sha256 } from '../content-review-contract.mjs';
@@ -724,6 +728,134 @@ function restoreVersion(docPath, payload, board, conflicts, faults) {
   });
 }
 
+
+/* ── 批注草稿：攒在抽屉里，一次提交整批 ────────────────────────────────────────
+ *
+ * 只做两态：draft → committed。`resolved` 要等模型回执的 applied 才落，属于归档那条线。
+ * 批注写盘和正文写盘共用文档写锁：两个进程同时提交时，看到的草稿是同一条队列。
+ */
+
+/** 只读列出：读批注不需要写锁，坏文件由 store 报错，不静默清空。 */
+function listNotes(docPath) {
+  const store = createNoteStore(docPath);
+  const state = store.load();
+  return { ok: true, contract: NOTES_CONTRACT, notes: state.notes };
+}
+
+/** 一次加一条或几条：同一段话落到多个块上时，每块各得一条，各自可删。 */
+function addNotes(docPath, payload) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) fail('note_request', '请求体必须是 JSON 对象');
+  const text = typeof payload.text === 'string' ? payload.text.trim() : '';
+  if (!text) fail('note_text', '批注不能为空');
+  if (text.length > MAX_NOTE_TEXT) fail('note_text', `一条批注不要超过 ${MAX_NOTE_TEXT} 字`);
+  const anchors = Array.isArray(payload.anchors) ? payload.anchors : [payload.anchor];
+  if (!anchors.length || anchors.some((anchor) => typeof anchor !== 'string' || !BLOCK_ANCHOR_RE.test(anchor))) {
+    fail('note_anchor', '批注要落在一块上，锚点形状不对');
+  }
+  if (new Set(anchors).size !== anchors.length) fail('note_anchor', '同一块在一次批注里出现了两次');
+  return withWriteLock(docPath, () => {
+    const document = readDocument(docPath);
+    const byAnchor = new Map(document.parsed.blocks.map((block) => [block.anchor, block]));
+    // 先把每条都核对一遍再写：一半成功一半失败会让人以为批注丢了。
+    const targets = anchors.map((anchor) => byAnchor.get(anchor)
+      ?? fail('note_anchor', `找不到块 ${anchor}；文档可能已被修改，请刷新工作台`));
+    const store = createNoteStore(docPath);
+    const state = store.load();
+    const added = targets.map((block) => draftNote({
+      anchor: block.anchor,
+      page: { chapter: block.page?.chapter?.index ?? 0, index: block.page?.index ?? 0 },
+      text,
+    }));
+    state.notes.push(...added);
+    store.save(state);
+    return { ok: true, contract: NOTES_CONTRACT, note: added[0], added, notes: state.notes };
+  });
+}
+
+/** 单条删除：只删草稿。已提交的批注在模型手里，删掉它等于把意见吞掉。 */
+function deleteNote(docPath, payload) {
+  if (!payload || typeof payload !== 'object') fail('note_request', '请求体必须是 JSON 对象');
+  if (typeof payload.id !== 'string' || !payload.id) fail('note_id', '需要批注 id');
+  return withWriteLock(docPath, () => {
+    const store = createNoteStore(docPath);
+    const state = store.load();
+    const removed = dropNote(state.notes, payload.id);
+    store.save(state);
+    return { ok: true, contract: NOTES_CONTRACT, removed, notes: state.notes };
+  });
+}
+
+/** 批次文案：模型要在一条任务里看全，所以按文档顺序把每条落到它的块锚点上。 */
+function batchTextOf(entries, batch) {
+  const lines = [`【批注批次 ${batch}】共 ${entries.length} 条，按块处理；块外一个字都不要动。`];
+  for (const { note } of entries) lines.push(`- ${note.anchor}：${note.text}`);
+  return lines.join('\n');
+}
+
+/**
+ * 一次提交整批：所有草稿进同一批、同一份任务。
+ *
+ * 目标块已被删掉的草稿不静默消失：留在草稿里，并在回执 `orphaned` 里说明原因。
+ * 还是老规矩，派发不是保存、也不是批准 —— 这一层只建任务，唤醒由入口决定。
+ */
+function submitNotes(docPath, payload, board) {
+  if (payload !== undefined && (payload === null || typeof payload !== 'object' || Array.isArray(payload))) {
+    fail('note_request', '请求体必须是 JSON 对象');
+  }
+  return withWriteLock(docPath, () => {
+    board.refresh();
+    const store = createNoteStore(docPath);
+    const state = store.load();
+    const drafts = draftsOf(state.notes);
+    if (!drafts.length) fail('notes_empty', '还没有批注草稿；先在正文里选一段写下要改什么');
+    const document = readDocument(docPath);
+    const byAnchor = new Map(document.parsed.blocks.map((block) => [block.anchor, block]));
+    const entries = [];
+    const orphaned = [];
+    for (const note of drafts) {
+      const block = byAnchor.get(note.anchor);
+      if (block) entries.push({ note, block });
+      else orphaned.push({ note: note.id, text: note.text, anchor: note.anchor, reason: 'target_block_removed' });
+    }
+    if (!entries.length) {
+      fail('notes_orphaned', '这批批注的块都已被删掉；刷新工作台后重新选块再提交');
+    }
+    const held = entries.filter(({ block }) => board.lockOf(block.anchor));
+    if (held.length) {
+      fail('block_locked', `这些块正由模型处理，等它完成再提交：${held.map(({ block }) => block.anchor).join('、')}`);
+    }
+    const repaired = persistRepairs(docPath, document);
+    // 批次号先定下来再建任务：任务文案里的批次号是模型把回执与 notes.json 对上的锚。
+    const batch = newBatchId();
+    const task = board.submit({
+      scope: 'blocks',
+      page: null,
+      text: batchTextOf(entries, batch),
+      doc: {
+        path: docPath,
+        contract: repaired.parsed.front.contract ?? null,
+        doc: repaired.parsed.front.doc ?? null,
+        project: repaired.parsed.front.project ?? null,
+      },
+      // 同一块上的多条批注只绑一块：任务锁的是块，不是批注条数。
+      blocks: [...new Map(entries.map(({ block }) => [block.anchor, block])).values()]
+        .map((block) => ({ anchor: block.anchor, sha256: sha256(block.raw) })),
+    });
+    // 只提交有目标的那些；失去目标的留在草稿里，等它自己重新选块。
+    const { notes: committed } = markDraftsCommitted(entries.map(({ note }) => note), { batch });
+    store.save(state);
+    return {
+      ok: true,
+      contract: NOTES_CONTRACT,
+      batch,
+      task,
+      committed: committed.map((note) => note.id),
+      orphaned,
+      notes: state.notes,
+    };
+  });
+}
+
 /** 启动要拿写锁；另一个工作台正在写盘时等它一下，而不是把这次打开直接判死。 */
 async function withStartupLock(docPath, run) {
   for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -792,6 +924,10 @@ export async function createDocSession({ docPath, faults = null, persistent = tr
     history: () => historyOf(file),
     restore: (payload) => guarded(() => restoreVersion(file, payload, board, conflicts, faults)),
     submitFeedback: (payload) => guarded(() => submitFeedback(file, payload, board)),
+    notes: () => (legacy ? { ok: true, contract: NOTES_CONTRACT, notes: [] } : listNotes(file)),
+    addNote: (payload) => guarded(() => addNotes(file, payload)),
+    deleteNote: (payload) => guarded(() => deleteNote(file, payload)),
+    submitNotes: (payload) => guarded(() => submitNotes(file, payload, board)),
     // 侧栏每 3 秒轮询一次锁：读之前先读回磁盘，模型 CLI 在另一个进程里加的锁才看得见。
     tasks: () => { board.refresh(); return { ok: true, contract: TASK_CONTRACT, tasks: board.list() }; },
     claim: (payload) => guarded(() => claimTask(file, payload, board)),

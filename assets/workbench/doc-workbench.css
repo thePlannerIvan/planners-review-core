@@ -50,7 +50,7 @@ body.is-readonly .page-handle { display: none; }
 
 .workbench {
   display: flex; align-items: flex-start; gap: 8px;
-  max-width: 1080px; margin: 0 auto;
+  max-width: 1360px; margin: 0 auto;
 }
 
 /* 左侧目录：章节 → 页，两级；页号来自当前顺序，不写进正文。 */
@@ -306,29 +306,68 @@ body.is-readonly .page-handle { display: none; }
 .page-divider { position: relative; }
 .page-title { cursor: grab; }
 
-.doc-block.is-dragging, .page-divider.is-dragging { opacity: .45; }
+/* 拖动：纸片浮起来，原位退后，其余块平移让位——过程里不铺灰底，不整行变色。 */
+.doc-block, .page-divider { transition: transform 180ms cubic-bezier(.2,.8,.2,1); }
+.doc-block.is-dragging, .page-divider.is-dragging { opacity: .28; }
 body.is-reordering { cursor: grabbing; user-select: none; }
+body.is-reordering .doc-block:hover { background: transparent; }
 
-/* 落点提示：一条线 + 一句「插到哪两块之间」。 */
+/* 幽灵：原生快照被一张透空图顶掉，跟手的是这一张纸。 */
+.drag-shot {
+  position: fixed; top: -1000px; left: -1000px;
+  width: 1px; height: 1px; opacity: 0; pointer-events: none;
+}
+.drag-ghost {
+  position: fixed; left: 0; top: 0; z-index: 70;
+  pointer-events: none;
+  will-change: transform;
+}
+.drag-ghost-card {
+  margin: 10px 0 0 14px;
+  padding: 10px 14px; border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 18px 40px -12px rgb(16 18 22 / 22%);
+  transform: scale(1.012) rotate(.2deg);
+  transform-origin: top left;
+  color: var(--ink); font-size: 15px; line-height: 1.6;
+}
+.drag-ghost-meta {
+  display: block; margin-bottom: 2px;
+  font-size: 11px; letter-spacing: .08em; color: var(--muted);
+}
+.drag-ghost-text { overflow: hidden; max-height: 4.6em; }
+
+/* 落点：10px 高的软槽。两端渐隐的淡绿 + 内侧一条 1.5px 细线，块与整页共用同一条。 */
 .drop-line {
-  position: absolute; z-index: 60; height: 2px;
-  background: var(--accent); pointer-events: none;
-  transform: translateY(-1px);
+  position: absolute; z-index: 60;
+  display: flex; align-items: center;
+  height: 10px; border-radius: 999px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgb(47 111 79 / 12%) 14%, rgb(47 111 79 / 12%) 86%, transparent);
+  transform: translateY(-5px);
+  animation: drop-slot-grow 120ms cubic-bezier(.2,.8,.2,1) both;
 }
 .drop-line[hidden] { display: none; }
+@keyframes drop-slot-grow {
+  from { height: 2px; opacity: .5; }
+  to { height: 10px; opacity: 1; }
+}
 .drop-line::before {
-  content: ''; position: absolute; left: -3px; top: -2px;
-  width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
+  content: ''; display: block;
+  width: calc(100% - 24px); height: 1.5px; margin: 0 auto;
+  border-radius: 1px;
+  background: linear-gradient(90deg, transparent, rgb(47 111 79 / 62%) 12%, rgb(47 111 79 / 62%) 88%, transparent);
 }
-.drop-line.is-page { height: 3px; background: #b45309; }
-.drop-line.is-page::before { background: #b45309; }
 .drop-line .drop-label {
-  position: absolute; left: 0; top: -24px;
-  padding: 2px 8px; border-radius: 5px;
-  background: var(--accent); color: #fff;
-  font-size: 11px; line-height: 1.5; white-space: nowrap;
+  position: absolute; left: 0; top: -26px;
+  padding: 3px 10px; border-radius: 999px;
+  background: rgb(255 255 255 / 72%);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 1px 2px rgb(16 18 22 / 8%), inset 0 0 0 1px rgb(47 111 79 / 14%);
+  color: var(--accent);
+  font-size: 11px; line-height: 1.4; white-space: nowrap;
 }
-.drop-line.is-page .drop-label { background: #b45309; }
 
 @media (max-width: 900px) {
   .toc-panel { width: 190px; }
@@ -417,4 +456,98 @@ body.has-image-viewer { overflow: hidden; }
 .page-add:hover, .page-add:focus-visible,
 .chapter-add:hover, .chapter-add:focus-visible {
   opacity: 1; color: var(--accent); background: var(--hover); outline: none;
+/* 批注抽屉：默认展开在正文右侧；草稿按页攒，底部一次提交整批。 */
+.notes-panel {
+  position: sticky; top: 53px; flex: none;
+  display: flex; flex-direction: column;
+  width: 286px; max-height: calc(100vh - 61px);
+  margin: 28px 20px 40px 8px;
+  background: var(--surface);
+  border: 1px solid var(--line); border-radius: 10px;
+}
+.notes-head {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 12px 14px 10px; border-bottom: 1px solid var(--line);
+}
+.notes-title { font-size: 13px; }
+.notes-summary { flex: 1; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.notes-collapse {
+  appearance: none; border: 0; background: transparent; color: var(--muted);
+  padding: 0; font-family: var(--font); font-size: 12px; cursor: pointer;
+}
+.notes-collapse:hover, .notes-collapse:focus-visible { color: var(--accent); outline: none; }
+.notes-body { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 12px 14px; }
+.notes-body[hidden] { display: none; }
+.notes-empty { margin: 6px 2px; font-size: 12px; line-height: 1.7; color: var(--muted); }
+.notes-empty.is-error { color: var(--danger); }
+.note-state + .note-state { margin-top: 14px; }
+.note-state-title {
+  margin: 0 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .06em;
+  color: var(--muted); text-transform: uppercase;
+}
+.note-page + .note-page { margin-top: 10px; }
+.note-page-chapter { margin: 0 2px; font-size: 11px; letter-spacing: .06em; color: var(--muted); }
+.note-page-title { margin: 1px 2px 5px; font-size: 12.5px; font-weight: 600; line-height: 1.5; color: var(--ink); }
+.note-block { padding: 5px 6px; border-radius: 7px; background: var(--canvas); }
+.note-block + .note-block { margin-top: 6px; }
+.note-block-head { display: flex; align-items: center; gap: 8px; }
+.note-block-preview {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 11.5px; color: var(--muted);
+}
+/* 计数气泡：人天天看的东西。圆角小徽标、数字居中、悬停浮起，不描边框。 */
+.note-bubble {
+  appearance: none; border: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font-family: var(--font); font-size: 11px; font-weight: 600; line-height: 1;
+  font-variant-numeric: tabular-nums; cursor: pointer;
+  transition: transform .12s ease, background .12s ease, box-shadow .12s ease;
+}
+.note-bubble:hover, .note-bubble:focus-visible {
+  transform: translateY(-1px);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  box-shadow: 0 4px 10px -4px rgb(16 18 22 / 26%);
+  outline: none;
+}
+.note-bubble[aria-expanded="true"] { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.note-list { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.note-row { background: var(--surface); border-radius: 6px; padding: 6px 8px; }
+.note-text { margin: 0; font-size: 12.5px; line-height: 1.6; color: var(--ink); overflow-wrap: anywhere; }
+.note-meta { display: flex; align-items: center; gap: 8px; margin-top: 3px; font-size: 11px; color: var(--muted); }
+.note-time { font-variant-numeric: tabular-nums; }
+.note-badge {
+  padding: 0 6px; border-radius: 999px; font-size: 10.5px; line-height: 1.6;
+  background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent);
+}
+.note-delete {
+  appearance: none; border: 0; background: transparent; margin-left: auto;
+  padding: 0; font-family: var(--font); font-size: 11px; color: var(--muted); cursor: pointer;
+}
+.note-delete:hover, .note-delete:focus-visible { color: var(--danger); outline: none; }
+.note-delete:disabled { opacity: .55; cursor: default; }
+.notes-foot { border-top: 1px solid var(--line); padding: 10px 12px 12px; }
+.notes-hint { margin: 0 0 8px; font-size: 11px; line-height: 1.6; color: var(--muted); }
+.notes-submit {
+  appearance: none; width: 100%; border: 1px solid var(--accent); background: var(--accent); color: #fff;
+  padding: 7px 12px; border-radius: 7px; font-family: var(--font); font-size: 12.5px; cursor: pointer;
+  transition: opacity .12s ease;
+}
+.notes-submit:hover:not(:disabled) { opacity: .9; }
+.notes-submit:disabled { opacity: .45; cursor: default; }
+.notes-submit:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 1px; }
+
+.feedback-note {
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line));
+  background: var(--surface); color: var(--accent);
+}
+.feedback-note:disabled { opacity: .55; cursor: default; }
+
+@media (max-width: 1180px) {
+  .notes-panel { width: 260px; }
+}
+@media (max-width: 900px) {
+  .notes-panel { display: none; }
 }
