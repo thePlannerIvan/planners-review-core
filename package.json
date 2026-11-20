@@ -1,0 +1,14 @@
+{
+  "name": "planners-review-core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "回归入口。日常门禁是 npm test；验收要浏览器，单独跑。",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test evals/test_*.mjs && node evals/run.mjs",
+    "test:python": "python3 -m unittest discover -s evals -p 'test_*.py'",
+    "test:acceptance": "node evals/acceptance/run.mjs"
+  }
+}

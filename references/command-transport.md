@@ -28,10 +28,11 @@ Node backend in this Core: `runBrowserCommand` dispatches to
 `scripts/doc-command.mjs`, which resolves the document from a `binding.json`
 written next to the surface (the generic surface contract deliberately carries
 no review semantics) and runs the same `scripts/lib/doc-session.mjs` the local
-workbench page uses. Browser operations are `open`, `block`, `split`, `merge`,
-`reorder`, `asset_replace`, `feedback`, `tasks`, `conflicts`, `decide`, `history`
-and `restore`; `claim`, `complete` and `patch` are model-side operations exposed
-only by the `doc-command.mjs` CLI. That backend exports the browser allowlist and
+workbench page uses. Browser operations are <!-- ops:browser -->`open`, `block`, `split`, `merge`,
+`reorder`, `asset_replace`, `feedback`, `tasks`, `conflicts`, `decide`, `history`,
+`restore`<!-- /ops:browser -->; <!-- ops:model -->`tasks`, `claim`, `complete`, `patch`, `conflicts`<!-- /ops:model --> are also
+exposed to the model by the `doc-command.mjs` CLI (`tasks` and `conflicts` are
+readable from both sides). That backend exports the browser allowlist and
 `review-command.mjs` imports it, so the transport does not keep a second copy.
 
 The backend implementation is fixed by the declared backend identifier. For
