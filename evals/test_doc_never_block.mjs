@@ -417,7 +417,7 @@ test('加页是真正的空页：文件里没有占位正文，提示只在渲�
 
   const saved = readFileSync(path, 'utf8');
   assert.doesNotMatch(saved, /在这里写这一页/, '文件里不能留占位正文');
-  assert.equal(anchorCount(saved), anchorsBefore, '空页不该凭空多出一块身份');
+  assert.equal(anchorCount(saved), anchorsBefore + 1, '空页不多出块身份，只多一个自己的页锚点（票 38）');
 
   const after = await getDoc(server.url);
   const newPage = after.pages.find((page) => page.title === '新页');

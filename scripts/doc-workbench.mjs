@@ -15,7 +15,7 @@
  *   POST /api/block/merge        人把空块并进前一块：{anchor, previous, content, base_sha256}
  *   POST /api/asset/replace      换掉图块引用的文件：{anchor, content_base64, base_sha256}
  *   POST /api/reorder            重排（一次一个动作），返回重排后的整份快照
- *   POST /api/structure          改结构（rename-chapter / rename-page / add-page / add-chapter）
+ *   POST /api/structure          改结构（rename-* / add-page / add-chapter / add-source / add-page-anchor）
  *   POST /api/feedback           派发块级反馈任务；回执带 dispatch.channel（wake / inbox）
  *   GET  /api/tasks              模型读任务
  *   POST /api/task/claim         模型开始处理（锁块）

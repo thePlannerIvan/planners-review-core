@@ -3,8 +3,8 @@
  *
  * 形状写在 `.doc-workbench/notes.json`，契约 `planners-doc-notes/1`：
  *
- *   { contract, notes: [{ id, anchor, page: {chapter, index}, text,
- *                         state: 'draft' | 'committed' | 'resolved',
+ *   { contract, notes: [{ id, anchor, page: {chapter, index}, target: 'block' | 'page',
+ *                         text, state: 'draft' | 'committed' | 'resolved',
  *                         batch, created_at, resolved_at, model_state, snapshot }] }
  *
  * 为什么落盘而不是只留在页面里：人关掉浏览器、第二天回来，草稿还得在；模型在另一个
@@ -143,12 +143,18 @@ export function createNoteStore(docPath) {
   };
 }
 
-/** 一条草稿：人只看自己写的那句话，快照等模型改到才生成。 */
-export function draftNote({ anchor, page, text, id = newNoteId(), now = new Date().toISOString() }) {
+/**
+ * 一条草稿：人只看自己写的那句话，快照等模型改到才生成。
+ *
+ * `target` 记这条批注挂在什么上：块（默认，老文件没有这个字段也按块读）或页（票 38）。
+ * 它只用来在目标消失时说清「失去的是一块还是一页」，不影响批注文本与状态流转。
+ */
+export function draftNote({ anchor, page, target = 'block', text, id = newNoteId(), now = new Date().toISOString() }) {
   return {
     id,
     anchor,
     page: { chapter: page.chapter, index: page.index },
+    target: target === 'page' ? 'page' : 'block',
     text,
     state: 'draft',
     batch: null,

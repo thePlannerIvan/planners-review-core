@@ -156,17 +156,17 @@ Proposal 与 By-page 调用 `scripts/render-content-review.mjs` 的 `renderConte
 | 路径 | 用途 |
 |---|---|
 | `contracts/review-surface.schema.json` | `review-surface/2.0.0` 契约（**唯一真相源**；含可选的 `annotate` 开关） |
-| `contracts/planners-doc.md` | `planners-doc/2` 文档契约：文档头（文档名只从 `project` 出）、层级（`#` 章节 / `##` 页 / `###`–`######` 标题块）、七种块、锚点、页末引用即出处、页为空、图片、`/1`→`/2` 迁移；样例在 `contracts/examples/` |
+| `contracts/planners-doc.md` | `planners-doc/2` 文档契约：文档头（文档名只从 `project` 出）、层级（`#` 章节 / `##` 页 / `###`–`######` 标题块）、七种块、锚点（页也可以带一个隐藏页锚点，票 38）、页末引用即出处、页为空、图片、`/1`→`/2` 迁移；样例在 `contracts/examples/` |
 | `contracts/planners-doc-task.md` | `planners-doc-task/1` 块级反馈任务：只带块身份与内容指纹、任务状态机、锁、模型写回 / 待核对 / journal 判据；无插件派发的本地收件箱与旧 JSON 只读也在这里 |
-| `contracts/planners-doc-diff.md` | `planners-doc-diff/1` 结构 diff：章节 / 页 / 块相对「模型上次取稿时看到的版本」的新增、删除、改名、移动、合并、拆分，目标块被删的批注进 `orphan_notes`；基准 `planners-doc-baseline/1` 的刷新时机也在这里 |
+| `contracts/planners-doc-diff.md` | `planners-doc-diff/1` 结构 diff：章节 / 页 / 块相对「模型上次取稿时看到的版本」的新增、删除、改名、移动、合并、拆分，目标块 / 页被删的批注进 `orphan_notes`；基准 `planners-doc-baseline/1` 的刷新时机也在这里 |
 | `contracts/doc-assets.md` | `doc-assets/1` 图资产清单：正文派生、同名清单、换文件留上一版指纹；不碰 bypage 的素材取舍 |
 | `scripts/doc-inbox.mjs` | 模型侧收件箱命令：`list` 未处理任务（块身份 + 指纹 + 意见），`take` 把 pending 标成 processing |
 | `scripts/doc-surface.mjs` | 为一份 `planners-doc/2` 工作稿生成侧栏 `review-surface`（`doc-workbench/1`）与自包含入口；同 id 再开 = 刷新 |
 | `scripts/doc-command.mjs` | 侧栏命令后端（保存 / 改结构 / 派发 / 裁决 / 看锁）与模型侧 CLI（`tasks` / `claim` / `complete` / `patch` / `conflicts`），共用 `lib/doc-session.mjs` |
 | `scripts/lib/doc-session.mjs` | 两个入口共用的块级内核：解析、块级写、journal、锁与待核对的唯一实现 |
-| `scripts/lib/doc-structure.mjs` | 结构编辑：改章节名 / 页名、页尾加页、章节尾加章；只换标题行或插入结构行，其余字节逐字不动 |
+| `scripts/lib/doc-structure.mjs` | 结构编辑：改章节名 / 页名、页尾加页、章节尾加章、按需补页锚点；只换标题行或插入结构行，其余字节逐字不动 |
 | `scripts/lib/doc-boards.mjs` | 任务板与待核对的落盘（`.doc-workbench/state/`），让本地页 / 侧栏 / 模型 CLI 跨进程看到同一组锁 |
-| `scripts/lib/doc-diff.mjs` | 结构 diff 的唯一实现：基准落盘 / 读回，页匹配（标题 + 块锚点归属）与章节 / 页 / 块的变化判定，`orphan_notes` 原样带出 |
+| `scripts/lib/doc-diff.mjs` | 结构 diff 的唯一实现：基准落盘 / 读回，页匹配（页锚点 → 标题 → 块锚点归属）与章节 / 页 / 块的变化判定，`orphan_notes` 原样带出 |
 | `scripts/lib/doc-history.mjs` | 历史版本：每次写盘前存上一版，按文档分桶；列出与按档恢复（恢复也是一次新编辑） |
 | `scripts/lib/doc-io.mjs` | 旁路目录与原子写（fsync + rename）的唯一实现；journal / 任务板 / 收件箱 / 资产清单 / 历史共用 |
 | `assets/workbench/doc-transport.js` | 页面到存储的唯一通道：侧栏走 `review.command` / `review.wake` / `review.asset`，无插件走 `/api/*` |

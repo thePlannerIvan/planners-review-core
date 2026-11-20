@@ -1,21 +1,22 @@
 /**
  * 结构编辑：改章节名 / 页名、在页尾加页、在章节尾加章、在页尾出处区加一条引用。
  *
- * 结构不是块：`#` 章节与 `##` 页没有锚点（契约第 2 节），所以这里不碰既有块 raw、
- * 不生成除「新块」以外的任何块身份。所有操作都是**对原文的行级补丁**：只替换标题行
- * 或在一个边界处插入新行，其余字节逐字保留（含 CRLF 与文件末尾换行）。
+ * 结构不是块：`#` 章节没有锚点（契约第 2 节），`##` 页可以带一个隐藏的页锚点（票 38），
+ * 所以这里不碰既有块 raw、不生成除「新块 / 新页」以外的任何身份。所有操作都是
+ * **对原文的行级补丁**：只替换标题行或在一个边界处插入新行，其余字节逐字保留
+ * （含 CRLF 与文件末尾换行）。
  *
- * 五个动作名与本地路由表 / 命令后端同名：`rename-chapter` / `rename-page` /
- * `add-page` / `add-chapter` / `add-source`。回执里给出新结构的 `{chapter, page}`
+ * 六个动作名与本地路由表 / 命令后端同名：`rename-chapter` / `rename-page` / `add-page` /
+ * `add-chapter` / `add-source` / `add-page-anchor`。回执里给出新结构的 `{chapter, page}`
  * 或新块 `{source}`，页面据此定位并聚焦。
  */
-import { generateAnchor, outsidePageCount, parseDocument } from './doc-blocks.mjs';
+import { anchorSetOf, generateAnchor, outsidePageCount, parseDocument } from './doc-blocks.mjs';
 import DocIdentity from '../../assets/workbench/doc-identity.js';
 
 const { pageKeyOf } = DocIdentity;
 
 export const STRUCTURE_OPS = new Set([
-  'rename-chapter', 'rename-page', 'add-page', 'add-chapter', 'add-source',
+  'rename-chapter', 'rename-page', 'add-page', 'add-chapter', 'add-source', 'add-page-anchor',
 ]);
 export const NEW_CHAPTER_TITLE = '新章节';
 export const NEW_PAGE_TITLE = '新页';
@@ -24,10 +25,8 @@ export const NEW_PAGE_TITLE = '新页';
 // 页面上那句「在这里写这一页。」是渲染层的 pending 块，输入后才落成真正的第一块。
 /** 新出处条目的占位文字：加完就能直接改，不用再点一次。 */
 const NEW_SOURCE_BLOCK = '在这里写这条出处。';
-/** 新块的身份：避开文档里已经存在的锚点。 */
-const freshAnchor = (parsed) => generateAnchor(
-  new Set((parsed.blocks ?? []).map((block) => block.anchor).filter(Boolean)),
-);
+/** 新页 / 新块的身份：避开文档里已经存在的锚点（页锚点与块锚点共用同一个空间）。 */
+const freshAnchor = (parsed) => generateAnchor(anchorSetOf(parsed));
 
 const fail = (code, message) => { throw Object.assign(Error(message), { code }); };
 
@@ -141,6 +140,9 @@ export function applyStructure(raw, payload) {
   const eol = eolOf(text);
   const starts = lineStarts(text);
   const lineEnd = (line) => starts[line - 1] + (parsed.lines[line - 1] ?? '').length;
+  /** 标题行的正文末端（不含行尾空白）：锚点紧贴内容写在这里。 */
+  const contentEnd = (line) => starts[line - 1] + (parsed.lines[line - 1] ?? '').replace(/\s+$/, '').length;
+  const headingLine = (level, title, anchor) => `${'#'.repeat(level)} ${title}${anchor ? `<!-- ${anchor} -->` : ''}`;
   const insertBeforeLine = (line, insert) => text.slice(0, starts[line - 1]) + insert + text.slice(starts[line - 1]);
   const appendAtEnd = (insert) => {
     const padding = text === '' || text.endsWith(eol + eol) ? '' : text.endsWith(eol) ? eol : eol + eol;
@@ -167,9 +169,25 @@ export function applyStructure(raw, payload) {
       return { raw: bom + text, changed: false, page: pageView(chapter, page, title) };
     }
     const line = page.line;
-    const next = `## ${title}`;
+    // 改名只换标题文字：已有的页锚点原样跟过来（票 38），页还是同一个可批注对象。
+    const next = headingLine(2, title, page.anchor);
     const output = text.slice(0, starts[line - 1]) + next + text.slice(lineEnd(line));
     return { raw: bom + output, changed: true, page: pageView(chapter, page, title) };
+  }
+
+  // add-page-anchor：页第一次被批注时按需补一个隐藏锚点。已经有就是幂等的，
+  // 不再改盘、也不换身份 —— 页锚点一旦进入文档，改名 / 移动都跟着它走。
+  if (op === 'add-page-anchor') {
+    const chapter = chapterAt(parsed, payload.chapter);
+    const page = pageAt(parsed, chapter, payload.index);
+    if (page.anchor) {
+      return { raw: bom + text, changed: false, page: pageView(chapter, page, page.title) };
+    }
+    const anchor = freshAnchor(parsed);
+    const line = page.line;
+    const output = `${text.slice(0, contentEnd(line))}<!-- ${anchor} -->${text.slice(contentEnd(line))}`;
+    verifyStructureWrite(parsed, output, {});
+    return { raw: bom + output, changed: true, page: pageView(chapter, page, page.title, anchor) };
   }
 
   if (op === 'add-page') {
@@ -177,15 +195,25 @@ export function applyStructure(raw, payload) {
     const chapter = chapterAt(parsed, target.chapter);
     const page = pageAt(parsed, chapter, target.index);
     const title = cleanTitle(payload.title, NEW_PAGE_TITLE);
-    const insert = `## ${title}${eol}`;
+    // 新页当场拿到页身份：它一出现就能被批注，不必等下一次打开补。
+    const anchor = freshAnchor(parsed);
+    const insert = `${headingLine(2, title, anchor)}${eol}`;
     // 落点：这一页的边界之后。下一页 / 下一章的标题行就是边界；都没有就追加到文件末尾。
     const boundary = pageBoundaryLine(parsed, chapter, page);
-    const output = boundary ? insertBeforeLine(boundary, `## ${title}${eol}${eol}`) : appendAtEnd(insert);
+    const output = boundary
+      ? insertBeforeLine(boundary, `${headingLine(2, title, anchor)}${eol}${eol}`)
+      : appendAtEnd(insert);
     verifyStructureWrite(parsed, output, { pages: 1 });
     return {
       raw: bom + output,
       changed: true,
-      page: { chapter: chapter.index, index: page.index + 1, title, key: pageKeyOf({ chapter: chapter.index, index: page.index + 1 }) },
+      page: {
+        chapter: chapter.index,
+        index: page.index + 1,
+        title,
+        key: pageKeyOf({ chapter: chapter.index, index: page.index + 1 }),
+        anchor,
+      },
     };
   }
 
@@ -213,7 +241,8 @@ export function applyStructure(raw, payload) {
   const chapter = chapterAt(parsed, target.chapter);
   const title = cleanTitle(payload.title, NEW_CHAPTER_TITLE);
   const pageTitle = cleanTitle(payload.page_title, NEW_PAGE_TITLE);
-  const insert = `# ${title}${eol}${eol}## ${pageTitle}${eol}`;
+  const pageAnchor = freshAnchor(parsed);
+  const insert = `# ${title}${eol}${eol}${headingLine(2, pageTitle, pageAnchor)}${eol}`;
   const boundary = chapterBoundaryLine(parsed, chapter);
   const output = boundary ? insertBeforeLine(boundary, `${insert}${eol}`) : appendAtEnd(insert);
   verifyStructureWrite(parsed, output, { chapters: 1, pages: 1 });
@@ -221,10 +250,22 @@ export function applyStructure(raw, payload) {
     raw: bom + output,
     changed: true,
     chapter: { index: chapter.index + 1, title },
-    page: { chapter: chapter.index + 1, index: 1, title: pageTitle, key: pageKeyOf({ chapter: chapter.index + 1, index: 1 }) },
+    page: {
+      chapter: chapter.index + 1,
+      index: 1,
+      title: pageTitle,
+      key: pageKeyOf({ chapter: chapter.index + 1, index: 1 }),
+      anchor: pageAnchor,
+    },
   };
 }
 
-function pageView(chapter, page, title) {
-  return { chapter: chapter.index, index: page.index, title, key: pageKeyOf({ chapter: chapter.index, index: page.index }) };
+function pageView(chapter, page, title, anchor = page.anchor ?? null) {
+  return {
+    chapter: chapter.index,
+    index: page.index,
+    title,
+    key: pageKeyOf({ chapter: chapter.index, index: page.index }),
+    anchor,
+  };
 }

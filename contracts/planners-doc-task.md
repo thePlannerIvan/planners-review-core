@@ -51,16 +51,16 @@
 | `page` | 仅 `scope: "page"` 时有值：`{chapter, number, title}`，与 `planners-doc/2` 的页身份一致（章节 + 顺序 + 标题） |
 | `text` | 人的意见原文，非空；是「要模型改什么」，不是批准或保存 |
 | `doc` | 任务对应的文档：绝对路径 + 文档头三元组。模型据此读文件 |
-| `blocks` | 任务绑定的块，**只有锚点与 `sha256(block.raw)`**。顺序即提交顺序/文档顺序 |
+| `blocks` | 任务绑定的目标，**只有锚点与提交时的内容指纹**。通常是块（`sha256(block.raw)`）；批注挂在页标题上时是页锚点（`sha256(页标题行)`，票 38）。顺序即提交顺序/文档顺序 |
 | `diff` | 批注批次附带的 `planners-doc-diff/1`：章节 / 页 / 块相对「模型上次取稿时看到的版本」的结构变化。块级反馈（`/api/feedback`）没有批次，为 `null` |
 | `status` | `pending` → `processing` → `review`（有待核对块）→ `done` |
 | `locked_blocks` | 这条任务此刻还占着哪些块。`processing` 时是 `task.blocks` 的全部；写回后只剩待核对的块；`done` 为空 |
 | `created_at` / `started_at` / `finished_at` | ISO 时间；后两个在 claim / complete 时写入 |
 
 `diff` 的形状、动作与基准见 `contracts/planners-doc-diff.md`：它只说结构哪里动了，不带正文；
-模型读 `tasks` 时一并读到，不必去猜人动过什么。目标块已被删的批注进 `diff.orphan_notes`，不静默消失。
+模型读 `tasks` 时一并读到，不必去猜人动过什么。目标块 / 目标页已被删的批注进 `diff.orphan_notes`，不静默消失。
 
-`sha256(block.raw)` 是**提交那一刻**的块内容指纹，不是当前磁盘指纹。模型写回时由服务端拿它和当前磁盘指纹逐块比对：一致才应用，不一致进待核对，不静默覆盖（第 4 节）。
+`sha256(block.raw)` 是**提交那一刻**的块内容指纹，不是当前磁盘指纹。模型写回时由服务端拿它和当前磁盘指纹逐块比对：一致才应用，不一致进待核对，不静默覆盖（第 4 节）。页锚点的指纹取标题行原文；页不是块，`POST /api/patch` 仍只写块，页上的意见由模型按页身份改标题行或内容后 `complete`。
 
 ## 2. 命令面
 
@@ -80,7 +80,7 @@
 |---|---|
 | `feedback_text` / `feedback_scope` / `feedback_request` | 意见为空、范围非法、请求不是 JSON 对象（400） |
 | `feedback_anchor` / `feedback_page` | 锚点不存在、页身份对不上、同块提交两次（409，先刷新工作台） |
-| `block_locked` | 目标块正被另一条任务处理（409）；保存锁定块也返回它 |
+| `block_locked` | 目标块（或页锚点）正被另一条任务处理（409）；保存锁定块也返回它 |
 | `task_missing` / `task_state` | 任务不存在、或状态不允许这一步（409） |
 | `task_stale` | claim 时任务绑定的块已不在文档里（409，重新提交反馈） |
 | `patch_request` / `patch_blocks` / `patch_anchor` | 写回请求不是对象、patch 为空 / 不是文本 / 锚点重复、锚点不在这条任务里或文档里已不存在（400 / 409） |

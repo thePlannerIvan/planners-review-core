@@ -23,6 +23,8 @@ let layout = null; // 三档布局 + 折叠键 + 滚动毛玻璃（doc-layout.js
 let saveTimer = null;
 let saveQueue = Promise.resolve();
 const blockByAnchor = new Map();
+// 页锚点 → 页标题所在的 divider（票 38）：批注跳转与气泡都按这条身份找页。
+const pageAnchorNodes = new Map();
 // 出处默认收起：只记展开过的页，重画后照样展开；收起是默认，不在集合里（契约第 5 节）。
 const expandedSources = new Set();
 
@@ -80,6 +82,9 @@ function pageHeading(page, { editable = false, orphan = false } = {}) {
     wireStructureTitle(title, { op: 'rename-page', chapter: page.chapterIndex, index: page.index });
   }
   node.append(title);
+  // 页标题右侧的批注气泡：与块尾那一枚同一套图标、同一套交互（点了直接落草稿进抽屉）。
+  if (editable) attachPageFeedback(node, page);
+  if (page.anchor) pageAnchorNodes.set(page.anchor, node);
   if (page.empty) {
     // 提示只在渲染层：真正的空页在文件里没有正文（加页不再塞占位文字）。
     const note = document.createElement('p');
@@ -434,6 +439,62 @@ function attachBlockFeedback(node, block) {
   node.append(button);
 }
 
+/** 页标题右侧的批注气泡：和块尾那枚一样只在悬停时显形，点了直接落草稿进抽屉。 */
+function attachPageFeedback(node, page) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'page-feedback';
+  button.setAttribute('data-feedback-page', page.anchor ?? page.key ?? '');
+  button.title = '对这一页写批注';
+  button.setAttribute('aria-label', '对这一页写批注');
+  button.innerHTML = FEEDBACK_ICON;
+  button.addEventListener('mousedown', (event) => event.preventDefault());
+  button.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    void startPageNoteDraft(page);
+  });
+  node.append(button);
+}
+
+/**
+ * 点页气泡：页已经有锚点就直接开草稿；旧页没有就先按需补一个隐藏页锚点（只改标题行），
+ * 再开草稿。页锚点一旦落盘，改名 / 移动都会跟着这一页走。
+ */
+async function startPageNoteDraft(page) {
+  if (!snapshot || snapshot.readonly) return;
+  if (page.anchor) {
+    startNoteDraft(page.anchor);
+    return;
+  }
+  await flushSaves();
+  status('保存中', true);
+  let receipt;
+  try {
+    receipt = await transport.structure({
+      op: 'add-page-anchor',
+      chapter: page.chapterIndex,
+      index: page.index,
+      base_sha256: snapshot.sha256,
+    });
+  } catch (error) {
+    status(`批注入口打不开 · ${error.message}`, true);
+    return;
+  }
+  if (!receipt.ok) {
+    status(`批注入口打不开 · ${receipt.error ?? receipt.status ?? '未知错误'}`, true);
+    return;
+  }
+  const anchor = receipt.page?.anchor ?? null;
+  if (!anchor) {
+    status('批注入口打不开 · 页锚点没有落盘', true);
+    return;
+  }
+  applySnapshot(receipt);
+  status('已自动保存');
+  startNoteDraft(anchor);
+}
+
 function chaptersOf(snapshot) {
   if (Array.isArray(snapshot.chapters) && snapshot.chapters.length) return snapshot.chapters;
   // 旧快照 / 坏结构没有 chapters 字段时按页反推：章节名仍然从页视图来，不另造一份。
@@ -606,6 +667,7 @@ function renderDocument() {
   const root = $('#blocks');
   const tools = $('#paperTools');
   blockByAnchor.clear();
+  pageAnchorNodes.clear();
   root.replaceChildren();
   // 纸左上角的字号控件不属于正文快照：重画时原样留着，别把人刚调好的按钮删掉。
   if (tools) root.append(tools);
@@ -1086,14 +1148,37 @@ let renderingNotes = false;
 // 模型看了任务却没动这一块：不进抽屉（那里只剩三样），在历史面板里如实标出来。
 const NOTE_UNTOUCHED_TEXT = '模型没动这条';
 
-const blockOrder = () => new Map((snapshot?.blocks ?? []).map((block, index) => [block.anchor, index]));
+const blockOrder = () => {
+  // 批注可能是挂在块上的，也可能是挂在页标题上的（票 38）：页锚点排在它第一块之前。
+  const order = new Map();
+  const pageByKey = new Map((snapshot?.pages ?? []).map((page) => [page.key, page]));
+  const seenPages = new Set();
+  let position = 0;
+  for (const block of snapshot?.blocks ?? []) {
+    const key = block.page?.key ?? null;
+    if (key && !seenPages.has(key)) {
+      seenPages.add(key);
+      const anchor = pageByKey.get(key)?.anchor;
+      if (anchor) order.set(anchor, position);
+      position += 1;
+    }
+    if (block.anchor) order.set(block.anchor, position);
+    position += 1;
+  }
+  for (const page of snapshot?.pages ?? []) {
+    if (page.anchor && !order.has(page.anchor)) order.set(page.anchor, position);
+    position += 1;
+  }
+  return order;
+};
 
 /**
- * 这一块的那句话：抽屉里唯一用来认出「这条批注说的是哪儿」的东西。
- * 取块内联内容（不含 `- ` / `> ` 前缀），空白收成一行；没有字就留空，不拿锚点充数。
+ * 这一处的那句话：抽屉里唯一用来认出「这条批注说的是哪儿」的东西。
+ * 块取内联内容（不含 `- ` / `> ` 前缀），页取页标题；空白收成一行，没有字就留空。
  */
 function blockQuote(anchor) {
-  const raw = snapshot?.blocks?.find((block) => block.anchor === anchor)?.inline ?? '';
+  const block = snapshot?.blocks?.find((item) => item.anchor === anchor);
+  const raw = block ? block.inline : (snapshot?.pages?.find((page) => page.anchor === anchor)?.title ?? '');
   return String(raw).replace(/\s+/g, ' ').trim();
 }
 
@@ -1228,16 +1313,18 @@ function flashBlock(node) {
 
 function revealNoteTarget(anchor) {
   if (!anchor) return;
-  const node = blockByAnchor.get(anchor)?.node ?? null;
+  const block = blockByAnchor.get(anchor)?.node ?? null;
+  const page = block ? null : pageAnchorNodes.get(anchor) ?? null;
+  const node = block ?? page;
   if (!node) { status('这块已经不在正文里了', true); return; }
   ensureNotesOpen();
-  // 定位与聚焦复用拖拽模块那套（结构清单的跳转走同一条路）；再让这一块落到顶栏下面。
-  DocDrag.focusAnchor(anchor);
+  // 定位与聚焦复用拖拽模块那套（结构清单的跳转走同一条路）；再让这一处落到顶栏下面。
+  if (block) DocDrag.focusAnchor(anchor);
   const bar = document.querySelector('.topbar');
   const offset = (bar?.getBoundingClientRect().height ?? 0) + 24;
   const top = node.getBoundingClientRect().top + window.scrollY - offset;
   window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
-  focusBlock(anchor); // 可编辑块把光标放到块首；没有编辑面的块只高亮
+  if (block) focusBlock(anchor); // 可编辑块把光标放到块首；页锚点只滚过去并高亮
   flashBlock(node);
 }
 
