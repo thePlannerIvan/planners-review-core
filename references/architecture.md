@@ -38,11 +38,13 @@ review-bridge.js ──┘
 | 内核 | `scripts/lib/doc-session.mjs`（解析、块级写、journal、锁、裁决） | **同一个** |
 | 旁路状态 | `scripts/lib/doc-boards.mjs` → `.doc-workbench/state/` | **同一份**（模型 CLI 跨进程可见） |
 
-侧栏不允许页面自己拼第二套写盘：命令后端只接受页面操作的白名单（`open` / `block` /
-`split` / `merge` / `reorder` / `asset_replace` / `feedback` / `tasks` / `conflicts` /
-`decide` / `history` / `restore`），`claim` / `complete` / `patch` 只能从模型侧
-`doc-command.mjs` CLI 进来。白名单只在 `doc-command.mjs` 定义一次，
-`lib/review-command.mjs` 直接引用它。
+侧栏不允许页面自己拼第二套写盘，也不允许桥有自己的动作词汇表。通道只发
+`{route, body}`：`route` 是本地宿主那条路的动作名，`body` 是本地服务器本来就会收到的
+原始请求体。本地页按 `route` 直接路由，侧栏桥只把这两个字段原样转发、不翻译。
+白名单管身份不管动作：`claim` / `complete` / `patch` 是模型侧身份，只能从
+`doc-command.mjs` CLI 进来，页面需要的其余动作一律放行。路由表（`DOC_ROUTES`）与
+身份集（`DOC_IDENTITY_ROUTES`）只在 `doc-command.mjs` 定义一次，
+`lib/review-command.mjs` 直接引用身份集。
 
 ### 为什么生命周期是 Node，而不是 Python
 

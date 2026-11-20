@@ -3,12 +3,11 @@
  *
  * 落点计算（`blockGaps` / `pageGaps` / `nearestGap`）是纯函数：给定几何，算出
  * 「插到哪两块之间」。浏览器里只负责量 DOM 的矩形、画提示线，然后把落点交给
- * 页面的 transport（本地 `/api/reorder`，侧栏 `command({op:'reorder'})`）；
- * 这个文件不解析 Markdown，也不自己拼文档。
+ * 页面的 transport（`route: 'reorder'`）；这个文件不解析 Markdown，也不自己拼文档。
  *
  * 与服务端的契约：一次一个动作，`move-block` 或 `move-page`，带 `base_sha256`。
  * 服务端回整份快照，页面据此重画正文、目录与页号。走哪条传输由页面的 transport 决定
- * （本地页 `/api/reorder`，侧栏桥 `command({op:'reorder'})`），这个文件不关心宿主。
+ * （本地页 `/api/reorder`，侧栏桥转发 `{route: 'reorder', body}`），这个文件不关心宿主。
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();

@@ -10,16 +10,18 @@
  * 为什么任务板与待核对要落盘（`.doc-workbench/state/`）：模型可能不在这个进程里。
  * 页面派发后，唤醒的模型用下面的 CLI 读任务、加锁、写回；两条路径必须看到同一块锁。
  *
- * 模型侧 CLI（同一份命令后端，不经浏览器白名单）：
+ * 模型侧 CLI（同一份命令后端，不经浏览器口）：
  *   node scripts/doc-command.mjs <review-surface.json> tasks
  *   node scripts/doc-command.mjs <review-surface.json> claim <task_id>
  *   node scripts/doc-command.mjs <review-surface.json> complete <task_id>
  *   node scripts/doc-command.mjs <review-surface.json> patch        # JSON 从 stdin
  *   node scripts/doc-command.mjs <review-surface.json> conflicts
  *
- * 浏览器只能做页面真正需要的事（open/block/split/merge/reorder/asset_replace/feedback/
- * tasks/conflicts/decide/history/restore）；claim / patch / complete 是模型侧动作，从浏览器
- * 调用一律拒绝。这里导出的白名单也是 `review-command.mjs` 唯一使用的来源。
+ * 通道只有一套动作词汇：`route` 就是本地宿主那条路的动作名，`body` 是本地服务器本来就会
+ * 收到的原始请求体。本地页与侧栏桥发同一个 `{route, body}`，桥不翻译、只转发。
+ *
+ * 白名单管身份，不管动作：claim / patch / complete 是模型侧身份，从浏览器口一律拒绝；
+ * 页面需要的其余动作全部放行。这份身份表是 `review-command.mjs` 唯一使用的来源。
  */
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
@@ -30,16 +32,44 @@ import { createTaskDispatcher } from './lib/doc-dispatch.mjs';
 export const DOC_COMMAND_BACKEND = 'doc-workbench/1';
 export const DOC_BINDING_CONTRACT = 'doc-surface/1';
 
-/** 页面（浏览器）真正需要的操作：保存、派发、裁决、看锁与待核对。 */
-export const DOC_BROWSER_OPERATIONS = new Set([
-  'open', 'block', 'split', 'merge', 'reorder', 'asset_replace', 'feedback', 'tasks', 'conflicts', 'decide',
-  'history', 'restore',
-]);
-/** 模型侧动作：不在浏览器白名单里。 */
-export const DOC_MODEL_OPERATIONS = new Set(['tasks', 'claim', 'complete', 'patch', 'conflicts']);
-
 const COMMAND_CLI = fileURLToPath(import.meta.url);
 const fail = (code, message) => { throw Object.assign(Error(message), { code }); };
+
+/**
+ * 模型侧身份：领取任务、回写 patch、完成。它们只能从模型 CLI 进来；
+ * 浏览器口一律拒绝。这不是动作白名单 —— 页面需要的动作都在下面那张路由表里，
+ * 桥不再维护另一份名字。
+ */
+export const DOC_IDENTITY_ROUTES = new Set(['claim', 'complete', 'patch']);
+
+/**
+ * 路由表：`route` = 本地宿主那条路的动作名，`body` = 本地服务器本来就会收到的原始请求体。
+ * 页面（本地 HTTP 与侧栏桥）与模型 CLI 共用这一张表，没有第二份动作名。
+ */
+const ROUTES = {
+  open: ({ session }) => ({ ok: true, ...session.snapshot() }),
+  block: ({ session, body }) => session.saveBlock(body),
+  split: ({ session, body }) => session.splitBlock(body),
+  merge: ({ session, body }) => session.mergeBlocks(body),
+  reorder: ({ session, body }) => session.reorder(body),
+  asset_replace: ({ session, body }) => session.replaceAsset(body),
+  async feedback({ surface, session, body }) {
+    const receipt = session.submitFeedback(body);
+    const dispatch = await dispatchFor(surface, receipt.task);
+    return { ...receipt, dispatch };
+  },
+  tasks: ({ session }) => session.tasks(),
+  claim: ({ session, body }) => session.claim(body),
+  complete: ({ session, body }) => session.complete(body),
+  patch: ({ session, body }) => session.patch(body),
+  conflicts: ({ session }) => session.conflicts(),
+  decide: ({ session, body }) => session.decide(body),
+  history: ({ session }) => session.history(),
+  restore: ({ session, body }) => session.restore(body),
+};
+
+/** 通道认识的每一个动作名（页面 + 模型侧），只有这一份。 */
+export const DOC_ROUTES = new Set(Object.keys(ROUTES));
 
 /**
  * 工作稿身份不在通用 surface 契约里（契约不表达审阅语义），而是生成 surface 时写在
@@ -126,54 +156,26 @@ async function sessionFor(docPath) {
 
 /**
  * 执行一条 doc-workbench 命令。调用方（review-command 或 CLI）已经做过路径包含性校验；
- * 这里再按 backend 自己的白名单收窄一次，并只从 binding.json 解析文档。
+ * 这里再按身份边界收窄一次，并只从 binding.json 解析文档。
  */
 export async function runDocCommand(surface, payload, { browser = true } = {}) {
   try {
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
       fail('command_shape', 'Command must be a JSON object');
     }
-    const allowed = browser ? DOC_BROWSER_OPERATIONS : DOC_MODEL_OPERATIONS;
-    if (!allowed.has(payload.op)) fail('command_operation', 'This operation is not available on this transport');
+    const { route } = payload;
+    if (typeof route !== 'string' || !route) fail('command_shape', 'Command 需要 route（本地宿主的动作名）');
+    const body = payload.body === undefined ? {} : payload.body;
+    if (!body || typeof body !== 'object' || Array.isArray(body)) fail('command_shape', 'Command body 必须是 JSON 对象');
+    // 身份边界，不是动作白名单：模型侧动作不能从浏览器口进来。
+    if (browser && DOC_IDENTITY_ROUTES.has(route)) {
+      fail('command_operation', `浏览器不能执行模型侧动作 ${route}：领取任务 / 回写 patch / 完成只能走 doc-command.mjs CLI`);
+    }
+    const handler = ROUTES[route];
+    if (!handler) fail('command_operation', `未知的动作 ${route}；动作名就是本地宿主的路由名`);
     const { docPath } = docBindingOf(surface);
     const session = await sessionFor(docPath);
-    switch (payload.op) {
-      case 'open':
-        return { ok: true, ...session.snapshot() };
-      case 'block':
-        return session.saveBlock(payload);
-      case 'split':
-        return session.splitBlock(payload);
-      case 'merge':
-        return session.mergeBlocks(payload);
-      case 'reorder':
-        return session.reorder(payload);
-      case 'asset_replace':
-        return session.replaceAsset(payload);
-      case 'feedback': {
-        const receipt = session.submitFeedback(payload);
-        const dispatch = await dispatchFor(surface, receipt.task);
-        return { ...receipt, dispatch };
-      }
-      case 'tasks':
-        return session.tasks();
-      case 'claim':
-        return session.claim(payload);
-      case 'complete':
-        return session.complete(payload);
-      case 'patch':
-        return session.patch(payload);
-      case 'conflicts':
-        return session.conflicts();
-      case 'decide':
-        return session.decide(payload);
-      case 'history':
-        return session.history();
-      case 'restore':
-        return session.restore(payload);
-      default:
-        return fail('command_operation', 'Unknown doc-workbench operation');
-    }
+    return await handler({ surface, session, body });
   } catch (error) {
     return { ok: false, code: error?.code ?? 'doc_command', error: error?.message ?? String(error) };
   }
@@ -213,11 +215,12 @@ if (isCli) {
   const surfaceArg = args[0];
   const op = args[1];
   if (!surfaceArg || !op) { console.error(USAGE); process.exit(2); }
+  // 模型 CLI 与浏览器走同一张路由表：`route` 是动作名，`body` 是原始请求体。
   let payload;
-  if (op === 'tasks' || op === 'conflicts') payload = { op };
+  if (op === 'tasks' || op === 'conflicts') payload = { route: op };
   else if (op === 'claim' || op === 'complete') {
     if (!args[2]) { console.error(USAGE); process.exit(2); }
-    payload = { op, task_id: args[2] };
+    payload = { route: op, body: { task_id: args[2] } };
   } else if (op === 'patch') {
     let input = '';
     try {
@@ -227,7 +230,7 @@ if (isCli) {
       process.exit(2);
     }
     try {
-      payload = { ...JSON.parse(input), op: 'patch' };
+      payload = { route: 'patch', body: JSON.parse(input) };
     } catch {
       console.error('stdin 不是合法 JSON');
       process.exit(2);
