@@ -1136,16 +1136,27 @@ export function applyBlockContent(raw, anchor, content, options = {}) {
     };
   }
   const autoPage = autoPageView(after, plan, block.startLine);
+  // 造结构之后源页一块都不剩：页标题跟着消失（票 39）。先按中间结果验完（造出来的
+  // 页 / 章必须各就各位），再在同一次写里把空页删掉 —— 不给任何人看到中间那个空页。
+  const settled = plan.structural
+    ? dropEmptiedPage(next, block.page?.line)
+    : { raw: next, dropped: false, removedLines: 0 };
+  const settledAfter = settled.dropped ? parseDocument(settled.raw, { checkImages: false }) : after;
+  const settledBlock = written && settled.dropped
+    ? (settledAfter.blocks.find((item) => item.anchor === written.anchor) ?? written)
+    : written;
   return {
-    raw: bom + next,
-    block: written,
+    raw: bom + settled.raw,
+    block: settledBlock,
     retype: block.type === plan.type && !plan.structural ? null : {
       from: block.type,
       to: plan.type,
       prefix: plan.prefix,
       literal: plan.literal,
       structure: plan.structural ? plan.type : null,
-      ...(autoPage ? { auto_page: autoPage } : {}),
+      ...(autoPage ? {
+        auto_page: autoPageView(settledAfter, plan, block.startLine - settled.removedLines) ?? autoPage,
+      } : {}),
     },
   };
 }
@@ -1355,10 +1366,20 @@ export function splitBlockContent(raw, { anchor, before, after, keep = 'before' 
   const created = anchorSide === 'second' ? firstPieceBlock : secondPieceBlock;
   const structurePlans = [firstPlan, secondPlan].filter((plan) => plan.structural);
   const lastStructure = structurePlans[structurePlans.length - 1] ?? null;
+  // 造结构之后源页一块都不剩：页标题跟着消失（票 39）。验证都在中间结果上做完，
+  // 空页在同一次写里删掉；块身份按锚点重新对上（页删了不影响任何块的 raw）。
+  const settled = structurePlans.length ? dropEmptiedPage(next, block.page?.line) : { raw: next, dropped: false, removedLines: 0 };
+  const settledAfter = settled.dropped ? parseDocument(settled.raw, { checkImages: false }) : afterDocument;
+  const rename = (piece) => (piece && settled.dropped
+    ? (settledAfter.blocks.find((item) => item.anchor === piece.anchor) ?? piece)
+    : piece);
+  const settledAutoPage = [firstPlan, secondPlan]
+    .map((plan, index) => autoPageView(settledAfter, plan, (index === 0 ? firstLine : secondLine) - settled.removedLines))
+    .filter(Boolean).pop() ?? null;
   return {
-    raw: bom + next,
-    block: kept,
-    newBlock: created,
+    raw: bom + settled.raw,
+    block: rename(kept),
+    newBlock: rename(created),
     ...(lastStructure ? {
       retype: {
         from: block.type,
@@ -1366,9 +1387,7 @@ export function splitBlockContent(raw, { anchor, before, after, keep = 'before' 
         prefix: lastStructure.prefix,
         literal: null,
         structure: lastStructure.type,
-        auto_page: [firstPlan, secondPlan]
-          .map((plan, index) => autoPageView(afterDocument, plan, index === 0 ? firstLine : secondLine))
-          .filter(Boolean).pop() ?? null,
+        auto_page: settledAutoPage,
       },
     } : {}),
   };
@@ -1497,10 +1516,18 @@ export function createBlockInPage(raw, { chapter, index, content } = {}, options
     || written.page.index !== page.index) {
     reorderFail('block_structure', '第一块没有干净地落在这一页里，已拒绝');
   }
-  const autoPage = autoPageView(after, plan, page.line + 2);
+  // 空页的第一块变成 `#` / `##`：原来那个空页一块都不剩，页标题跟着消失（票 39）。
+  const settled = plan.structural
+    ? dropEmptiedPage(next, page.line)
+    : { raw: next, dropped: false, removedLines: 0 };
+  const settledAfter = settled.dropped ? parseDocument(settled.raw, { checkImages: false }) : after;
+  const settledWritten = written && settled.dropped
+    ? (settledAfter.blocks.find((item) => item.anchor === anchor) ?? written)
+    : written;
+  const settledAutoPage = autoPageView(settledAfter, plan, page.line + 2 - settled.removedLines);
   return {
-    raw: raw.startsWith('\uFEFF') ? `\uFEFF${next}` : next,
-    block: written,
+    raw: raw.startsWith('\uFEFF') ? `\uFEFF${settled.raw}` : settled.raw,
+    block: settledWritten,
     ...(plan.structural ? {
       retype: {
         from: 'paragraph',
@@ -1508,7 +1535,7 @@ export function createBlockInPage(raw, { chapter, index, content } = {}, options
         prefix: plan.prefix,
         literal: null,
         structure: plan.type,
-        ...(autoPage ? { auto_page: autoPage } : {}),
+        ...(settledAutoPage ? { auto_page: settledAutoPage } : {}),
       },
     } : {}),
   };
@@ -1521,7 +1548,66 @@ export function createBlockInPage(raw, { chapter, index, content } = {}, options
 // 两个操作都按锚点定位，拒绝任何会让页或章节变空的移动，并重解析验证结果。
 
 const reorderFail = (code, message) => { throw Object.assign(Error(message), { code }); };
-const isBlankLine = (line) => (line ?? '').trim() === '';
+/** 空行判据：删除的行手术与合并共用这一份。 */
+export const isBlankLine = (line) => (line ?? '').trim() === '';
+
+/**
+ * 删除的行手术：删掉 [start, end) 这段行（0 起、右开），接缝处只留一个空行。
+ *
+ * 删除是减法：除了被删掉的那几行与接缝上多出来的空行，其余字节逐字不动。紧随其后
+ * 的空行一并吞掉，避免留下两行空行；前后都是内容时补回一个空行，免得两块粘成一块。
+ * 块删除、页 / 章删除与「造结构后源页空了」共用这一份（票 39）。
+ */
+export function cutLines(lines, start, end) {
+  let stop = end;
+  while (stop < lines.length && isBlankLine(lines[stop])) stop += 1;
+  lines.splice(start, stop - start);
+  if (start > 0 && start < lines.length && !isBlankLine(lines[start - 1]) && !isBlankLine(lines[start])) {
+    lines.splice(start, 0, '');
+  }
+}
+
+/**
+ * 把一段行搬到 index 处（坐标是「搬之前」的原文行号）：接缝上前后都是内容时补一个空行，
+ * 免得搬过来的块与邻居粘成一块。
+ */
+export function moveChunkIn(lines, index, chunk) {
+  if (!chunk.length) return;
+  const before = index > 0 && !isBlankLine(lines[index - 1]) ? [''] : [];
+  const after = index < lines.length && !isBlankLine(lines[index]) ? [''] : [];
+  lines.splice(index, 0, ...before, ...chunk, ...after);
+}
+
+/** 删完几行之后按原样拼回全文（BOM 与文件末尾换行都不动）。 */
+export function joinLinesBack(raw, lines, eol = String(raw).includes('\r\n') ? '\r\n' : '\n') {
+  const text = String(raw).replace(/^\uFEFF/, '');
+  let output = lines.join(eol);
+  if (text.endsWith(eol) && !output.endsWith(eol)) output += eol;
+  return String(raw).startsWith('\uFEFF') ? `\uFEFF${output}` : output;
+}
+
+/**
+ * 造结构（`#` / `##`）之后源页一块都不剩：页标题跟着消失（票 39 的「删空即消失」）。
+ *
+ * 同一次写入里做掉，人看不到中间那个空页。页里没有块，所以块身份一个都不动 ——
+ * 挂在这一页上的批注本来就跟块身份走，不再有第二处要挪的东西。
+ * 只删页标题：源章因此空了也照旧留着（造结构不是删章，章的去留另有 delete-chapter）。
+ *
+ * @returns {{raw:string, dropped:boolean, removedLines:number}}
+ */
+export function dropEmptiedPage(raw, pageLine) {
+  if (!Number.isInteger(pageLine)) return { raw, dropped: false, removedLines: 0 };
+  const parsed = parseDocument(raw, { checkImages: false });
+  const page = parsed.pages.find((item) => item.line === pageLine && item.blocks.length === 0);
+  if (!page) return { raw, dropped: false, removedLines: 0 };
+  const lines = parsed.text.split(/\r?\n/);
+  cutLines(lines, page.line - 1, page.line);
+  return {
+    raw: joinLinesBack(raw, lines),
+    dropped: true,
+    removedLines: parsed.lines.length - lines.length,
+  };
+}
 
 /** 块占的最后一行（1 基）：独立块的锚点单独成行，写在元素下一行，也算块的一部分。 */
 export function blockEndLine(block) {

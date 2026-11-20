@@ -767,10 +767,11 @@ function reorderDocument(docPath, payload, board, conflicts, faults) {
 }
 
 /**
- * 改结构：改章节名 / 页名，或在页尾加页、章节尾加章。
+ * 改结构：改章节名 / 页名，在页尾加页、章节尾加章，或把块 / 页 / 章删掉（删空即消失）。
  *
  * 结构不是块（`#` / `##` 不能带锚点），所以这里不经过块级写：按行补丁整份落盘，
- * 与重排共用一把写锁、一份基线判据与同一个 journal。改完回整份快照，
+ * 与重排共用一把写锁、一份基线判据与同一个 journal。删除先看一次范围里有没有被
+ * 占住（锁定 / 待核对）的块 —— 删页删章会挪动它们，与移页同一判据。改完回整份快照，
  * 页面据此重画正文与目录 —— 目录不是另一份状态。
  */
 function structureDocument(docPath, payload, board, conflicts, faults) {
@@ -779,8 +780,14 @@ function structureDocument(docPath, payload, board, conflicts, faults) {
     board.refresh();
     conflicts.refresh();
     const document = readDocument(docPath);
-    // 基线过期不拒人：重读当前全文，把这个结构动作重放上去。结构动作按「章节 / 页」
-    // 定位，不覆盖任何块的 raw，所以别处刚改的正文与标题都保留（与块级保存同一语义）。
+    // 删除也是编辑：锁定（模型正在改）与待核对的块不可动。块、页、章的删除都会挪动
+    // 或带走块身份，所以按删除范围里有没有被占住的块先拒再谈落点（与重排同一判据）。
+    const held = heldForDelete(document, payload, board, conflicts);
+    if (held.length) {
+      fail('block_locked', `这些块正被模型处理或待核对（${held.join('、')}），先处理完再删`);
+    }
+    // 基线过期不拒人：重读当前全文，把这个结构动作重放上去。结构动作按「章节 / 页 /
+    // 块身份」定位，不覆盖任何块的 raw，所以别处刚改的正文与标题都保留（与块级保存同一语义）。
     const replayed = typeof payload.base_sha256 === 'string' && payload.base_sha256 !== document.hash;
     const repaired = persistRepairs(docPath, document, faults);
     const result = applyStructure(repaired.raw, payload);
@@ -801,9 +808,30 @@ function structureDocument(docPath, payload, board, conflicts, faults) {
       ...(result.chapter ? { chapter: result.chapter } : {}),
       ...(result.page ? { page: result.page } : {}),
       ...(result.source ? { source: result.source } : {}),
+      ...(result.deleted ? { deleted: result.deleted } : {}),
       ...snapshotFrom(readDocument(docPath), docPath, board, conflicts),
     };
   });
+}
+
+/**
+ * 一次删除会带走 / 挪动哪些块：块删除是它自己，页删除是页里的块，章删除是章里所有页的块。
+ * 只挑被占住（锁定或待核对）的那些，用来在落盘前先拒。别的动作不查这个。
+ */
+function heldForDelete(document, payload, board, conflicts) {
+  const op = payload?.op;
+  if (op !== 'delete-block' && op !== 'delete-page' && op !== 'delete-chapter') return [];
+  const occupied = (block) => block.anchor && (board.lockOf(block.anchor) || conflicts.get(block.anchor));
+  let scope = document.parsed.blocks;
+  if (op === 'delete-block') {
+    scope = scope.filter((block) => block.anchor === payload.anchor);
+  } else if (op === 'delete-page') {
+    scope = scope.filter((block) => block.page
+      && block.page.chapter?.index === Number(payload.chapter) && block.page.index === Number(payload.index));
+  } else {
+    scope = scope.filter((block) => block.chapter?.index === Number(payload.chapter));
+  }
+  return scope.filter(occupied).map((block) => block.anchor);
 }
 
 /**

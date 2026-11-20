@@ -1,21 +1,27 @@
 /**
- * 结构编辑：改章节名 / 页名、在页尾加页、在章节尾加章、在页尾出处区加一条引用。
+ * 结构编辑：改章节名 / 页名、在页尾加页、在章节尾加章、在页尾出处区加一条引用，
+ * 以及**删空即消失**（删块 / 删页 / 删章）。
  *
  * 结构不是块：`#` 章节与 `##` 页没有锚点（契约第 2 节），所以这里不碰既有块 raw、
- * 不生成除「新块」以外的任何块身份。所有操作都是**对原文的行级补丁**：只替换标题行
- * 或在一个边界处插入新行，其余字节逐字保留（含 CRLF 与文件末尾换行）。
+ * 不生成除「新块」以外的任何块身份。所有操作都是**对原文的行级补丁**：只替换标题行、
+ * 在一个边界处插入新行，或拿走标题行 / 块行，其余字节逐字保留（含 CRLF 与文件末尾换行）。
  *
- * 五个动作名与本地路由表 / 命令后端同名：`rename-chapter` / `rename-page` /
- * `add-page` / `add-chapter` / `add-source`。回执里给出新结构的 `{chapter, page}`
- * 或新块 `{source}`，页面据此定位并聚焦。
+ * 动作名与本地路由表 / 命令后端同名：`rename-chapter` / `rename-page` /
+ * `add-page` / `add-chapter` / `add-source` / `delete-block` / `delete-page` /
+ * `delete-chapter`（都走同一条 `structure` 路由）。回执里给出新结构的 `{chapter, page}`、
+ * 新块 `{source}` 或删掉的 `deleted`，页面据此定位、聚焦或重画。
  */
-import { generateAnchor, outsidePageCount, parseDocument } from './doc-blocks.mjs';
+import {
+  BLOCK_ANCHOR_RE, cutLines, generateAnchor, isBlankLine, joinLinesBack, moveChunkIn, outsidePageCount,
+  parseDocument,
+} from './doc-blocks.mjs';
 import DocIdentity from '../../assets/workbench/doc-identity.js';
 
 const { pageKeyOf } = DocIdentity;
 
 export const STRUCTURE_OPS = new Set([
   'rename-chapter', 'rename-page', 'add-page', 'add-chapter', 'add-source',
+  'delete-block', 'delete-page', 'delete-chapter',
 ]);
 export const NEW_CHAPTER_TITLE = '新章节';
 export const NEW_PAGE_TITLE = '新页';
@@ -30,6 +36,45 @@ const freshAnchor = (parsed) => generateAnchor(
 );
 
 const fail = (code, message) => { throw Object.assign(Error(message), { code }); };
+
+/**
+ * 删完之后的兜底核对：块身份一个不多一个不少、保留下来的块 raw 逐字不动、
+ * 结构数量正好只少了该少的那几个、页外块只许按规则 3 明确变多。
+ * 落点算错时宁可报错不写，也不把别的块顺手带走或推出页外。
+ */
+function verifyDeleteWrite(before, output, expect) {
+  const after = parseDocument(output, { checkImages: false });
+  if (after.chapters.length !== before.chapters.length - (expect.chapters ?? 0)) {
+    fail('structure_boundary', '这次删除没有删掉预期的章节，已拒绝');
+  }
+  if (after.pages.length !== before.pages.length - (expect.pages ?? 0)) {
+    fail('structure_boundary', '这次删除没有删掉预期的页，已拒绝');
+  }
+  if (after.blocks.length !== before.blocks.length - (expect.blocks ?? 0)) {
+    fail('structure_boundary', '这次删除动了块的数量，已拒绝');
+  }
+  if (after.blocks.length !== after.blocks.filter((block) => block.anchor).length
+    + before.blocks.filter((block) => !block.anchor).length) {
+    fail('structure_boundary', '这次删除动了没有身份的块，已拒绝');
+  }
+  // 页外块只许减少：规则 3 明确要留的那些可以变多，其余删除一个都不许推到页外。
+  // 反过来「删掉一个页外块」是允许的（规则 3 留下的块也得能删）。
+  if (outsidePageCount(after) > outsidePageCount(before) + (expect.outside ?? 0)) {
+    fail('structure_boundary', '这次删除把块推出了页外，已拒绝');
+  }
+  const raws = new Map(before.blocks.filter((block) => block.anchor).map((block) => [block.anchor, block.raw]));
+  for (const block of after.blocks) {
+    if (!block.anchor) continue;
+    if (!raws.has(block.anchor)) fail('structure_boundary', '这次删除动到了没有身份的块，已拒绝');
+    if (raws.get(block.anchor) !== block.raw) fail('structure_boundary', '这次删除动了别的块的内容，已拒绝');
+    raws.delete(block.anchor);
+  }
+  const removed = new Set(expect.removed ?? []);
+  for (const anchor of raws.keys()) {
+    if (!removed.has(anchor)) fail('structure_boundary', `这次删除把块 ${anchor} 弄丢了，已拒绝`);
+  }
+  return after;
+}
 
 /** 标题只占一行：换行折成空格；空标题与锚点注释不写进结构行。 */
 function cleanTitle(value, fallback = null) {
@@ -101,6 +146,81 @@ function chapterBoundaryLine(parsed, chapter) {
 }
 
 /**
+ * 页消失时块去哪 —— 用户定的三条，按顺序取第一条成立的：
+ *   1. 并入同一章内的上一页；
+ *   2. 本章第一页 → 并入下一章的第一页；
+ *   3. 前后都没有 → 留在文末，成为页外块（结构不完整允许，交给模型收拾）。
+ */
+function deletePagePlan(parsed, chapter, page) {
+  const previousPage = chapter.pages[page.index - 2] ?? null;
+  if (previousPage) return { settle: 'previous-page', previousPage };
+  const nextPage = (parsed.chapters[chapter.index]?.pages ?? [])[0] ?? null;
+  if (nextPage) return { settle: 'next-chapter', nextPage };
+  return { settle: 'document-end' };
+}
+
+/**
+ * 删一页：页标题行连同这一页的块一起处理。
+ *
+ * 规则 1 / 3 只拿走页标题行（与它下面的空行）：这一页的块原地不动 —— 上一个页标题
+ * 还在就归上一页（规则 1），不在了就成为页外块（规则 3）。块 raw 逐字不动，这是最
+ * 不容易出错的安置。规则 2 要把块整段搬到下一章第一页，锚点随内容走，挂在这些块上的
+ * 批注也就跟着走。章里唯一一页被删、章因此空了时，章标题行一起消失。
+ */
+function deletePageLines(lines, parsed, chapter, page) {
+  const plan = deletePagePlan(parsed, chapter, page);
+  const chapterGoesAway = chapter.pages.length === 1;
+  const heading = page.line - 1;
+  const hasBlocks = page.blocks.length > 0;
+  const chunkStart = hasBlocks ? page.blocks[0].startLine - 1 : heading + 1;
+  const chunkEnd = hasBlocks ? page.blocks[page.blocks.length - 1].endLine : heading + 1;
+
+  if (plan.settle === 'next-chapter') {
+    const chunk = hasBlocks ? lines.slice(chunkStart, chunkEnd) : [];
+    // 先插后删：落点永远在被删的这一页之后，插入不会挪动待删区间的行号。
+    const destination = plan.nextPage.blocks.length
+      ? plan.nextPage.blocks[plan.nextPage.blocks.length - 1].endLine
+      : plan.nextPage.line;
+    moveChunkIn(lines, destination, chunk);
+    cutLines(lines, chapterGoesAway ? chapter.line - 1 : heading, chunkEnd);
+    return { plan, chapterGoesAway };
+  }
+
+  cutLines(lines, chapterGoesAway ? chapter.line - 1 : heading, chunkStart);
+  return { plan, chapterGoesAway };
+}
+
+/**
+ * 删一章：章标题行拿走，页一个都不动地归到邻章。
+ *
+ * 有上一章时只拿走标题行 —— 这一章的页本来就排在上一章内容之后，标题一没就归它了。
+ * 第一章没有上一章可归，整段页行搬到下一章标题之后（成为它的前几页）。只有一章的
+ * 文档没有邻章可归，页留在顶层（结构不完整允许）。章里本来就没有页时只拿走标题行。
+ */
+function deleteChapterLines(lines, parsed, chapter) {
+  const heading = chapter.line - 1;
+  const previousChapter = parsed.chapters[chapter.index - 2] ?? null;
+  const nextChapter = parsed.chapters[chapter.index] ?? null;
+  const trimmingBlanks = (chunk) => {
+    let end = chunk.length;
+    while (end > 0 && isBlankLine(chunk[end - 1])) end -= 1;
+    return chunk.slice(0, end);
+  };
+
+  if (chapter.pages.length === 0 || previousChapter || !nextChapter) {
+    cutLines(lines, heading, heading + 1);
+    return;
+  }
+
+  const chunk = trimmingBlanks(lines.slice(chapter.pages[0].line - 1, nextChapter.line - 1));
+  let destination = nextChapter.line; // 标题行之后那一行（0 起）
+  while (destination < lines.length && isBlankLine(lines[destination])) destination += 1;
+  // 先插后删：落点在待删区间之后，插入不会挪动待删区间的行号。
+  moveChunkIn(lines, destination, chunk);
+  cutLines(lines, heading, nextChapter.line - 1);
+}
+
+/**
  * 结构写回后的兜底检查（票 34）：新章节 / 页落下后，页里的块一个都不能掉到页外，
  * 已有块的 raw 一个字节都不能动，结构数量也正好只多出该多的那一个。
  * 落点算错时宁可报错不写，也不把同一个 page 的正文与出处推出页外。
@@ -132,7 +252,7 @@ function verifyStructureWrite(before, output, expect) {
 export function applyStructure(raw, payload) {
   const op = payload?.op;
   if (!STRUCTURE_OPS.has(op)) {
-    fail('structure_op', '结构操作只接受 rename-chapter / rename-page / add-page / add-chapter / add-source');
+    fail('structure_op', `结构操作只接受 ${[...STRUCTURE_OPS].join(' / ')}`);
   }
   const source = String(raw ?? '');
   const bom = source.startsWith('\uFEFF') ? '\uFEFF' : '';
@@ -146,6 +266,52 @@ export function applyStructure(raw, payload) {
     const padding = text === '' || text.endsWith(eol + eol) ? '' : text.endsWith(eol) ? eol : eol + eol;
     return text + padding + insert;
   };
+  const joinLines = (lines) => joinLinesBack(text, lines, eol);
+
+  if (op === 'delete-block') {
+    const anchor = payload.anchor;
+    if (typeof anchor !== 'string' || !BLOCK_ANCHOR_RE.test(anchor)) {
+      fail('structure_delete', '删除块要带块身份（anchor）');
+    }
+    const block = parsed.blocks.find((item) => item.anchor === anchor);
+    if (!block) fail('block_missing', `找不到块 ${anchor}；文档可能已被修改`);
+    const lines = text.split(/\r?\n/);
+    cutLines(lines, block.startLine - 1, block.endLine);
+    const output = joinLines(lines);
+    verifyDeleteWrite(parsed, output, { blocks: 1, removed: [anchor] });
+    return { raw: bom + output, changed: true, deleted: { kind: 'block', anchor } };
+  }
+
+  if (op === 'delete-chapter') {
+    const chapter = chapterAt(parsed, payload.chapter);
+    const lines = text.split(/\r?\n/);
+    deleteChapterLines(lines, parsed, chapter);
+    const output = joinLines(lines);
+    verifyDeleteWrite(parsed, output, { chapters: 1 });
+    return {
+      raw: bom + output,
+      changed: true,
+      deleted: { kind: 'chapter', chapter: chapter.index },
+    };
+  }
+
+  if (op === 'delete-page') {
+    const chapter = chapterAt(parsed, payload.chapter);
+    const page = pageAt(parsed, chapter, payload.index);
+    const lines = text.split(/\r?\n/);
+    const { plan, chapterGoesAway } = deletePageLines(lines, parsed, chapter, page);
+    const output = joinLines(lines);
+    verifyDeleteWrite(parsed, output, {
+      pages: 1,
+      chapters: chapterGoesAway ? 1 : 0,
+      outside: plan.settle === 'document-end' ? page.blocks.length : 0,
+    });
+    return {
+      raw: bom + output,
+      changed: true,
+      deleted: { kind: 'page', chapter: chapter.index, index: page.index },
+    };
+  }
 
   if (op === 'rename-chapter') {
     const chapter = chapterAt(parsed, payload.chapter);
