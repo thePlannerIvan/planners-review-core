@@ -11,6 +11,9 @@
 import { readFileSync } from 'node:fs';
 import { extname } from 'node:path';
 import { sha256 } from '../content-review-contract.mjs';
+import DocIdentity from '../../assets/workbench/doc-identity.js';
+
+const { pageKeyOf } = DocIdentity;
 
 export const LEGACY_REASON = 'legacy-json';
 export const LEGACY_READONLY_MESSAGE = '旧 JSON 主稿只读：这份文件用的是旧存储，新工作台只写 planners-doc/2 的 Markdown，不会修改它。'
@@ -65,7 +68,7 @@ export function legacySnapshot({ path, master }) {
     const number = Number.isInteger(Number(page.page_number)) ? Number(page.page_number) : position + 1;
     const title = textOf(page.title_intent) || textOf(page.title) || textOf(page.claim) || `第 ${number} 页`;
     // 旧主稿的页号是全局的（page_number），目录照它显示；key 仍按位置保证唯一。
-    const key = `${chapterIndex}-${position + 1}`;
+    const key = pageKeyOf({ chapter: chapterIndex, index: position + 1 });
     pages.push({
       key,
       chapter: section.title,

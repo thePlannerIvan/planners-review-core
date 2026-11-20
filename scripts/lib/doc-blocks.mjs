@@ -15,6 +15,9 @@ import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import DocIdentity from '../../assets/workbench/doc-identity.js';
+
+const { pageKeyOf, isPageEnd, isSource } = DocIdentity;
 
 export const VERSION = 'planners-doc/2';
 export const DOC_KINDS = ['storyline', 'by-page'];
@@ -782,7 +785,7 @@ export function applyBlockContent(raw, anchor, content, options = {}) {
   // 后面所有页的行号整体位移，用行号当判据会把「同一页里换内容」误判成「结构变了」，
   // 多行块就永远存不下来。页身份由顺序决定（契约第 2 节），不随行号漂移。
   const shape = (document) => document.blocks
-    .map((item) => `${item.type}@${item.page ? `${item.page.chapter?.index ?? 0}-${item.page.index}` : '-'}`)
+    .map((item) => `${item.type}@${item.page ? pageKeyOf(item.page) : '-'}`)
     .join(',');
   const beforeAnchors = parsed.blocks.filter((item) => item.anchor).map((item) => item.anchor);
   const afterAnchors = after.blocks.filter((item) => item.anchor).map((item) => item.anchor);
@@ -884,7 +887,7 @@ export function splitBlockContent(raw, { anchor, before, after, keep = 'before' 
     || secondBlock?.anchor !== secondAnchor || secondBlock.raw !== secondRaw) {
     reorderFail('block_structure', '拆分后的块序列与预期不一致，已拒绝');
   }
-  const pageOf = (item) => `${item.page?.chapter?.index ?? 0}-${item.page?.index ?? 0}`;
+  const pageOf = (item) => pageKeyOf(item.page) ?? '0-0';
   if (pageOf(firstBlock) !== pageOf(block) || pageOf(secondBlock) !== pageOf(block)) {
     reorderFail('block_structure', '拆分把块挪出了原来那一页，已拒绝');
   }
@@ -930,7 +933,7 @@ export function mergeBlockContent(raw, { anchor, previous, content } = {}, optio
   if (parsed.blocks.indexOf(target) !== position - 1) {
     reorderFail('merge_target', '只能并入紧挨着的前一块');
   }
-  const pageOf = (item) => `${item.page?.chapter?.index ?? 0}-${item.page?.index ?? 0}`;
+  const pageOf = (item) => pageKeyOf(item.page) ?? '0-0';
   if (pageOf(target) !== pageOf(block)) reorderFail('merge_target', '只能并入同一页的前一块');
   // 合并会把后一块删掉，页可能因此变空——那是编辑的中间态，不拦（ADR 0006）。
 
@@ -1116,8 +1119,13 @@ export function moveBlock(raw, { anchor, to } = {}) {
     gap = chapter.pages.length ? chapter.pages[0].line - 1 : chapterEnd(parsed, chapter);
   } else {
     target = locatePage(parsed, to);
-    if (to.before === null || to.before === undefined) {
-      gap = pageLineRange(target).end;
+    // 页末落点（`before: null`）：页末连续的引用是出处区，位置就是语义（契约第 5 节）。
+    // 正文块落到「页末」= 落到出处区**之前**；否则它会把出处区拆散（页末不再是引用，
+    // 整串出处退化成正文引用）。出处块自己落到页末时仍留在出处区末尾，顺序不乱。
+    const sourcesHead = !isSource(block) && target.sources?.length ? target.sources[0] : null;
+    const endBefore = sourcesHead?.anchor ?? null;
+    if (isPageEnd(to.before)) {
+      gap = sourcesHead ? sourcesHead.startLine - 1 : pageLineRange(target).end;
     } else {
       const before = target.blocks.find((item) => item.anchor === to.before);
       if (!before) reorderFail('reorder_target', `目标页里没有块 ${to.before}`);
@@ -1125,12 +1133,12 @@ export function moveBlock(raw, { anchor, to } = {}) {
     }
     if (target === block.page) {
       const self = target.blocks.indexOf(block);
-      const beforeIndex = to.before == null
-        ? target.blocks.length
+      const beforeIndex = isPageEnd(to.before)
+        ? (endBefore ? target.blocks.findIndex((item) => item.anchor === endBefore) : target.blocks.length)
         : target.blocks.findIndex((item) => item.anchor === to.before);
       // 落回原位（插在自己前面 / 自己后面）不是错误，也不是一次修改。
       if (beforeIndex === self || beforeIndex === self + 1) {
-        return { raw: String(raw), changed: false, moved: anchor, page: `${target.chapter.index}-${target.index}` };
+        return { raw: String(raw), changed: false, moved: anchor, page: pageKeyOf(target) };
       }
     }
   }
@@ -1141,7 +1149,7 @@ export function moveBlock(raw, { anchor, to } = {}) {
       raw: String(raw),
       changed: false,
       moved: anchor,
-      page: block.page ? `${block.page.chapter?.index ?? 0}-${block.page.index}` : null,
+      page: block.page ? pageKeyOf(block.page) : null,
     };
   }
   const lines = spliceLines(String(raw).replace(/^\uFEFF/, '').split(/\r?\n/), cut.start, cut.end, gap);
@@ -1160,7 +1168,7 @@ export function moveBlock(raw, { anchor, to } = {}) {
     raw: next,
     changed: true,
     moved: anchor,
-    page: `${moved.page.chapter.index}-${moved.page.index}`,
+    page: pageKeyOf(moved.page),
   };
 }
 

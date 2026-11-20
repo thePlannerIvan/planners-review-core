@@ -34,6 +34,9 @@ import { atomicWrite } from './doc-io.mjs';
 import { buildDiff, readBaseline, structureOf, writeBaseline } from './doc-diff.mjs';
 import { LEGACY_READONLY_MESSAGE, legacySnapshot, readLegacyMaster } from './doc-legacy.mjs';
 import { sha256 } from '../content-review-contract.mjs';
+import DocIdentity from '../../assets/workbench/doc-identity.js';
+
+const { pageKeyOf } = DocIdentity;
 
 const fail = (code, message, details = null) => {
   throw Object.assign(Error(message), { code, ...(details ? { details } : {}) });
@@ -53,7 +56,7 @@ export function viewBlock(block, lockOf = () => null, conflictOf = () => null) {
     type: block.type,
     index: block.index,
     page: {
-      key: block.page ? `${block.page.chapter?.index ?? 0}-${block.page.index}` : null,
+      key: block.page ? pageKeyOf(block.page) : null,
       chapter: chapter?.title ?? null,
       chapterIndex: chapter?.index ?? null,
       number: block.page?.index ?? null,
@@ -87,7 +90,7 @@ export function viewBlock(block, lockOf = () => null, conflictOf = () => null) {
 /** 目录用的页视图：页没有锚点，身份是「章节号 + 页号」，编号由顺序决定。 */
 export function viewPage(page) {
   return {
-    key: `${page.chapter?.index ?? 0}-${page.index}`,
+    key: pageKeyOf(page),
     chapter: page.chapter?.title ?? null,
     chapterIndex: page.chapter?.index ?? null,
     index: page.index,
@@ -223,6 +226,37 @@ function createFirstBlock(docPath, payload, board, conflicts, faults) {
 }
 
 /**
+ * 块级重放判据（唯一一份）：整份基线过期、但这一块本身没变时，安全重放到当前全文；
+ * 这一块自己也变了（且带了块指纹）就停下来问人；没带块指纹则无法判断是不是同一块。
+ *
+ * 保存 / 拆分 / 合并三个命令只差「提示里写哪个动作」与「冲突时留哪一版」，
+ * 判据本身必须是同一套——否则三条编辑路径会在同一份文件上给出不同的安全边界。
+ *
+ * @returns {{documentMatches:boolean, blockMatches:boolean, replayed:boolean}}
+ */
+function replayVerdict({
+  document, block, anchor, baseSha, baseBlockSha, action, conflictMessage, yourContent, defer = null,
+}) {
+  const documentMatches = typeof baseSha === 'string' && baseSha === document.hash;
+  const blockMatches = typeof baseBlockSha === 'string' && baseBlockSha === sha256(block.raw);
+  if (!documentMatches && !blockMatches) {
+    if (typeof baseBlockSha === 'string') {
+      // 停下来问人之前先留一版：刷新 / 重开工作台后还能并排核对（票 32）。
+      if (defer) defer();
+      fail('block_conflict', conflictMessage, {
+        anchor,
+        disk_raw: block.raw,
+        disk_sha256: sha256(block.raw),
+        base_block_sha256: baseBlockSha,
+        ...(yourContent !== undefined ? { your_content: yourContent } : {}),
+      });
+    }
+    fail('stale_document', `文档已在别处被修改，这一块（${anchor}）没带基线指纹、无法安全重放；请刷新工作台后再${action}`);
+  }
+  return { documentMatches, blockMatches, replayed: !documentMatches };
+}
+
+/**
  * 人保存一块：块级合并。
  *
  * `base_sha256` 是整份基线，`base_block_sha256` 是这一块加载时的指纹。
@@ -250,26 +284,25 @@ function saveBlock(docPath, payload, board, conflicts, faults) {
     const document = readDocument(docPath);
     const block = blockAt(document, anchor);
     if (!block) fail('block_anchor', `找不到块 ${anchor}；文档可能已被修改，请刷新工作台`);
-    const documentMatches = typeof baseSha === 'string' && baseSha === document.hash;
-    const blockMatches = typeof baseBlockSha === 'string' && baseBlockSha === sha256(block.raw);
-    if (!documentMatches && !blockMatches) {
-      if (typeof baseBlockSha === 'string') {
-        // 停下来问人，但两版都留住：磁盘上是哪一版、这个窗口改成了哪一版。
-        // 记录落盘（不是只进回执），刷新之后未落盘的版本还能恢复、还能选。
-        conflicts.defer({
-          source: 'human',
-          anchor,
-          base_block_sha256: baseBlockSha,
-          disk_sha256: sha256(block.raw),
-          disk_raw: block.raw,
-          your_content: content,
-        });
-        fail('block_conflict', `这一块（${anchor}）在别处也被改过；你的编辑已保留，请核对后选一版落盘`, {
-          anchor, disk_raw: block.raw, disk_sha256: sha256(block.raw), base_block_sha256: baseBlockSha, your_content: content,
-        });
-      }
-      fail('stale_document', `文档已在别处被修改，这一块（${anchor}）没带基线指纹、无法安全重放；请刷新工作台后再保存`);
-    }
+    const { documentMatches, blockMatches } = replayVerdict({
+      document,
+      block,
+      anchor,
+      baseSha,
+      baseBlockSha,
+      action: '保存',
+      conflictMessage: `这一块（${anchor}）在别处也被改过；你的编辑已保留，请核对后选一版落盘`,
+      yourContent: content,
+      // 两版都留住：磁盘上是哪一版、这个窗口改成了哪一版；记录落盘（不是只进回执）。
+      defer: () => conflicts.defer({
+        source: 'human',
+        anchor,
+        base_block_sha256: baseBlockSha,
+        disk_sha256: sha256(block.raw),
+        disk_raw: block.raw,
+        your_content: content,
+      }),
+    });
     // 这一块已经在待核对：两版没选之前不再往盘上放新的整份编辑，先裁决。
     if (pending) fail('block_locked', `这一块（${anchor}）正在待核对，先裁决再编辑`);
     const repaired = persistRepairs(docPath, document, faults);
@@ -308,16 +341,16 @@ function splitBlock(docPath, payload, board, conflicts, faults) {
     const document = readDocument(docPath);
     const block = blockAt(document, anchor);
     if (!block) fail('block_anchor', `找不到块 ${anchor}；文档可能已被修改，请刷新工作台`);
-    const documentMatches = typeof baseSha === 'string' && baseSha === document.hash;
-    const blockMatches = typeof baseBlockSha === 'string' && baseBlockSha === sha256(block.raw);
-    if (!documentMatches && !blockMatches) {
-      if (typeof baseBlockSha === 'string') {
-        fail('block_conflict', `这一块（${anchor}）在别处也被改过；你的拆分没有覆盖它，请刷新后核对`, {
-          anchor, disk_raw: block.raw, disk_sha256: sha256(block.raw), base_block_sha256: baseBlockSha, your_content: [before, after].join(''),
-        });
-      }
-      fail('stale_document', `文档已在别处被修改，这一块（${anchor}）没带基线指纹、无法安全重放；请刷新工作台后再拆分`);
-    }
+    const { replayed } = replayVerdict({
+      document,
+      block,
+      anchor,
+      baseSha,
+      baseBlockSha,
+      action: '拆分',
+      conflictMessage: `这一块（${anchor}）在别处也被改过；你的拆分没有覆盖它，请刷新后核对`,
+      yourContent: [before, after].join(''),
+    });
     if (pending) fail('block_locked', `这一块（${anchor}）正在待核对，先裁决再编辑`);
     const repaired = persistRepairs(docPath, document, faults);
     const result = splitBlockContent(repaired.raw, { anchor, before, after, keep });
@@ -331,7 +364,7 @@ function splitBlock(docPath, payload, board, conflicts, faults) {
     return {
       ok: true,
       sha256: receipt.sha256,
-      replayed: !documentMatches,
+      replayed,
       block: viewBlock(result.block, (value) => board.lockOf(value)),
       new_block: viewBlock(result.newBlock, (value) => board.lockOf(value)),
       ...snapshotFrom(readDocument(docPath), docPath, board, conflicts),
@@ -361,16 +394,15 @@ function mergeBlocks(docPath, payload, board, conflicts, faults) {
     if (typeof previous === 'string' && board.lockOf(previous)) {
       fail('block_locked', `模型正在改前一块（${previous}），等它完成后再合并`);
     }
-    const documentMatches = typeof baseSha === 'string' && baseSha === document.hash;
-    const blockMatches = typeof baseBlockSha === 'string' && baseBlockSha === sha256(block.raw);
-    if (!documentMatches && !blockMatches) {
-      if (typeof baseBlockSha === 'string') {
-        fail('block_conflict', `这一块（${anchor}）在别处也被改过；你的合并没有覆盖它，请刷新后核对`, {
-          anchor, disk_raw: block.raw, disk_sha256: sha256(block.raw), base_block_sha256: baseBlockSha,
-        });
-      }
-      fail('stale_document', `文档已在别处被修改，这一块（${anchor}）没带基线指纹、无法安全重放；请刷新工作台后再合并`);
-    }
+    const { replayed } = replayVerdict({
+      document,
+      block,
+      anchor,
+      baseSha,
+      baseBlockSha,
+      action: '合并',
+      conflictMessage: `这一块（${anchor}）在别处也被改过；你的合并没有覆盖它，请刷新后核对`,
+    });
     if (pending) fail('block_locked', `这一块（${anchor}）正在待核对，先裁决再编辑`);
     const repaired = persistRepairs(docPath, document, faults);
     const result = mergeBlockContent(repaired.raw, { anchor, previous, content });
@@ -384,7 +416,7 @@ function mergeBlocks(docPath, payload, board, conflicts, faults) {
     return {
       ok: true,
       sha256: receipt.sha256,
-      replayed: !documentMatches,
+      replayed,
       block: viewBlock(result.block, (value) => board.lockOf(value)),
       removed: result.removed,
       ...snapshotFrom(readDocument(docPath), docPath, board, conflicts),
@@ -739,9 +771,9 @@ function structureDocument(docPath, payload, board, conflicts, faults) {
     board.refresh();
     conflicts.refresh();
     const document = readDocument(docPath);
-    if (typeof payload.base_sha256 !== 'string' || payload.base_sha256 !== sha256(document.raw)) {
-      fail('stale_document', '文档已在别处被修改；请刷新工作台后再改结构');
-    }
+    // 基线过期不拒人：重读当前全文，把这个结构动作重放上去。结构动作按「章节 / 页」
+    // 定位，不覆盖任何块的 raw，所以别处刚改的正文与标题都保留（与块级保存同一语义）。
+    const replayed = typeof payload.base_sha256 === 'string' && payload.base_sha256 !== document.hash;
     const repaired = persistRepairs(docPath, document, faults);
     const result = applyStructure(repaired.raw, payload);
     if (result.changed) {
@@ -757,6 +789,7 @@ function structureDocument(docPath, payload, board, conflicts, faults) {
       ok: true,
       op: payload.op,
       changed: result.changed,
+      replayed,
       ...(result.chapter ? { chapter: result.chapter } : {}),
       ...(result.page ? { page: result.page } : {}),
       ...(result.source ? { source: result.source } : {}),

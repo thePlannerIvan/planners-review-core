@@ -11,9 +11,9 @@
  * Node 侧用同一份数据断言「收起时只摆一条」这类行为，不依赖像素。
  */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.DocSources = factory();
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./doc-identity.js'));
+  else root.DocSources = factory(root.DocIdentity);
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (Identity) {
   'use strict';
 
   const SOURCE_LABEL = '出处';
@@ -31,7 +31,8 @@
     return expanded ? { lead: '‹', trail: '›' } : { lead: '›', trail: '‹' };
   }
 
-  const isSource = (block) => block?.in_sources === true || block?.inSources === true;
+  // 出处标记只认契约里的一种拼写：in_sources（identity 模块是唯一判据）。
+  const { isSource } = Identity;
 
   /**
    * 切出一页的正文与出处区。只从页末往前收：遇到第一个不是出处的块就停，

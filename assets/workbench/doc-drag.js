@@ -13,10 +13,13 @@
  * （本地页 `/api/reorder`，侧栏桥转发 `{route: 'reorder', body}`），这个文件不关心宿主。
  */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.DocDrag = factory();
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./doc-identity.js'));
+  else root.DocDrag = factory(root.DocIdentity);
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (Identity) {
   'use strict';
+
+  // 「是不是页末」只有一处定义：服务端重排与这里读同一条判据。
+  const { isPageEnd } = Identity;
 
   // ── 落点：纯几何 ─────────────────────────────────────────────────────────
 
@@ -564,7 +567,7 @@
   function gapLabel(gap, dragging, lookup) {
     if (dragging.kind === 'page') return '整页移动';
     if (gap.outside) return `移到「${gap.chapterTitle ?? ''}」章节下的页外`;
-    if (!gap.before) return `移到「${lookup?.page?.(gap.page)?.title ?? ''}」末尾`;
+    if (isPageEnd(gap.before)) return `移到「${lookup?.page?.(gap.page)?.title ?? ''}」末尾`;
     const text = String(lookup?.blockText?.(gap.before) ?? '').replace(/\s+/g, ' ').slice(0, 12);
     return text ? `插到「${text}」之前` : '插到这里';
   }

@@ -9,14 +9,15 @@
  * 该块的全部批注。草稿与已提交分开两组，因为前者还能删、后者已在模型手里。
  */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.DocNotes = factory();
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./doc-identity.js'));
+  else root.DocNotes = factory(root.DocIdentity);
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (Identity) {
   'use strict';
 
   const STATES = ['draft', 'committed', 'resolved'];
 
-  const pageKeyOf = (page) => `${page?.chapter ?? 0}-${page?.index ?? 0}`;
+  // 页身份只有一处定义：契约里的 chapter-index 由 doc-identity.js 统一拼。
+  const { pageKeyOf } = Identity;
 
   /** 页的显示信息以快照为准；快照里找不到（页被删了）时至少给一个能读的标题。 */
   function pageInfo(note, pages) {

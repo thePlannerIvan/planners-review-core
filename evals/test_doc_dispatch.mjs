@@ -263,7 +263,7 @@ test('页面状态如实：旧 JSON 只读有说明，派发写明原文未改�
   assert.match(page, /body\.classList\.toggle\('is-readonly'/, '只读要落在可见的界面状态上');
   assert.match(page, /旧项目 · 只读/, '顶部要写明这是只读的旧项目');
   assert.match(page, /block\.readonly/, '只读块不接编辑面与反馈按钮');
-  assert.match(page, /feedback\.hidden = true/, '只读时不显示整体反馈入口');
+  assert.match(page, /notesOverallPage|notesOverallDoc/, '只读时整体反馈入口仍在，只是被禁用');
   assert.match(drag, /snapshot\.readonly/, '只读时不装拖柄，避免看起来还能重排');
   assert.match(css, /\.readonly-notice/, '只读说明要有样式');
   assert.match(css, /body\.is-readonly/, '只读状态要有可见样式');

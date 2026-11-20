@@ -10,6 +10,9 @@
  * 或新块 `{source}`，页面据此定位并聚焦。
  */
 import { generateAnchor, parseDocument } from './doc-blocks.mjs';
+import DocIdentity from '../../assets/workbench/doc-identity.js';
+
+const { pageKeyOf } = DocIdentity;
 
 export const STRUCTURE_OPS = new Set([
   'rename-chapter', 'rename-page', 'add-page', 'add-chapter', 'add-source',
@@ -131,7 +134,7 @@ export function applyStructure(raw, payload) {
     return {
       raw: bom + output,
       changed: true,
-      page: { chapter: chapter.index, index: page.index + 1, title, key: `${chapter.index}-${page.index + 1}` },
+      page: { chapter: chapter.index, index: page.index + 1, title, key: pageKeyOf({ chapter: chapter.index, index: page.index + 1 }) },
     };
   }
 
@@ -163,10 +166,10 @@ export function applyStructure(raw, payload) {
     raw: bom + output,
     changed: true,
     chapter: { index: chapter.index + 1, title },
-    page: { chapter: chapter.index + 1, index: 1, title: pageTitle, key: `${chapter.index + 1}-1` },
+    page: { chapter: chapter.index + 1, index: 1, title: pageTitle, key: pageKeyOf({ chapter: chapter.index + 1, index: 1 }) },
   };
 }
 
 function pageView(chapter, page, title) {
-  return { chapter: chapter.index, index: page.index, title, key: `${chapter.index}-${page.index}` };
+  return { chapter: chapter.index, index: page.index, title, key: pageKeyOf({ chapter: chapter.index, index: page.index }) };
 }

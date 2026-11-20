@@ -57,7 +57,7 @@ test('草稿落在 planners-doc-notes/1 文件里：跨页、跨天、关掉浏�
   assert.deepEqual(note.page, { chapter: 1, index: 1 }, '批注记住它落在哪一章哪一页，不只记块');
   assert.equal(note.state, 'draft');
   assert.equal(note.batch, null);
-  assert.equal(note.note, null);
+  assert.equal(note.model_state, null, '草稿没有「模型没动」状态');
   assert.equal(note.resolved_at, null);
   assert.equal(note.snapshot, null, '还没改到，就没有改前改后的快照');
   assert.match(note.created_at, /^\d{4}-\d{2}-\d{2}T/);
@@ -374,7 +374,7 @@ test('批注抽屉默认展开：按页列出，同一块收成计数气泡，�
   assert.match(page, /加入批注/, '写批注的入口在同一个行内输入里');
   assert.match(page, /feedbackNote[\s\S]{0,240}hidden = scope !== 'blocks'/, '批注只落在块上：整页 / 整份派发不改成逐块批注');
   assert.match(transport, /note_submit/, '通道只有一套动作名：批注提交是 note_submit');
-  assert.match(surface, /doc-notes\.js/, '侧栏自包含入口也内联批注分组逻辑');
+  assert.match(surface, /DOC_SCRIPTS|assertDocScripts/, '侧栏自包含入口按唯一脚本清单内联批注分组逻辑');
 
   // 计数气泡：圆角小徽标、数字居中、悬停浮起、不描边框。
   assert.match(css, /\.note-bubble\s*\{[^}]*border-radius:\s*999px/, '气泡是圆角小徽标');
@@ -414,14 +414,14 @@ test('模型写回：applied 的块上批注自动归档并留改前改后快照
   const archived = saved.notes.find((note) => note.id === changed.id);
   assert.equal(archived.state, 'resolved');
   assert.match(archived.resolved_at, /^\d{4}-\d{2}-\d{2}T/, '归档时间就是模型回执落盘的时间');
-  assert.equal(archived.note, null, '改到了就没有「没动这条」的标注');
+  assert.equal(archived.model_state, null, '改到了就没有「没动这条」的标注');
   assert.deepEqual(archived.page, { chapter: 1, index: 1 }, '归档还记着当初所在页');
   assert.deepEqual(archived.snapshot, { before: beforeRaw, after: afterRaw },
     '快照存的是块 raw 本身：改前、改后，不是只存锚点');
 
   const left = saved.notes.find((note) => note.id === skipped.id);
   assert.equal(left.state, 'committed', '没改到的留在右侧，不退成草稿也不消失');
-  assert.equal(left.note, '模型没动这条');
+  assert.equal(left.model_state, 'untouched', '没改到的是结构化状态，不是一句文案');
   assert.equal(left.snapshot, null, '没改到就没有快照');
 
   // 两条都还读得到：列表与历史用同一份批注文件。
@@ -456,7 +456,7 @@ test('模型 claim 后直接 complete：没改到的批注留在右侧并标「�
 
   const saved = readNotesFile(notesPath);
   assert.deepEqual(saved.notes.map((note) => note.state), ['committed', 'committed'], '一条都不归档');
-  assert.deepEqual(saved.notes.map((note) => note.note), ['模型没动这条', '模型没动这条']);
+  assert.deepEqual(saved.notes.map((note) => note.model_state), ['untouched', 'untouched']);
   assert.deepEqual(saved.notes.map((note) => note.id), [one.id, two.id]);
 });
 
@@ -479,13 +479,13 @@ test('历史批注与「模型没动这条」都能重新打开回草稿', async
   assert.equal(reopenResolved.body.note.state, 'draft');
   assert.equal(reopenResolved.body.note.batch, null);
   assert.equal(reopenResolved.body.note.resolved_at, null);
-  assert.equal(reopenResolved.body.note.note, null);
+  assert.equal(reopenResolved.body.note.model_state, null);
   assert.equal(reopenResolved.body.note.snapshot, null, '退回草稿就不再挂着旧快照');
 
   const reopenSkipped = await postJson(server.url, '/api/note/reopen', { id: skipped.id });
   assert.equal(reopenSkipped.status, 200, JSON.stringify(reopenSkipped.body));
   assert.equal(reopenSkipped.body.note.state, 'draft');
-  assert.equal(reopenSkipped.body.note.note, null, '退回草稿就没有「模型没动这条」的标注');
+  assert.equal(reopenSkipped.body.note.model_state, null, '退回草稿就没有「模型没动这条」的标注');
 
   const saved = readNotesFile(notesPath);
   assert.deepEqual(saved.notes.map((note) => note.state), ['draft', 'draft']);
@@ -515,7 +515,7 @@ test('批注文件超过 2 MB：最老的归档移进 notes-archive.json，历�
     batch: 'b:old',
     created_at: `2026-01-${String(index + 1).padStart(2, '0')}T00:00:00.000Z`,
     resolved_at: `2026-01-${String(index + 1).padStart(2, '0')}T01:00:00.000Z`,
-    note: null,
+    model_state: null,
     snapshot: { before: 'A'.repeat(90000), after: 'B'.repeat(90000) },
   }));
   writeFileSync(notesPath, `${JSON.stringify({ contract: 'planners-doc-notes/1', notes: fat }, null, 2)}\n`);
@@ -578,7 +578,7 @@ test('历史批注列表只给原话、时间、所在页；快照不展开，�
       batch: 'b:1', created_at: '2026-11-20T08:10:00.000Z', resolved_at: '2026-11-20T09:10:00.000Z',
       note: null, snapshot: { before: '旧块二', after: '新块二' },
     },
-    { id: 'n:3', anchor: 'b:7b057d', page: { chapter: 1, index: 1 }, text: '还在右侧', state: 'committed', batch: 'b:2', created_at: '2026-11-20T10:00:00.000Z', resolved_at: null, note: '模型没动这条', snapshot: null },
+    { id: 'n:3', anchor: 'b:7b057d', page: { chapter: 1, index: 1 }, text: '还在右侧', state: 'committed', batch: 'b:2', created_at: '2026-11-20T10:00:00.000Z', resolved_at: null, model_state: 'untouched', snapshot: null },
   ];
 
   const history = DocNotes.history(notes, { pages });
