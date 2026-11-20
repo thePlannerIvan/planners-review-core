@@ -24,6 +24,7 @@ import { TASK_CONTRACT, TASK_SCOPES, createTaskBoard } from './doc-tasks.mjs';
 import { CONFLICT_CONTRACT, CONFLICT_DECISIONS, createConflictBoard } from './doc-conflicts.mjs';
 import { commitDocument, journalPathFor, recoverJournal, withWriteLock } from './doc-journal.mjs';
 import { createFileBoardStores } from './doc-boards.mjs';
+import { applyStructure } from './doc-structure.mjs';
 import { HISTORY_CONTRACT, listVersions, readVersion } from './doc-history.mjs';
 import {
   MAX_NOTE_TEXT, NOTES_CONTRACT, commitDrafts as markDraftsCommitted, createNoteStore, draftNote, draftsOf,
@@ -149,6 +150,12 @@ function snapshotFrom(document, docPath, board, conflicts, journalState = null) 
     doc: parsed.front.doc ?? null,
     project: parsed.front.project ?? null,
     sha256: sha256(raw),
+    // 章节是结构的一层（契约第 2 节）：目录与正文要按它分组，不能只靠页反推。
+    chapters: parsed.chapters.map((chapter) => ({
+      index: chapter.index,
+      title: chapter.title,
+      pages: chapter.pages.length,
+    })),
     pages: parsed.pages.map(viewPage),
     blocks: parsed.blocks.map((block) => viewBlock(
       block,
@@ -598,6 +605,44 @@ function reorderDocument(docPath, payload, board, conflicts, faults) {
 }
 
 /**
+ * 改结构：改章节名 / 页名，或在页尾加页、章节尾加章。
+ *
+ * 结构不是块（`#` / `##` 不能带锚点），所以这里不经过块级写：按行补丁整份落盘，
+ * 与重排共用一把写锁、一份基线判据与同一个 journal。改完回整份快照，
+ * 页面据此重画正文与目录 —— 目录不是另一份状态。
+ */
+function structureDocument(docPath, payload, board, conflicts, faults) {
+  if (!payload || typeof payload !== 'object') fail('structure_request', '请求体必须是 JSON 对象');
+  return withWriteLock(docPath, () => {
+    board.refresh();
+    conflicts.refresh();
+    const document = readDocument(docPath);
+    if (typeof payload.base_sha256 !== 'string' || payload.base_sha256 !== sha256(document.raw)) {
+      fail('stale_document', '文档已在别处被修改；请刷新工作台后再改结构');
+    }
+    const repaired = persistRepairs(docPath, document, faults);
+    const result = applyStructure(repaired.raw, payload);
+    if (result.changed) {
+      commitDocument(docPath, {
+        oldRaw: repaired.raw,
+        raw: result.raw,
+        applied: [],
+        operation: 'structure',
+        faults,
+      });
+    }
+    return {
+      ok: true,
+      op: payload.op,
+      changed: result.changed,
+      ...(result.chapter ? { chapter: result.chapter } : {}),
+      ...(result.page ? { page: result.page } : {}),
+      ...snapshotFrom(readDocument(docPath), docPath, board, conflicts),
+    };
+  });
+}
+
+/**
  * 换掉一个图块引用的文件。
  *
  * 请求里只有块身份与图字节，**没有路径**：用哪张图由正文的 Markdown 引用决定，
@@ -972,6 +1017,7 @@ export async function createDocSession({ docPath, faults = null, persistent = tr
     splitBlock: (payload) => guarded(() => splitBlock(file, payload, board, conflicts, faults)),
     mergeBlocks: (payload) => guarded(() => mergeBlocks(file, payload, board, conflicts, faults)),
     reorder: (payload) => guarded(() => reorderDocument(file, payload, board, conflicts, faults)),
+    structure: (payload) => guarded(() => structureDocument(file, payload, board, conflicts, faults)),
     replaceAsset: (payload) => guarded(() => replaceImageAsset(file, payload, board, conflicts)),
     history: () => historyOf(file),
     restore: (payload) => guarded(() => restoreVersion(file, payload, board, conflicts, faults)),
