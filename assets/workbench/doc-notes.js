@@ -17,9 +17,13 @@
 
   const STATES = ['draft', 'committed', 'resolved'];
 
+  /** 老文件里的批注没有 scope：按块级读，和契约的缺省语义一致。 */
+  const scopeOf = (note) => (note.scope === 'doc' ? 'doc' : 'blocks');
+
   /** 条目只留抽屉要用的字段：没有页名、章节名、页号，页面也就没机会把它们画出来。 */
   const entryOf = (note) => ({
     id: note.id,
+    scope: scopeOf(note),
     anchor: note.anchor,
     text: note.text,
     state: note.state,
@@ -29,11 +33,18 @@
   /**
    * `order` 是锚点在正文里的位置（`Map<anchor, index>`）：整张单子按它排，
    * 同一块里的几条按写下时间排，而不是按人点开的先后。
+   * 整份批注不属于任何一块（anchor 为 null），排在最前 —— 它说的事比任何一块都大，
+   * 也正好让人一眼看出它不是某一块上的引用。
    */
+  function positionOf(note, order) {
+    if (scopeOf(note) === 'doc') return -1;
+    return order.get(note.anchor) ?? Number.MAX_SAFE_INTEGER;
+  }
+
   function sortByDocument(notes, order) {
     return [...notes].sort((left, right) => {
-      const a = order.get(left.anchor) ?? Number.MAX_SAFE_INTEGER;
-      const b = order.get(right.anchor) ?? Number.MAX_SAFE_INTEGER;
+      const a = positionOf(left, order);
+      const b = positionOf(right, order);
       if (a !== b) return a - b;
       return String(left.created_at).localeCompare(String(right.created_at));
     });

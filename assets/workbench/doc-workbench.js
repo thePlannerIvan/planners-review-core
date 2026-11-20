@@ -1046,9 +1046,10 @@ function wireOverallFeedback() {
   const docButton = $('#notesOverallDoc');
   docButton?.addEventListener('click', () => {
     if (!snapshot) return;
-    const anchors = snapshot.blocks.filter((block) => block.anchor).map((block) => block.anchor);
-    if (!anchors.length) { status('这份稿还没有可反馈的块', true); return; }
-    openComposer(anchors, { scope: 'doc' });
+    if (!snapshot.blocks.some((block) => block.anchor)) { status('这份稿还没有可反馈的块', true); return; }
+    // 整份意见就是抽屉里的一条草稿（anchor 为 null）：不是第二个提交入口，
+    // 也不直接派发 —— 它跟着「提交模型」一次交出去。
+    startNoteDraft(null, { scope: 'doc' });
   });
   if (docButton) docButton.disabled = Boolean(snapshot?.readonly);
 }
@@ -1093,23 +1094,33 @@ const noteTime = (value) => (value ? new Date(value).toLocaleString() : '');
 function noteRow(note, state) {
   const item = document.createElement('li');
   item.className = 'note-row';
-  const jump = document.createElement('button');
-  jump.type = 'button';
+  const wholeDoc = note.scope === 'doc';
+  // 整份批注没有块可跳：它不是「某一块上的意见」，就用一个静态块把「整份」写在引用那句的位置。
+  const jump = document.createElement(wholeDoc ? 'div' : 'button');
   jump.className = 'note-jump';
+  if (wholeDoc) jump.classList.add('is-static');
+  else jump.type = 'button';
   jump.dataset.anchor = note.anchor ?? '';
-  jump.title = '跳到正文里的这一块';
-  const quote = blockQuote(note.anchor);
-  if (quote) {
-    const line = document.createElement('span');
-    line.className = 'note-quote';
-    line.textContent = quote;
-    jump.append(line);
+  if (wholeDoc) {
+    const scope = document.createElement('span');
+    scope.className = 'note-scope';
+    scope.textContent = '整份';
+    jump.append(scope);
+  } else {
+    jump.title = '跳到正文里的这一块';
+    const quote = blockQuote(note.anchor);
+    if (quote) {
+      const line = document.createElement('span');
+      line.className = 'note-quote';
+      line.textContent = quote;
+      jump.append(line);
+    }
   }
   const text = document.createElement('span');
   text.className = 'note-text';
   text.textContent = note.text;
   jump.append(text);
-  jump.addEventListener('click', () => revealNoteTarget(note.anchor));
+  if (!wholeDoc) jump.addEventListener('click', () => revealNoteTarget(note.anchor));
   const meta = document.createElement('div');
   meta.className = 'note-meta';
   const time = document.createElement('time');
@@ -1136,20 +1147,30 @@ function draftRow() {
   item.className = 'note-row note-draft';
   // 这一行只代表它创建时的那条草稿：重画后别去动后来新开的那一条。
   const draft = pendingDraft;
-  const quote = blockQuote(draft?.anchor);
-  if (quote) {
-    const line = document.createElement('span');
-    line.className = 'note-quote';
-    line.textContent = quote;
-    item.append(line);
+  const wholeDoc = draft?.scope === 'doc';
+  if (wholeDoc) {
+    const scope = document.createElement('span');
+    scope.className = 'note-scope';
+    scope.textContent = '整份';
+    item.append(scope);
+  } else {
+    const quote = blockQuote(draft?.anchor);
+    if (quote) {
+      const line = document.createElement('span');
+      line.className = 'note-quote';
+      line.textContent = quote;
+      item.append(line);
+    }
   }
   const textarea = document.createElement('textarea');
   textarea.className = 'note-draft-text';
   textarea.rows = 2;
-  textarea.placeholder = '写批注…';
+  textarea.placeholder = wholeDoc ? '整份文档要模型改什么？' : '写批注…';
   textarea.value = draft?.text ?? '';
   textarea.addEventListener('input', () => {
     if (draft) draft.text = textarea.value;
+    // 条数跟着正在写的这条走：按「提交模型 · N」时，N 里得有它。
+    renderSubmitState();
   });
   textarea.addEventListener('blur', () => {
     // 重画抽屉时这个输入框会被换掉，那不是人在离开草稿：别把还没写完的字当成空稿丢掉。
@@ -1193,8 +1214,13 @@ function drawerEntries(drawer) {
   for (const state of ['draft', 'committed']) {
     for (const note of drawer[state].notes) rows.push({ kind: 'note', state, note });
   }
-  if (pendingDraft) rows.push({ kind: 'draft', anchor: pendingDraft.anchor });
-  const position = (row) => order.get(row.anchor ?? row.note.anchor) ?? Number.MAX_SAFE_INTEGER;
+  if (pendingDraft) rows.push({ kind: 'draft', anchor: pendingDraft.anchor, scope: pendingDraft.scope });
+  // 整份批注不属于任何一块：排在最前，和 DocNotes.drawer 的顺序规则一致。
+  const position = (row) => {
+    const scope = row.scope ?? row.note?.scope;
+    if (scope === 'doc') return -1;
+    return order.get(row.anchor ?? row.note.anchor) ?? Number.MAX_SAFE_INTEGER;
+  };
   const createdAt = (row) => (row.kind === 'draft' ? '\uffff' : String(row.note.created_at ?? ''));
   return rows.sort((left, right) => (position(left) - position(right))
     || createdAt(left).localeCompare(createdAt(right)));
@@ -1232,11 +1258,18 @@ function draftCount() {
   return saved + (pendingDraft && pendingDraft.text.trim() ? 1 : 0);
 }
 
+/** 底部「提交模型 · N」的状态：正在写的草稿也算一条，按一次就在这一批里。 */
+function renderSubmitState() {
+  const notesSubmit = $('#notesSubmit');
+  if (!notesSubmit) return;
+  notesSubmit.disabled = Boolean(snapshot?.readonly) || Boolean(notesError) || draftCount() === 0;
+  notesSubmit.textContent = `提交模型 · ${draftCount()}`;
+}
+
 function renderNotes() {
   const list = $('#notesList');
   if (!list) return;
   const hint = $('#notesHint');
-  const notesSubmit = $('#notesSubmit');
   const drawer = DocNotes.drawer(notesState, { order: blockOrder() });
   // 正在写草稿时重画（别的批注存上了）：把光标还回同一条草稿的同一个位置。
   const focused = document.activeElement;
@@ -1278,9 +1311,7 @@ function renderNotes() {
   }
 
   const readonly = Boolean(snapshot?.readonly);
-  const drafts = draftCount();
-  notesSubmit.disabled = readonly || Boolean(notesError) || drafts === 0;
-  notesSubmit.textContent = `提交模型 · ${drafts}`;
+  renderSubmitState();
   if (hint) {
     hint.hidden = !readonly;
     hint.textContent = readonly ? '只读 · 旧 JSON 主稿不能提批注' : '';
@@ -1305,18 +1336,23 @@ async function loadNotes() {
   renderNotes();
 }
 
-/** 点块尾气泡：当场落一条空草稿进抽屉，光标进去；正文上一个字都不弹。 */
-function startNoteDraft(anchor) {
-  if (!snapshot || snapshot.readonly || !anchor) return;
-  if (pendingDraft?.anchor === anchor) {
-    // 同一块再点一次：把光标送回那条草稿，别把已经写了一半的字清掉。
+/**
+ * 在抽屉里开一条草稿：块尾气泡（`scope: 'blocks'`）与「整篇反馈」（`scope: 'doc'`）都走这里。
+ * 块级草稿挂在块上；整份草稿没有锚点 —— 写下的草稿跟着「提交模型」一起进批次。
+ */
+function startNoteDraft(anchor, { scope = 'blocks' } = {}) {
+  if (!snapshot || snapshot.readonly) return;
+  if (scope === 'blocks' && !anchor) return;
+  const target = scope === 'doc' ? null : anchor;
+  if (pendingDraft?.anchor === target && pendingDraft?.scope === scope) {
+    // 同一个目标再点一次：把光标送回那条草稿，别把已经写了一半的字清掉。
     ensureNotesOpen();
     renderNotes();
     $('#notesList .note-draft textarea')?.focus();
     return;
   }
   if (pendingDraft) void saveDraft(pendingDraft);
-  pendingDraft = { anchor, text: '' };
+  pendingDraft = { anchor: target, scope, text: '' };
   ensureNotesOpen();
   renderNotes();
   $('#notesList .note-draft textarea')?.focus();
@@ -1335,7 +1371,9 @@ function saveDraft(draft) {
     await saveQueue; // 批注目标要指向人看到的版本
     let receipt;
     try {
-      receipt = await transport.addNote({ anchors: [draft.anchor], text });
+      receipt = draft.scope === 'doc'
+        ? await transport.addNote({ scope: 'doc', text })
+        : await transport.addNote({ anchors: [draft.anchor], text });
     } catch (error) {
       status(`批注没存上 · ${error.message}`, true);
       return false;

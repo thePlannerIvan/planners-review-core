@@ -3,28 +3,41 @@
  *
  * 形状写在 `.doc-workbench/notes.json`，契约 `planners-doc-notes/1`：
  *
- *   { contract, notes: [{ id, anchor, page: {chapter, index}, text,
+ *   { contract, notes: [{ id, scope: 'blocks' | 'doc', anchor,
+ *                         page: {chapter, index} | null, text,
  *                         state: 'draft' | 'committed' | 'resolved',
  *                         batch, created_at, resolved_at, model_state, snapshot }] }
+ *
+ * `scope` 是这条意见针对的范围：
+ *   · `blocks`（缺省）：落在一块上，`anchor` 是块身份，`page` 记它当初在第几章第几页；
+ *   · `doc`：针对整份文档（抽屉底部的「整篇反馈」）。它**没有锚点** —— `anchor` 与
+ *     `page` 都是 `null`。硬给它挂一块就是在任务里撒谎，说这条意见只改那一处。
+ * 老文件里的批注没有 `scope` 字段，一律按 `blocks` 读（契约没换版本：这是加字段，不是改形状）。
  *
  * 为什么落盘而不是只留在页面里：人关掉浏览器、第二天回来，草稿还得在；模型在另一个
  * 进程里读任务时，看到的也必须是同一份批注。写盘仍由文档写锁串行化（调用方持有）。
  *
  * 三态：`draft` → `committed` 在这里；`resolved` 由模型回执的 `applied` 落定（ADR 0007），
  * 也在这里，因为归档同样只是改这份数据。归档要存**块快照**（改前 / 改后 raw）：块后来
- * 又被改过，只看锚点会显示成现在的内容，看不出人当初指的是什么。快照只给模型回查，
- * 不在人的历史列表里展开。
+ * 又被改过，只看锚点会显示成现在的内容，看不出人当初指的是什么。整份批注存整份文档的
+ * 改前 / 改后（`docSnapshot`），同一个归档函数、同一条路径。快照只给模型回查，不在人的
+ * 历史列表里展开。
  *
  * 单文件超过 2 MB 时搬到 `notes-archive.json`：最老的归档先走，人的历史列表照旧读得到
  * （`listNotes` 把两边合起来），「重新打开」也能把档案里的那条搬回主文件。
+ *
+ * 契约全文（字段、命令面、归档规则、错误码）见 `contracts/planners-doc-notes.md`。
  */
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { atomicWrite, stateDirFor } from './doc-io.mjs';
+import { BLOCK_ANCHOR_RE } from './doc-blocks.mjs';
 
 export const NOTES_CONTRACT = 'planners-doc-notes/1';
 export const NOTE_STATES = ['draft', 'committed', 'resolved'];
+/** 批注范围：块级（缺省）与整份。整份没有锚点，所以必须有这个字段说清楚。 */
+export const NOTE_SCOPES = ['blocks', 'doc'];
 export const MAX_NOTE_TEXT = 2000;
 
 /**
@@ -54,6 +67,31 @@ const emptyState = () => ({ contract: NOTES_CONTRACT, notes: [] });
 
 const serialize = (notes) => `${JSON.stringify({ contract: NOTES_CONTRACT, notes }, null, 2)}\n`;
 
+/**
+ * 一条批注的校验与归一化：范围只有两种，整份不许带锚点，块级必须有真锚点。
+ * 老文件没有 `scope` 就按 `blocks` 读；别的错不静默修，宁可报出来让人看见。
+ */
+function normalizeNote(note, path) {
+  if (!note || typeof note !== 'object' || Array.isArray(note)) {
+    fail('notes_state', `批注文件里有形状不对的条目：${path}`);
+  }
+  const scope = note.scope ?? 'blocks';
+  const id = typeof note.id === 'string' ? note.id : '?';
+  if (!NOTE_SCOPES.includes(scope)) {
+    fail('notes_state', `批注 ${id} 的范围只能是 ${NOTE_SCOPES.join(' / ')}：${path}`);
+  }
+  if (scope === 'doc') {
+    if (note.anchor !== null && note.anchor !== undefined) {
+      fail('notes_state', `整份批注（${id}）不该挂块锚点：${path}`);
+    }
+    return { ...note, scope, anchor: null, page: null };
+  }
+  if (typeof note.anchor !== 'string' || !BLOCK_ANCHOR_RE.test(note.anchor)) {
+    fail('notes_state', `块级批注（${id}）要落在一块上：${path}`);
+  }
+  return { ...note, scope };
+}
+
 /** 批注文件只认自己的契约；坏文件不静默清空，宁可报错让人看见。 */
 function readState(path) {
   let text;
@@ -72,7 +110,7 @@ function readState(path) {
   if (!value || typeof value !== 'object' || value.contract !== NOTES_CONTRACT || !Array.isArray(value.notes)) {
     fail('notes_state', `批注文件契约不对（需要 ${NOTES_CONTRACT}）：${path}`);
   }
-  return { contract: NOTES_CONTRACT, notes: value.notes };
+  return { contract: NOTES_CONTRACT, notes: value.notes.map((note) => normalizeNote(note, path)) };
 }
 
 const resolvedTime = (note) => String(note.resolved_at ?? note.created_at ?? '');
@@ -143,12 +181,23 @@ export function createNoteStore(docPath) {
   };
 }
 
-/** 一条草稿：人只看自己写的那句话，快照等模型改到才生成。 */
-export function draftNote({ anchor, page, text, id = newNoteId(), now = new Date().toISOString() }) {
+/**
+ * 一条草稿：人只看自己写的那句话，快照等模型改到才生成。
+ * `scope: 'doc'` 是整份意见：没有锚点，也没有页 —— 它不属于任何一块。
+ */
+export function draftNote({
+  scope = 'blocks', anchor = null, page = null, text, id = newNoteId(), now = new Date().toISOString(),
+}) {
+  if (!NOTE_SCOPES.includes(scope)) fail('note_scope', `批注范围只能是 ${NOTE_SCOPES.join(' / ')}`);
+  if (scope === 'doc' && anchor !== null) fail('note_scope', '整份批注不绑块，不要带锚点');
+  if (scope === 'blocks' && (typeof anchor !== 'string' || !BLOCK_ANCHOR_RE.test(anchor))) {
+    fail('note_anchor', '批注要落在一块上，锚点形状不对');
+  }
   return {
     id,
-    anchor,
-    page: { chapter: page.chapter, index: page.index },
+    scope,
+    anchor: scope === 'doc' ? null : anchor,
+    page: scope === 'doc' ? null : { chapter: page.chapter, index: page.index },
     text,
     state: 'draft',
     batch: null,
@@ -158,6 +207,12 @@ export function draftNote({ anchor, page, text, id = newNoteId(), now = new Date
     snapshot: null,
   };
 }
+
+/**
+ * 这条批注在任务里叫什么：块级给锚点，整份就说「整份」。
+ * 派发文案与归档判断都从这里取 —— 不要在两处各拼一遍「整份」。
+ */
+export const noteTargetOf = (note) => (note?.scope === 'doc' ? '整份' : note?.anchor ?? null);
 
 /** 草稿 → 已提交：只动草稿，已提交的批注不受影响。 */
 export function commitDrafts(notes, { batch = newBatchId() } = {}) {
@@ -173,18 +228,22 @@ export function commitDrafts(notes, { batch = newBatchId() } = {}) {
 
 /**
  * 模型回执落定这一批：`snapshots` 里有锚点的 → `resolved` 并记下改前 / 改后；
- * 没有的（`markUntouched` 为真时）留在 `committed` 并标「模型没动这条」。
+ * 整份批注看 `docSnapshot`（整份文档的改前 / 改后），同一个归档路径；
+ * 都没有的（`markUntouched` 为真时）留在 `committed` 并标「模型没动这条」。
  *
  * 只认这一批自己的批注（`batch` 相同），不把别的批次一起归档——否则刚被别条任务
  * 跳过的批注会凭空变成「已处理」。归档不由人点（ADR 0007）。
  */
-export function settleModelChange(notes, { batch, snapshots = new Map(), markUntouched = false, now = new Date().toISOString() } = {}) {
+export function settleModelChange(
+  notes,
+  { batch, snapshots = new Map(), docSnapshot = null, markUntouched = false, now = new Date().toISOString() } = {},
+) {
   if (!batch) return { resolved: [], untouched: [] };
   const resolved = [];
   const untouched = [];
   for (const note of notes) {
     if (note.state !== 'committed' || note.batch !== batch) continue;
-    const shot = snapshots.get(note.anchor);
+    const shot = note.scope === 'doc' ? docSnapshot : snapshots.get(note.anchor);
     if (shot) {
       note.state = 'resolved';
       note.resolved_at = now;

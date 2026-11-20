@@ -178,6 +178,123 @@ test('底部一次提交整批：一条任务装全，草稿清空，该批进�
   assert.deepEqual(readdirSync(inbox), [`${task.id.replace(':', '-')}.json`]);
 });
 
+// ── 整份批注：scope: "doc"、anchor 为 null，随批次一起走，任务里写「整份」 ──────
+test('整份批注 anchor 为 null：进同一批，任务里它的目标写「整份」而不是伪造锚点', async (t) => {
+  const { path, notesPath } = sandboxExample();
+  const server = await openWorkbench(t, path);
+
+  const whole = await postJson(server.url, '/api/note', { scope: 'doc', text: '整篇都在讲道理，缺一个能落地的数字' });
+  assert.equal(whole.status, 200, JSON.stringify(whole.body));
+  const docNote = whole.body.note;
+  assert.equal(docNote.scope, 'doc', '整份批注的范围是 doc');
+  assert.equal(docNote.anchor, null, '整份批注没有块锚点');
+  assert.equal(docNote.page, null, '整份批注不属于任何一页');
+  assert.equal(docNote.state, 'draft');
+
+  const blockNote = (await postJson(server.url, '/api/note', { anchor: 'b:7b057d', text: '这句太虚' })).body.note;
+  assert.equal(blockNote.scope, 'blocks', '块级批注的范围写清楚，不靠缺字段猜');
+
+  // 整份批注不带锚点：带了就得在任务里说它在某一块，那正是这条票要消灭的谎。
+  const wrong = await postJson(server.url, '/api/note', { scope: 'doc', anchor: 'b:7b057d', text: '不该带上锚点' });
+  assert.equal(wrong.status, 400, JSON.stringify(wrong.body));
+  assert.equal(wrong.body.code, 'note_scope');
+  assert.equal(readNotesFile(notesPath).notes.length, 2, '被拒的整份批注一条也没多');
+
+  const submitted = await postJson(server.url, '/api/note/submit', {});
+  assert.equal(submitted.status, 200, JSON.stringify(submitted.body));
+  assert.deepEqual([...submitted.body.committed].sort(), [docNote.id, blockNote.id].sort(),
+    '整份批注与块级批注在同一批里，底部按一次提交，它就在里面');
+
+  const task = submitted.body.task;
+  assert.equal(task.scope, 'doc', '这批里有整份批注，任务范围就是整份');
+  assert.match(task.text, /整份：整篇都在讲道理，缺一个能落地的数字/, '任务里它的目标写成「整份」');
+  assert.match(task.text, /- b:7b057d：这句太虚/, '块级批注照旧按锚点写');
+  assert.doesNotMatch(task.text, /-\s*(null|undefined)[:：]/, '任务里没有拿 null 充锚点');
+  assert.deepEqual(task.blocks.map((block) => block.anchor), ['b:7b057d'],
+    '整份批注不伪造锚点：任务只绑被点名的块，不把整份文档绑成一串假块');
+
+  const saved = readNotesFile(notesPath).notes;
+  const savedDoc = saved.find((note) => note.id === docNote.id);
+  assert.equal(savedDoc.state, 'committed', '整份批注与块级批注同一套状态流转');
+  assert.equal(savedDoc.batch, submitted.body.batch);
+  assert.equal(savedDoc.anchor, null, '提交不改写它的范围');
+  assert.equal(saved.find((note) => note.id === blockNote.id).state, 'committed');
+});
+
+test('抽屉里只提了一条整份批注也能提交：不因为「没绑块」被拒', async (t) => {
+  const { dir, path } = sandboxExample();
+  const server = await openWorkbench(t, path);
+
+  const whole = await postJson(server.url, '/api/note', { scope: 'doc', text: '整篇收一收' });
+  assert.equal(whole.status, 200, JSON.stringify(whole.body));
+
+  const submitted = await postJson(server.url, '/api/note/submit', {});
+  assert.equal(submitted.status, 200, JSON.stringify(submitted.body));
+  assert.deepEqual(submitted.body.committed, [whole.body.note.id]);
+  assert.equal(submitted.body.task.scope, 'doc');
+  assert.deepEqual(submitted.body.task.blocks, [],
+    '整份批注不绑块：没有锚点，也不拿整份文档的块冒充它的锚点');
+  assert.match(submitted.body.task.text, /整份：整篇收一收/);
+
+  // 派发那条路也不能因为「没绑块」把整份任务丢掉：没有插件时照样落收件箱。
+  assert.equal(submitted.body.dispatch.channel, 'inbox', '没有插件时整份批注的批次照样落进收件箱');
+  assert.deepEqual(readdirSync(join(dir, '.doc-workbench', 'inbox')),
+    [`${submitted.body.task.id.replace(':', '-')}.json`]);
+
+  // 模型侧从收件箱读得到、取得走：整份任务没有块可锁，但状态照样是 pending → processing。
+  const { listTasks, takeTasks } = await import('../scripts/lib/doc-inbox.mjs');
+  assert.deepEqual(listTasks(path).map((task) => task.scope), ['doc'], '模型从收件箱读到的就是这条整份任务');
+  const [taken] = takeTasks(path);
+  assert.equal(taken.status, 'processing');
+  assert.deepEqual(taken.locked_blocks, [], '整份任务不锁块：不把整份文档冻住');
+
+  // 同一套状态流转：已提交 → 重新打开回草稿（范围不变）→ 草稿可删。
+  const reopened = await postJson(server.url, '/api/note/reopen', { id: whole.body.note.id });
+  assert.equal(reopened.status, 200, JSON.stringify(reopened.body));
+  assert.equal(reopened.body.note.state, 'draft');
+  assert.equal(reopened.body.note.scope, 'doc', '重新打开不改它的范围');
+  assert.equal(reopened.body.note.anchor, null);
+  const dropped = await postJson(server.url, '/api/note/delete', { id: whole.body.note.id });
+  assert.equal(dropped.status, 200, JSON.stringify(dropped.body));
+  assert.equal(dropped.body.removed.id, whole.body.note.id, '回到草稿的整份批注可以删');
+});
+
+// ── 归档：模型写回的整份批注同样进历史，快照是整份文档的改前 / 改后 ────────────
+test('模型写回后整份批注同样归档进历史批注；没写回就标「模型没动这条」', async (t) => {
+  const { path, notesPath } = sandboxExample();
+  const server = await openWorkbench(t, path);
+  const before = readFileSync(path, 'utf8');
+
+  const whole = (await postJson(server.url, '/api/note', { scope: 'doc', text: '整篇收一收' })).body.note;
+  const submitted = (await postJson(server.url, '/api/note/submit', {})).body;
+  assert.equal(submitted.ok, true, JSON.stringify(submitted));
+
+  await postJson(server.url, '/api/task/claim', { task_id: submitted.task.id });
+  const patched = await postJson(server.url, '/api/patch', {
+    task_id: submitted.task.id,
+    patches: [{ anchor: 'b:7b057d', content: '整份收紧了。' }],
+  });
+  assert.equal(patched.status, 200, JSON.stringify(patched.body));
+  const after = readFileSync(path, 'utf8');
+
+  const archived = readNotesFile(notesPath).notes.find((note) => note.id === whole.id);
+  assert.equal(archived.state, 'resolved', '整份批注复用同一条归档路径：改到就 resolved');
+  assert.match(archived.resolved_at, /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(archived.anchor, null);
+  assert.deepEqual(archived.snapshot, { before, after }, '整份批注的快照是整份文档的改前 / 改后，不是某个块');
+
+  // 模型 claim 后直接 complete：一条都没动，整份批注也不许被误归档。
+  const untouchedNote = (await postJson(server.url, '/api/note', { scope: 'doc', text: '再整一份' })).body.note;
+  const second = (await postJson(server.url, '/api/note/submit', {})).body;
+  await postJson(server.url, '/api/task/claim', { task_id: second.task.id });
+  const completed = await postJson(server.url, '/api/task/complete', { task_id: second.task.id });
+  assert.equal(completed.status, 200, JSON.stringify(completed.body));
+  const left = readNotesFile(notesPath).notes.find((note) => note.id === untouchedNote.id);
+  assert.equal(left.state, 'committed', '没写回的整份批注留在右侧');
+  assert.equal(left.model_state, 'untouched', '如实标出「模型没动这条」');
+  assert.equal(left.snapshot, null);
+});
+
 // ── 目标块被删：那条留在草稿里并说明原因，不许静默消失 ───────────────────────
 test('目标块已被删的批注不静默消失：留在草稿并进回执 orphaned', async (t) => {
   const { path, notesPath } = sandboxExample();
@@ -326,13 +443,36 @@ test('抽屉是一张正文顺序的单子：不按页分组，条目里没有�
   assert.deepEqual(Object.keys(drawer.draft).sort(), ['count', 'notes'], '抽屉只有条数与条目，没有按页分组');
   assert.deepEqual(drawer.draft.notes.map((note) => note.id), ['n:1', 'n:3', 'n:2'],
     '按正文顺序：同一块里的多条按写下顺序，接着是后一块');
-  assert.deepEqual(Object.keys(drawer.draft.notes[0]).sort(), ['anchor', 'created_at', 'id', 'state', 'text'],
+  assert.deepEqual(Object.keys(drawer.draft.notes[0]).sort(), ['anchor', 'created_at', 'id', 'scope', 'state', 'text'],
     '每条只有抽屉要用的字段：没有页名、章节名、页号');
   assert.deepEqual(drawer.committed.notes.map((note) => note.id), ['n:4'], '已提交的单独一组，不和草稿混在一起');
 
   const empty = DocNotes.drawer([], { order });
   assert.deepEqual([empty.draft.count, empty.committed.count, empty.draft.notes], [0, 0, []],
     '空白时抽屉是第一个能被判定的状态');
+});
+
+// ── 整份批注在抽屉里：不属于任何一块，排在最前；归档后进历史 ──────────────────
+test('整份批注在抽屉里排最前（它不属于任何一块），归档后同样进历史批注', async () => {
+  const module = await import('../assets/workbench/doc-notes.js');
+  const DocNotes = module.default ?? module;
+  const order = new Map([['b:7b057d', 2], ['b:292f6c', 5]]);
+  const notes = [
+    { id: 'n:1', scope: 'blocks', anchor: 'b:7b057d', page: { chapter: 1, index: 1 }, text: '这句太虚', state: 'draft', created_at: '2026-11-20T08:00:00.000Z' },
+    { id: 'n:2', scope: 'doc', anchor: null, page: null, text: '整篇收一收', state: 'draft', created_at: '2026-11-20T08:30:00.000Z' },
+    { id: 'n:3', scope: 'doc', anchor: null, page: null, text: '整篇已归档', state: 'resolved', resolved_at: '2026-11-20T09:00:00.000Z', created_at: '2026-11-20T07:00:00.000Z' },
+  ];
+
+  const drawer = DocNotes.drawer(notes, { order });
+  assert.deepEqual(drawer.draft.notes.map((note) => note.id), ['n:2', 'n:1'],
+    '整份批注排在最前：它说的事比任何一块都大，也告诉人它不属于某一块');
+  assert.equal(drawer.draft.notes[0].anchor, null);
+  assert.equal(drawer.draft.notes[0].scope, 'doc');
+  assert.equal(drawer.resolved.count, 1);
+
+  const history = DocNotes.history(notes);
+  assert.deepEqual(history.map((item) => item.id), ['n:3'], '归档的整份批注照样进历史批注面板');
+  assert.equal(history[0].text, '整篇已归档');
 });
 
 // ── 抽屉的样子：默认展开、一张单子、引用的话截一行、底部两枚按钮 ──────────────

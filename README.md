@@ -80,7 +80,7 @@ node scripts/doc-workbench.mjs path/to/.planners/storyline.md --open
 
 要模型改哪里就选哪里：选中半句也会吸成整块，提交前高亮「将改的块」；块尾的批注气泡点一下就**直接在右侧抽屉里落一条空草稿、光标进入**，正文上不再弹任何浮层；抽屉底部只有「整篇反馈」与「提交模型」两枚按钮——整份稿子的一条意见也写在抽屉里，不再有「按页」这个范围。派发出去的任务只带块身份与 `sha256(block.raw)`，不带全文；模型处理中的块显示「模型正在改这一段」并锁定，其余块照常可写，完成后自动解锁。
 
-批注可以攒成一批：右侧抽屉默认展开，是**一张跟正文顺序走的单子**——不按页分组，没有页名 / 章节名 / 页号，每条只有它**引用的那句话**（截成一行、放不下就省略）、你写的那句话、时间与删除。点一条批注，正文滚到那一块、光标落进可编辑块并短暂高亮，抽屉保持打开。草稿写在文档同目录的 `.doc-workbench/notes.json`（`planners-doc-notes/1`），跨页、跨天、关掉浏览器都还在；每条可单独删除，底部「提交模型 · N」把整批装成**一条**任务（同块多条只绑一块），空白时按钮禁用，提交后草稿清空，这批进「已提交」；模型看了却没动的批注退回历史批注面板并如实标出来。失去目标的草稿不静默消失：留在草稿里并在回执 `orphaned` 里说明原因。接口是 `GET /api/notes`、`POST /api/note`、`POST /api/note/delete`、`POST /api/note/reopen`、`POST /api/note/submit`。
+批注可以攒成一批：右侧抽屉默认展开，是**一张跟正文顺序走的单子**——不按页分组，没有页名 / 章节名 / 页号，每条只有它**引用的那句话**（截成一行、放不下就省略）、你写的那句话、时间与删除。点一条批注，正文滚到那一块、光标落进可编辑块并短暂高亮，抽屉保持打开。草稿写在文档同目录的 `.doc-workbench/notes.json`（`planners-doc-notes/1`），跨页、跨天、关掉浏览器都还在；每条可单独删除，底部「提交模型 · N」把整批装成**一条**任务（同块多条只绑一块），空白时按钮禁用，提交后草稿清空，这批进「已提交」；模型看了却没动的批注退回历史批注面板并如实标出来。失去目标的草稿不静默消失：留在草稿里并在回执 `orphaned` 里说明原因。「整篇反馈」也是同一条草稿：`scope: "doc"`、`anchor` 为 `null`，排在最前、带一个「整份」标签，条数算进「提交模型 · N」，按一次就随整批进任务——任务里它的目标写成「整份」，不伪造锚点；模型写回后它和块级批注走同一条归档路径（快照是整份文档的改前 / 改后）。接口是 `GET /api/notes`、`POST /api/note`、`POST /api/note/delete`、`POST /api/note/reopen`、`POST /api/note/submit`，形状见 [`planners-doc-notes/1`](contracts/planners-doc-notes.md)。
 
 每次提交批次还附一份**结构 diff**（`planners-doc-diff/1`）：章节与页的新增 / 删除 / 改名 / 移动 / 合并 / 拆分，块的跨页移动与删除，以及目标块已被删掉的批注（`orphan_notes`）。基准是模型上一次取稿时看到的版本，落在 `.doc-workbench/state/baseline.json`；模型侧读 `tasks` 或 `open` 时刷新，页面每 3 秒轮询锁不刷新。diff 只说结构哪里动了、不带正文，随任务一起落盘，模型读 `tasks` 就拿到 —— 没有第二条命令。结构没变时 diff 为空，提交照常成功。形状与判定规则见 [`planners-doc-diff/1`](contracts/planners-doc-diff.md)。
 
@@ -183,6 +183,7 @@ planners-review-core/
 │   ├── planners-doc.md                 # planners-doc/2 文档契约（工作稿结构）
 │   ├── doc-assets.md                   # doc-assets/1 图资产清单契约（派生索引）
 │   ├── planners-doc-task.md            # planners-doc-task/1 块级反馈任务形状
+│   ├── planners-doc-notes.md           # planners-doc-notes/1 批注：块级 / 整份（anchor 为 null）、批次与归档
 │   ├── planners-doc-diff.md            # planners-doc-diff/1 结构 diff 与基准刷新时机
 │   └── examples/                       # 两份真实样例：storyline / by-page
 ├── assets/
