@@ -216,12 +216,13 @@ test('整篇反馈并进批注抽屉：抽屉里只有一枚「整篇反馈」�
   assert.doesNotMatch(page, /notesOverallPage|currentPage|anchorsOfPage/, '按页换算范围那一套删掉');
   assert.doesNotMatch(css, /\.notes-scope|\.notes-overall/, '范围入口的选择器与样式删掉');
 
-  // 入口接回已有的反馈命令，scope 只剩整份（块级仍由选区那条走）。
+  // 入口把整份意见写成抽屉里的一条整份草稿（不直接派发），scope 只剩整份
+  // （块级仍由选区 / 块尾气泡那条走）。
   const wiring = page.match(/function wireOverallFeedback[\s\S]*?\n}/);
   assert.ok(wiring, '整篇反馈仍有一段接线');
   assert.match(wiring[0], /notesOverallDoc/, '入口接在抽屉按钮上');
   assert.match(wiring[0], /scope: 'doc'/, '整份范围');
-  assert.match(wiring[0], /openComposer/, '复用同一个写反馈的输入框');
+  assert.match(wiring[0], /startNoteDraft/, '整份意见落成抽屉里的一条草稿，跟着「提交模型」一起交');
   assert.doesNotMatch(wiring[0], /scope: 'page'|overallMenu|overallFeedback/, '没有页范围，也没有顶栏下拉菜单');
 });
 

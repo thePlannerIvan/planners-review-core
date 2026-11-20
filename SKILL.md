@@ -158,6 +158,7 @@ Proposal 与 By-page 调用 `scripts/render-content-review.mjs` 的 `renderConte
 | `contracts/review-surface.schema.json` | `review-surface/2.0.0` 契约（**唯一真相源**；含可选的 `annotate` 开关） |
 | `contracts/planners-doc.md` | `planners-doc/2` 文档契约：文档头（文档名只从 `project` 出）、层级（`#` 章节 / `##` 页 / `###`–`######` 标题块）、七种块、锚点、页末引用即出处、页为空、图片、`/1`→`/2` 迁移；样例在 `contracts/examples/` |
 | `contracts/planners-doc-task.md` | `planners-doc-task/1` 块级反馈任务：只带块身份与内容指纹、任务状态机、锁、模型写回 / 待核对 / journal 判据；无插件派发的本地收件箱与旧 JSON 只读也在这里 |
+| `contracts/planners-doc-notes.md` | `planners-doc-notes/1` 批注：块级与整份两种范围（整份 `anchor` 为 `null`）、三态、批次派发、归档与 2 MB 搬迁 |
 | `contracts/planners-doc-diff.md` | `planners-doc-diff/1` 结构 diff：章节 / 页 / 块相对「模型上次取稿时看到的版本」的新增、删除、改名、移动、合并、拆分，目标块被删的批注进 `orphan_notes`；基准 `planners-doc-baseline/1` 的刷新时机也在这里 |
 | `contracts/doc-assets.md` | `doc-assets/1` 图资产清单：正文派生、同名清单、换文件留上一版指纹；不碰 bypage 的素材取舍 |
 | `scripts/doc-inbox.mjs` | 模型侧收件箱命令：`list` 未处理任务（块身份 + 指纹 + 意见），`take` 把 pending 标成 processing |
@@ -197,8 +198,8 @@ Proposal 与 By-page 调用 `scripts/render-content-review.mjs` 的 `renderConte
 | `evals/test_doc_delete.mjs` | 删空即消失回归（26 条）：块删空 / 页标题删空 / 章节标题删空都从文件里消失，页消失时块按上一页 → 下一章第一页 → 文末页外块的顺序安置且一条不丢，章里唯一一页被删章标题跟着消失，造章 / 造页之后空掉的原页在同一次写里消失（回执仍指得准补的那一页），删除都能从历史恢复、基线过期自动重放不弹 409、批注跟着块走 / 目标没了进 `orphan_notes`、`validate-doc` 除规则 3 外不新增 `block_outside_page`，**真实页面**上「删空 + 失焦」这两个手势真的把块与页删掉 |
 | `evals/test_doc_structure.mjs` | 结构编辑回归（6 条）：改章节名 / 页名只换标题行、过期基线 / 空标题 / 找不到章节页都拒绝且不落盘、页尾加页与章节尾加章（新页是真正的空页，文件里没有占位正文）、目录视图立即跟着变、**页中间加章 / 加页只落在结构边界**（页里的块与整组出处一个都不被推出页外） |
 | `evals/test_doc_ui_polish.mjs` | 界面收口回归（10 条）：正文不再出现页号 / 黄条 / 加页加章按钮、结构问题只剩保存态旁的小圆点、批注气泡直进抽屉且没有浮层、抽屉每条只有被引用的话 / 正文 / 时间 / 删除（没有页名、章节名、页号与分组标题）、抓手与气泡按首行中线对齐、字号 15–21 且纸宽留白不变并可本地记忆 |
-| `evals/test_doc_notes.mjs` | 批注回归（13 条）：草稿落盘 / 抽屉是一张正文顺序的单子（不按页分组） / 一次提交整批 / 删除与重开 / 已处理归档进历史与 2MB 搬迁 |
-| `evals/test_doc_notes_drawer.mjs` | 批注抽屉回归（3 条，真实页面）：抽屉里只有被引用的那句话（没有页名 / 章节名 / 页号 / 分组标题）、那句引用截成一行、底部只有「整篇反馈」与「提交模型 · N」、点一条批注滚到那一块并把光标放进可编辑块、短暂高亮随后退掉 |
+| `evals/test_doc_notes.mjs` | 批注回归（17 条）：草稿落盘 / 抽屉是一张正文顺序的单子（不按页分组） / 一次提交整批 / 整份批注（`anchor` 为 `null`，任务里写「整份」） / 删除与重开 / 已处理归档进历史与 2MB 搬迁 |
+| `evals/test_doc_notes_drawer.mjs` | 批注抽屉回归（3 条，真实页面）：抽屉里只有被引用的那句话（没有页名 / 章节名 / 页号 / 分组标题）、那句引用截成一行、底部只有「整篇反馈」与「提交模型 · N」；整篇反馈写成同一张单子上的一条整份草稿、条数算进 N、按一次随整批进任务；点一条批注滚到那一块并把光标放进可编辑块、短暂高亮随后退掉 |
 | `evals/test_channel_parity.mjs` | 通道同义回归（5 条）：本地宿主与侧栏桥拖块 / 整页拖动 / 改结构的字节与回执一致、拒绝同码同句、模型侧动作不能从浏览器口进来 |
 | `evals/test_doc_feedback.mjs` | 块级反馈与派发回归（6 条）：任务只带块身份与指纹、整页 / 整份范围、锁定期间改别的块、完成后解锁、任务状态机、半句吸成整块 |
 | `evals/test_doc_diff.mjs` | 结构 diff 回归（13 条）：模型取稿刷新基准、提交批次随附 `planners-doc-diff/1`、空 diff 照常提交、章节 / 页 / 块的新增删除改名移动合并拆分、孤儿批注、页面轮询不冲基准、模型 CLI 用 `tasks` 读得到 |

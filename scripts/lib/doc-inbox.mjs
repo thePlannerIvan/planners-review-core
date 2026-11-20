@@ -42,7 +42,9 @@ function assertTask(task) {
     fail('task_contract', `收件箱只接收 ${INBOX_CONTRACT}，收到 ${task.contract ?? '(没写契约)'}`);
   }
   taskFileName(task.id);
-  if (!Array.isArray(task.blocks) || task.blocks.length === 0) fail('task_blocks', '任务至少要绑定一块');
+  if (!Array.isArray(task.blocks)) fail('task_blocks', '任务绑定的块必须是列表');
+  // 整份批注没有锚点（`planners-doc-task/1`）：它的任务块列表可以为空，范围由 scope 说清。
+  if (task.blocks.length === 0 && task.scope !== 'doc') fail('task_blocks', '任务至少要绑定一块');
 }
 
 /**

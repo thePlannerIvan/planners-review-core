@@ -91,10 +91,15 @@ export function createTaskBoard({ now = () => new Date().toISOString(), nextId =
      *
      * `diff` 是这一批提交时算出的 `planners-doc-diff/1`（块级反馈没有批次，为 null）：
      * 模型读任务时一并读到人动过的结构，不必猜。它随任务落盘、随任务回执返回。
+     *
+     * `blocks` 对 `scope: "doc"` 可以为空：整份批注没有锚点，硬绑一整份文档的块就是
+     * 伪造锚点。整份任务的范围由 `scope` 说清，模型可以写回文档里任意一块
+     * （`doc-session` 的 patch 对整份任务按当前磁盘基线接受未绑定的块）。
      */
-    submit({ scope, page = null, text, doc, blocks, batch = null, diff = null }) {
+    submit({ scope, page = null, text, doc, blocks = [], batch = null, diff = null }) {
       if (!TASK_SCOPES.includes(scope)) fail('task_scope', `任务范围只能是 ${TASK_SCOPES.join(' / ')}`);
-      if (!Array.isArray(blocks) || blocks.length === 0) fail('task_blocks', '任务至少要绑定一块');
+      if (!Array.isArray(blocks)) fail('task_blocks', '任务绑定的块必须是列表');
+      if (blocks.length === 0 && scope !== 'doc') fail('task_blocks', '任务至少要绑定一块');
       const task = {
         contract: TASK_CONTRACT,
         id: nextId(),

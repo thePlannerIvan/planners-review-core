@@ -70,7 +70,7 @@ const BAD_REQUEST_CODES = new Set([
   'reorder_request', 'reorder_op', 'structure_request', 'structure_op', 'structure_title', 'structure_delete',
   'asset_request', 'asset_type', 'asset_content',
   'history_request', 'history_id',
-  'note_request', 'note_text', 'note_anchor', 'note_id', 'note_missing', 'notes_empty', 'notes_orphaned',
+  'note_request', 'note_text', 'note_scope', 'note_anchor', 'note_id', 'note_missing', 'notes_empty', 'notes_orphaned',
 ]);
 
 /** 只接受工作台页面自己的同源 JSON 写入：别的网页不能借浏览器改本地文档或派发任务。 */

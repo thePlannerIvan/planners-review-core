@@ -50,7 +50,7 @@ async function openBrowser(t) {
   await page.waitForFunction(() => document.body.dataset.layout === 'wide');
   const row = page.locator('#notesList .note-row').first();
   await row.waitFor({ state: 'visible' });
-  return { page, row, target };
+  return { page, row, target, server };
 }
 
 test('抽屉里只有被引用的那句话：没有页名 / 章节名 / 页号，也没有分组标题', async (t) => {
@@ -93,10 +93,10 @@ test('抽屉里只有被引用的那句话：没有页名 / 章节名 / 页号�
   assert.ok(quote.height <= quote.lineHeight * 1.5, `只占一行的高度：${quote.height} / ${quote.lineHeight}`);
 });
 
-test('底部只有两枚按钮：整篇反馈与提交模型（带条数）', async (t) => {
+test('底部只有两枚按钮：整篇反馈与提交模型（整份意见也进这一批）', async (t) => {
   const opened = await openBrowser(t);
   if (!opened) return;
-  const { page } = opened;
+  const { page, server } = opened;
   const foot = page.locator('.notes-foot');
   assert.deepEqual(await foot.locator('button').allInnerTexts(), ['整篇反馈', '提交模型 · 1'],
     '底部就是这两枚：整篇反馈 + 提交模型（条数跟着草稿数）');
@@ -104,13 +104,40 @@ test('底部只有两枚按钮：整篇反馈与提交模型（带条数）', as
   const panelText = await page.locator('#notesPanel').innerText();
   assert.equal(panelText.includes('反馈整份'), false, '「反馈整份」的入口删掉');
 
-  // 整篇反馈：草稿就写在抽屉里，光标进去。
+  // 整篇反馈：抽屉里当场多一条整份草稿（不是另一个提交入口），光标进去。
   await page.locator('#notesOverallDoc').click();
-  await page.locator('#notesCompose').waitFor({ state: 'visible' });
-  assert.equal(await page.evaluate(() => document.activeElement === document.querySelector('#notesComposeText')), true,
+  const draft = page.locator('#notesList .note-draft');
+  await draft.waitFor({ state: 'visible' });
+  assert.equal(await page.evaluate(() => document.activeElement === document.querySelector('#notesList .note-draft textarea')), true,
     '整篇反馈的草稿写在抽屉里，光标已经进去');
-  assert.deepEqual(await foot.locator('button').allInnerTexts(), ['整篇反馈', '提交模型 · 1'],
-    '写整篇反馈没有在底部多出第三枚按钮');
+  assert.match(await draft.innerText(), /整份/, '这条草稿自己写着它是整份，不冒充某一块的引用');
+  assert.equal(await page.locator('#notesCompose').isVisible(), false,
+    '整篇反馈不再是另一个提交入口：抽屉里没有第二个输入浮层');
+
+  await draft.locator('textarea').fill('整篇收一收');
+  assert.deepEqual(await foot.locator('button').allInnerTexts(), ['整篇反馈', '提交模型 · 2'],
+    '正在写的整份草稿也算进条数（N 含它）');
+
+  // 按一次「提交模型」：整份意见在这一批里，任务里写的是「整份」，不是伪造的块锚点。
+  await page.locator('#notesSubmit').click();
+  await page.waitForFunction(() => document.querySelector('#notesSubmit').textContent.trim() === '提交模型 · 0');
+  const listed = await (await fetch(`${server.url}/api/tasks`)).json();
+  const task = listed.tasks.find((item) => item.batch);
+  assert.ok(task, '整份草稿跟着这一批装成了同一条任务');
+  assert.match(task.text, /整份：整篇收一收/, '任务里它的目标写成「整份」');
+  assert.match(task.text, /这段太长了，收一收/, '块级批注也在同一批里');
+  assert.equal(task.scope, 'doc', '这一批含整份批注，任务范围就是整份');
+
+  // 提交后它进「已提交」，刷新后仍是一条带「整份」标签的批注，不是某一块的引用。
+  await page.waitForFunction(() => document.querySelector('#notesList')?.innerText.includes('整份'));
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForFunction(() => document.querySelector('#notesList')?.innerText.includes('整篇收一收'));
+  const afterReload = await page.locator('#notesList').innerText();
+  assert.match(afterReload, /整份/, '刷新后已提交的整份批注还在抽屉里，仍写明它是整份');
+  const docRow = page.locator('#notesList .note-row', { hasText: '整篇收一收' });
+  assert.equal(await docRow.locator('.note-scope').count(), 1, '整份批注带一个「整份」标签');
+  assert.equal(await docRow.locator('.note-quote').count(), 0,
+    '整份批注不冒充某一块的引用：它没有引用的话');
 });
 
 test('点一条批注：正文滚到那一块、光标进可编辑块、短暂高亮', async (t) => {
