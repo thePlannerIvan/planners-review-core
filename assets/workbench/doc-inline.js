@@ -92,21 +92,23 @@
     }
   }
 
-  /** 行首的块级标记必须转义，否则「# 不是标题」下一次打开会变成标题块。 */
-  const escapeLineStart = (line) => {
-    if (!line || line.startsWith('\\')) return line;
-    // 有序列表要把反斜杠放在点上（\1. 不是转义，1\. 才是）。
-    if (/^\d+[.)][ \t]/.test(line)) return line.replace(/^(\d+)([.)])/, '$1\\$2');
-    if (/^#{1,6}[ \t]/.test(line) || /^[-*+][ \t]/.test(line)
-      || /^>[ \t]?/.test(line) || /^=+[ \t]*$/.test(line) || /^-{3,}[ \t]*$/.test(line)) {
-      return `\\${line}`;
-    }
-    return line;
+  /**
+   * 行首的块前缀要原样交给保存路径（票 30）：
+   * 前缀在那里被认成块类型，`# ` 得到标题、`- ` 得到列表……序列化层不再抢着把它
+   * 转义成字面量。只有行首才还原——行中间的 `*` / `>` 仍然是普通文本，照旧转义。
+   */
+  const unescapeLineStart = (line) => {
+    if (!line) return line;
+    let text = line;
+    if (/^\\\*[ \t]/.test(text) || /^\\>[ \t]/.test(text)) text = text.slice(1);
+    text = text.replace(/^(?:\\`){3,}/, (run) => run.replace(/\\/g, ''));
+    text = text.replace(/^(?:\\~){3,}/, (run) => run.replace(/\\/g, ''));
+    return text;
   };
 
   function serializeInline(node, options = {}) {
     const markdown = nodeToMarkdown(node, options).replace(/\u00a0/g, ' ');
-    return markdown.split('\n').map(escapeLineStart).join('\n');
+    return markdown.split('\n').map(unescapeLineStart).join('\n');
   }
 
   return { serializeInline, escapeText };

@@ -17,7 +17,7 @@ evals/acceptance/
 ├── run.mjs                     # 唯一入口：跑判据、生成 REPORT.md 与 JSON 记录
 ├── lib/                        # 判据实现与公共工具（沙箱、工作台进程、块级字节对比）
 ├── corpus/                     # 十份语料 + 来源清单 sources.json + manifest.json
-│   └── build-corpus.mjs        # 从真实项目 Markdown 生成 planners-doc/1（结构适配，正文不动）
+│   └── build-corpus.mjs        # 从真实项目 Markdown 生成 planners-doc/2（结构适配，正文不动）
 ├── records/                    # 每次运行的机器可读记录
 └── REPORT.md                   # 最近一次运行的人可读记录（生成物）
 ```
@@ -26,7 +26,7 @@ evals/acceptance/
 
 - 8 份来自 `01-projects` 与 `07-SkillLab` 的真实项目 Markdown：美津浓 NeedScope、GWTB、年度经营周期、型号场景洞察、AI 像素工厂交付说明、planners-form 兼容性、DSH 插件上游 README、文字工作台工程拆解。
 - 2 份仓库内的契约样例（`contracts/examples/storyline.md`、`by-page.md`），覆盖图片语法与已有锚点。
-- 真实文档不是 `planners-doc/1` 格式。`build-corpus.mjs` 只做结构适配：补文档头、把标题映射到章节/页、去掉 `---` 分隔线、把嵌套列表项去掉缩进、把行首原始 HTML 转义、给没有页的章节补「概览」页；**原文文字逐行保留、只改结构**，每处的来源路径与源文件 sha256 记在 `corpus/sources.json` / `corpus/manifest.json`。
+- 真实文档不是 `planners-doc/2` 格式。`build-corpus.mjs` 只做结构适配：补文档头、把标题映射到章节/页（文档标题退出正文，文档名只从 `project` 出）、去掉 `---` 分隔线、把嵌套列表项去掉缩进、把行首原始 HTML 转义、给没有页的章节补「概览」页；**原文文字逐行保留、只改结构**，每处的来源路径与源文件 sha256 记在 `corpus/sources.json` / `corpus/manifest.json`。
 - 语料本身不带锚点：首次打开时由工作台按契约补写。验收把「补完锚点的文件」当作往返基线，因为契约明确要求首次打开补锚点，这不是一次编辑。
 - 生成的十份语料已提交，跑验收不依赖原始项目文档。`build-corpus.mjs --check` 需要原始文档在场（默认按 `CodexProject` 根解析，可用 `--source-root` 指过去）——它只用于核对语料没有手改过。
 

@@ -1,20 +1,18 @@
 ---
-contract: planners-doc/1
+contract: planners-doc/2
 doc: storyline
 project: planners-form 兼容性
 ---
 
-# Compatibility record
+# 概述
 
-## 概述
-
-### 原文开头
+## 原文开头
 
 Checked: 2026-10-20
 
-## 0.2.0 — latest-tracking installs, self-update, diagnostic prompt (2026-10-20)
+# 0.2.0 — latest-tracking installs, self-update, diagnostic prompt (2026-10-20)
 
-### 概览
+## 概览
 
 0.2.0 changes where versions come from and what the settings page can repair:
 
@@ -38,13 +36,13 @@ Verification performed for this release (no paid model requests):
 
 Not yet verified live: an actual self-update against the running desktop host (needs a published newer commit and a restart), the bundled-CLI fallback path with sandbox approvals, and the diagnostic prompt being executed end-to-end by an agent. Those are recorded as follow-ups rather than claimed results.
 
-## Release target: DSH 0.2.x
+# Release target: DSH 0.2.x
 
-### 概览
+## 概览
 
 The release manifest declares `peerDependencies["@deepseek-ai/dsh"] = "^0.2.0-rc.2"` and `engines.dsh = "^0.2.0-rc.2"`. DSH's compatibility evaluator prefers `engines.dsh` when present and otherwise checks every `@deepseek-ai/dsh*` peer with prereleases participating in ranges, so 0.2.0-rc.2 and the rest of the 0.2 line are accepted while 0.3.0 is not. **0.1.3 declared the runtime back as an exact pin (`"0.2.0-rc.2"`), which is what made 0.2.1-rc.1 skip the whole bundle at profile load** — the plugin code was never the problem.
 
-### 0.2.1-rc.1 live verification (2026-10-17)
+## 0.2.1-rc.1 live verification (2026-10-17)
 
 The installed official DeepSeek Harness desktop application identifies itself as 0.2.1-rc.1; its bundled CLI reports the same version and the server runs on the application's bundled Node 24.21.0. A copy of the 0.1.3 tree with only the manifest change above was installed with `dsh plugin --profile probe add <dir> --offline` into an isolated DSH_HOME, then the Web app booted on the composed profile (no model API key, no paid request).
 
@@ -61,7 +59,7 @@ The installed official DeepSeek Harness desktop application identifies itself as
 
 Limits: the test reused an existing review-core through a read-only copy inside the isolated DSH_HOME, so a clean-machine GitHub codeload download is not part of this run; no UI click-through or screenshot; PPT Python/Chromium and video rendering tools are not exercised. The running `desktop` profile is owned by the Electron app and was not booted or modified by this test.
 
-### 0.2.0-rc.2 record (2026-10-13)
+## 0.2.0-rc.2 record (2026-10-13)
 
 The runtime was extracted from the installed official DeepSeek Harness desktop application's `app.asar` into an isolated temporary directory. Both its CLI and desktop-runtime package identify themselves as 0.2.0-rc.2. The server ran using the application's bundled Node, which reported 24.21.0.
 
@@ -81,15 +79,15 @@ Live results:
 
 The live test reused an existing review-core through a link inside the isolated DSH_HOME. This tests plugin/runtime integration; it does not prove GitHub download success on a clean machine. No model API key or paid model request was used, so generated-content feedback/wake end-to-end is not a claimed result.
 
-## 0.2.1 alpha source check (historical)
+# 0.2.1 alpha source check (historical)
 
-### 概览
+## 概览
 
 Official tags checked: `dsh-v0.2.1-alpha.1`, `dsh-v0.2.1-alpha.2`. The settings contract file `packages/client/ui-settings/src/client/contract/slots.ts` had the identical Git blob SHA `d04ac21fa606fe4dc0af75dee0bae4b60fb299a7` in rc.2 and both alphas. That established only one interface's stability; it is superseded by the 0.2.1-rc.1 live verification above.
 
-## Additional checks and limits
+# Additional checks and limits
 
-### 概览
+## 概览
 
 33 automated tests cover the install/update manager, archive extraction, external installation preservation, dependency closure, recovery after interruption, and authenticated HTTP handling. Earlier UI development also ran on DSH 0.1.7-rc.1; that version is not in this release's supported range.
 
@@ -97,14 +95,14 @@ Initial direct GitHub/npm connections failed with TLS errors. The subsequent 0.1
 
 The 0.1.1 catalog pins the five newly public repositories to audited commits. Settings hides `sparkling`, `storytelling` and `slide-copy` in both lists, while dependency installation and updates still include them.
 
-## 0.1.2 Git installation fix
+# 0.1.2 Git installation fix
 
-### 概览
+## 概览
 
 0.1.1 Release-package checks did not cover Git source installation. The source archive lacked dependencies marked as bundled, causing entry import failure. 0.1.2 includes the production dependencies and adds a Git archive import test without inherited developer dependencies.
 
-## 0.1.3 Skill discovery fix
+# 0.1.3 Skill discovery fix
 
-### 概览
+## 概览
 
 Settings now uses the DSH skill registry rather than a single hardcoded directory. A native filesystem provider makes local DSH/Agent roots visible even when the profile disables its default provider. The rc.2 integration test covers custom-root discovery, an overridden agents home, existing-install preservation, and immediate loading of a freshly installed Skill through the actual registry. Installed rows display ✅; Review Dock resolves the discovered core location. Project/preset-private Skills are not presented as global installations.

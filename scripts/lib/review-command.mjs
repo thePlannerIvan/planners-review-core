@@ -3,7 +3,7 @@ import { realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DOC_BROWSER_OPERATIONS } from '../doc-command.mjs';
+import { DOC_IDENTITY_ROUTES } from '../doc-command.mjs';
 
 const CORE_DIR = fileURLToPath(new URL('../../', import.meta.url));
 const BACKEND = 'svg-workbench/1';
@@ -87,11 +87,24 @@ function invoke(python, args, input) {
 export async function runBrowserCommand(surface, payload) {
   if (!commandEnabled(surface?.data)) return failure('command_not_enabled', 'Surface has no supported command capability/backend');
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return failure('command_shape', 'Command must be a JSON object');
-  // 文字工作台的白名单只有 doc-command 那一份；传输层不另存一份会漂移的副本。
-  const operations = surface.data.command_backend === DOC_BACKEND ? DOC_BROWSER_OPERATIONS : OPERATIONS;
-  if (!operations.has(payload.op)) return failure('command_operation', 'Browser command operation is not allowlisted');
+  // 文字工作台的通道没有自己的动作词汇表：页面发 `{route, body}`，桥只转发。
+  // 白名单管身份不管动作 —— 只拦模型侧动作，页面需要的其余动作一律放行。
+  const isDoc = surface.data.command_backend === DOC_BACKEND;
+  const body = isDoc ? (payload.body === undefined ? {} : payload.body) : undefined;
+  if (isDoc) {
+    if (typeof payload.route !== 'string' || !payload.route) return failure('command_shape', 'Command 需要 route（本地宿主的动作名）');
+    if (body === null || typeof body !== 'object' || Array.isArray(body)) return failure('command_shape', 'Command body 必须是 JSON 对象');
+    if (DOC_IDENTITY_ROUTES.has(payload.route)) {
+      return failure('command_operation', `浏览器不能执行模型侧动作 ${payload.route}：领取任务 / 回写 patch / 完成只能走 doc-command.mjs CLI`);
+    }
+  } else if (!OPERATIONS.has(payload.op)) {
+    return failure('command_operation', 'Browser command operation is not allowlisted');
+  }
   if (Object.hasOwn(payload, 'author') && payload.author !== 'human') return failure('browser_author', 'Browser commands cannot act as a model');
-  if (OVERRIDES.some((key) => Object.hasOwn(payload, key))) return failure('command_override', 'Command cannot override host paths or execution settings');
+  if (OVERRIDES.some((key) => Object.hasOwn(payload, key))
+    || (body !== undefined && body !== null && OVERRIDES.some((key) => Object.hasOwn(body, key)))) {
+    return failure('command_override', 'Command cannot override host paths or execution settings');
+  }
   let input;
   try { input = JSON.stringify(payload); }
   catch { return failure('command_shape', 'Command must be JSON serializable'); }

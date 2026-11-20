@@ -13,12 +13,10 @@ const core = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const INBOX = join(core, 'scripts', 'doc-inbox.mjs');
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 
-const FRONT = '---\ncontract: planners-doc/1\ndoc: storyline\nproject: 派发测试\n---\n\n';
-const BODY = `# 派发测试
+const FRONT = '---\ncontract: planners-doc/2\ndoc: storyline\nproject: 派发测试\n---\n\n';
+const BODY = `# 章节
 
-## 章节
-
-### 页一
+## 页一
 
 第一块正文。<!-- b:aaaaaa -->
 
@@ -215,7 +213,7 @@ test('旧 JSON 主稿被打开时只读：界面状态可读、保存被拒且�
   const doc = await getJson(`${server.url}/api/doc`);
   assert.equal(doc.readonly?.reason, 'legacy-json', '旧 JSON 主稿以只读模式挂载');
   assert.match(doc.readonly?.message ?? '', /只读/, '只读原因要写给人看');
-  assert.match(doc.readonly?.message ?? '', /planners-doc\/1/, '要说清楚新工作台只认哪份契约');
+  assert.match(doc.readonly?.message ?? '', /planners-doc\/2/, '要说清楚新工作台只认哪份契约');
   assert.equal(doc.project, 'pj_test');
   assert.deepEqual(doc.legacy?.contract_version, '2.0.0');
   assert.equal(doc.pages.length, 2, '旧主稿的页要能看见，才能判断是不是它');
@@ -242,6 +240,12 @@ test('旧 JSON 主稿被打开时只读：界面状态可读、保存被拒且�
   assert.equal(reorder.status, 409, JSON.stringify(reorder.body));
   assert.equal(reorder.body.code, 'readonly');
 
+  const structure = await postJson(`${server.url}/api/structure`, {
+    op: 'rename-chapter', chapter: 1, title: '不该落盘', base_sha256: doc.sha256,
+  });
+  assert.equal(structure.status, 409, JSON.stringify(structure.body));
+  assert.equal(structure.body.code, 'readonly', '只读主稿不能改结构');
+
   assert.deepEqual(readFileSync(path), original, '被拒的保存一个字节都不写');
   assert.equal(existsSync(join(dir, '.doc-workbench')), false, '只读打开不应留下工作台旁路文件');
 });
@@ -259,7 +263,7 @@ test('页面状态如实：旧 JSON 只读有说明，派发写明原文未改�
   assert.match(page, /body\.classList\.toggle\('is-readonly'/, '只读要落在可见的界面状态上');
   assert.match(page, /旧项目 · 只读/, '顶部要写明这是只读的旧项目');
   assert.match(page, /block\.readonly/, '只读块不接编辑面与反馈按钮');
-  assert.match(page, /feedback\.hidden = true/, '只读时不显示整体反馈入口');
+  assert.match(page, /notesOverallPage|notesOverallDoc/, '只读时整体反馈入口仍在，只是被禁用');
   assert.match(drag, /snapshot\.readonly/, '只读时不装拖柄，避免看起来还能重排');
   assert.match(css, /\.readonly-notice/, '只读说明要有样式');
   assert.match(css, /body\.is-readonly/, '只读状态要有可见样式');

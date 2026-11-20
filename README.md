@@ -68,7 +68,7 @@ node scripts/review-host.mjs start path/to/review-surface.json
 
 ## 单独使用：打开一份工作稿
 
-`planners-doc/1` 工作稿（`.planners/storyline.md`、`.planners/by-page.md`）可以直接用工作台打开：
+`planners-doc/2` 工作稿（`.planners/storyline.md`、`.planners/by-page.md`）可以直接用工作台打开：
 
 ```bash
 node scripts/doc-workbench.mjs path/to/.planners/storyline.md --open
@@ -76,13 +76,25 @@ node scripts/doc-workbench.mjs path/to/.planners/storyline.md --open
 
 按块渲染，点进任意块就地改；加粗、斜体、行内代码、链接在块内直接排版。保存自动发生，磁盘上只替换被编辑的那一块，其余块逐字不动。缺锚点会在打开时补写，重复锚点会重建；超出七种块或行内子集的写法按原文显示，不静默改写。
 
-要模型改哪里就选哪里：选中半句也会吸成整块，提交前高亮「将改的块」；块尾有反馈按钮，顶部「整体反馈」可发起整页或整份反馈。派发出去的任务只带块身份与 `sha256(block.raw)`，不带全文；模型处理中的块显示「模型正在改这一段」并锁定，其余块照常可写，完成后自动解锁。
+**编辑器不拦人**：结构不合规也照样落盘——块拖到页外、页被清空、章节被清空都只是中间态。结构问题降级成顶部一条黄条，分成「不在任何页里的块」与「空页」两组，每条都能点着跳过去；它不阻断任何操作。`validate-doc` 不在保存路径上跑，只在交付与 CI 显式调用。文件在别处变了就自动重读、把这次改动重放到新版本上；只有重放到同一块才停下让人核对。
 
-模型一次写回多块（`POST /api/patch`）。服务端按块比对任务提交时的指纹与磁盘当前版本：没变过的块直接落盘并解锁；在这之后被人改过的那一块只标「待核对」、保持锁定、磁盘不动，其余块照常落盘。人可以选择「保留我的」「用模型版」或「放弃该块」，裁决后解锁。两个人改不同块时按块合并，同一块才会被拒绝。所有写盘走 journal，进程在两次 rename 之间被打断，重启时能恢复未提交的改动，也不会多出幽灵块。任务形状、回执与 journal 判据见 [`planners-doc-task/1`](contracts/planners-doc-task.md)。
+要模型改哪里就选哪里：选中半句也会吸成整块，提交前高亮「将改的块」；块尾有反馈按钮，右侧批注抽屉的「反馈这一页 / 反馈整份」可发起整页或整份反馈。派发出去的任务只带块身份与 `sha256(block.raw)`，不带全文；模型处理中的块显示「模型正在改这一段」并锁定，其余块照常可写，完成后自动解锁。
+
+批注可以攒成一批：右侧抽屉默认展开、按页组织，同一块上的多条批注收成一个计数气泡，点开才展开这一块的全部。草稿写在文档同目录的 `.doc-workbench/notes.json`（`planners-doc-notes/1`），跨页、跨天、关掉浏览器都还在；每条可单独删除，底部「提交给模型修改」把整批装成**一条**任务（同块多条只绑一块），空白时按钮禁用，提交后草稿清空、该批变「已提交」。失去目标的草稿不静默消失：留在草稿里并在回执 `orphaned` 里说明原因。接口是 `GET /api/notes`、`POST /api/note`、`POST /api/note/delete`、`POST /api/note/reopen`、`POST /api/note/submit`。
+
+每次提交批次还附一份**结构 diff**（`planners-doc-diff/1`）：章节与页的新增 / 删除 / 改名 / 移动 / 合并 / 拆分，块的跨页移动与删除，以及目标块已被删掉的批注（`orphan_notes`）。基准是模型上一次取稿时看到的版本，落在 `.doc-workbench/state/baseline.json`；模型侧读 `tasks` 或 `open` 时刷新，页面每 3 秒轮询锁不刷新。diff 只说结构哪里动了、不带正文，随任务一起落盘，模型读 `tasks` 就拿到 —— 没有第二条命令。结构没变时 diff 为空，提交照常成功。形状与判定规则见 [`planners-doc-diff/1`](contracts/planners-doc-diff.md)。
+
+模型一次写回多块（`POST /api/patch`）。服务端按块比对任务提交时的指纹与磁盘当前版本：没变过的块直接落盘并解锁；在这之后被人改过的那一块只标「待核对」、保持锁定、磁盘不动，其余块照常落盘。人可以选择「保留我的」「用模型版」或「放弃该块」，裁决后解锁。两个人改不同块时按块合并，同一块才会停下来：后保存的那个标签页拿到磁盘版与自己这一版，两版都写进待核对队列（刷新、重开工作台都还在），并排选一版落盘，两边随后看到同一份结果。所有写盘走 journal，进程在两次 rename 之间被打断，重启时能恢复未提交的改动，也不会多出幽灵块。任务形状、回执与 journal 判据见 [`planners-doc-task/1`](contracts/planners-doc-task.md)。
 
 图片按正文里的 `![说明](相对路径)` 就地显示，点开是只读放大层（滚轮 / 按钮缩放，可切「适应窗口」与「1:1」看裁切）；文件取不到时块内标「未能加载 · 路径」，不画占位图。SVG 与位图一样只经 `<img>` 加载，`/asset` 只发图片 MIME 并给 SVG 带 `sandbox; script-src 'none'` 的 CSP，图里的脚本不执行。换图只换文件字节：`POST /api/asset/replace` 的请求里没有路径，用哪张图始终由正文引用决定；锁定的图块会被拒绝，正文与其他块一个字节都不动。文档引用的图登记在同名清单（`storyline.md` → `storyline.assets.json`，`doc-assets/1`），打开时按正文与磁盘重建，换过文件会留下 `replaced_from_sha256`；`node scripts/validate-doc-assets.mjs <doc>` 独立核对三边是否一致。
 
-左侧目录按「章节 → 页」两级列出，点页跳转，滚动时高亮当前页。块前缀的六点句柄可拖，落点用一条提示线说明「插到哪两块之间」；拖页标题移动整页（连同其下所有块），页号随新顺序重排；`Alt+↑↓` 移动光标所在的块。拖动与页重排走同一个显式重排操作 `POST /api/reorder`（`move-block` / `move-page`），未参与重排的块逐字不动。锁定（模型正在改）与待核对的块不是可编辑块：不给拖柄，`Alt+↑↓` 也不动；页里只要有一块被占住，整页也不能拖，服务端同样按 `block_locked` 拒绝。
+结构就在正文里改：`#` 章节与 `##` 页的标题点进去就能改，失焦写回文件；页尾「＋ 新页」、章节尾「＋ 新章节」直接加结构，新页是**真正的空页**（文件里没有正文，提示只在渲染层出现），加完就选中名字。左侧目录与正文从同一份快照重画，改完立刻同步。结构操作走 `POST /api/structure`（`rename-chapter` / `rename-page` / `add-page` / `add-chapter` / `add-source`），与本地页、侧栏桥共用同一个 `structure` 动作名；改结构只换标题行或插入结构行，其余字节逐字不动。
+
+块的类型不靠菜单，靠**行首前缀**：块首敲 `## ` 得到一页（文件里是真正的 `## 标题` 行）、`# ` 得到一章、`### `–`###### ` 得到对应层级的标题块，`- ` / `1. ` 列表、`> ` 引用、围栏代码、`|` 起表格；写入后前缀从正文隐去，只留排版。只有块首且前缀后紧跟空格才转换，输入法组字期间不转换；标题块里把文字删空会退回段落、前缀重新出现。保存路径对「前缀产生的类型变化」放行，其他结构变化（空行拆块、第二个锚点）仍然拒绝。工具栏只有加粗、斜体、链接、行内代码四个行内格式，不做块按钮。
+
+依据、边界、来源写成页末连续的引用：工作台默认把它们收成一条 32px 的「出处 · N」，两端 `›` / `‹`、中间一条虚线，**整条都是点击区**。点开后每条引用按块编辑，组尾「＋ 出处」在页尾接一条（`add-source`）；再点组首收起。页中段的普通引用照常显示，不会被当作出处。
+
+左侧目录按「章节 → 页」两级列出，点页跳转，滚动时高亮当前页。块前缀的六点句柄可拖，落点用一条提示线说明「插到哪两块之间」；拖页标题移动整页（连同其下所有块），页号随新顺序重排；`Alt+↑↓` 移动光标所在的块。拖动与页重排走同一个显式重排操作 `POST /api/reorder`（`move-block` / `move-page`），未参与重排的块逐字不动；拖到章节标题下是「搬到页外」（`to.outside`），之后还能再拖回任一页。锁定（模型正在改）与待核对的块不是可编辑块：不给拖柄，`Alt+↑↓` 也不动；页里只要有一块被占住，整页也不能拖，服务端同样按 `block_locked` 拒绝。
 
 历史按次记录：每次写盘前把上一版整份存进 `.doc-workbench/history/<文档文件名>/`，顶部「历史」列出时间、操作、指纹与摘要；「恢复这一版」把旧档作为一次新的编辑落盘，恢复前的那一版也会再存一档，旧记录一个不删。接口是 `GET /api/history` 与 `POST /api/history/restore`（`{id, base_sha256}`）。
 
@@ -112,7 +124,7 @@ echo '{"task_id":"<任务 id>","patches":[{"anchor":"b:7b057d","content":"新的
   | node scripts/doc-command.mjs path/to/.planners/.doc-workbench/review-surface.json patch
 ```
 
-旧的 `.proposal-work/page-architecture.json` / `.bypage-work/page-architecture.json` 也能打开，但**只读**：页面顶部写明原因，保存、重排、派发都被拒绝，磁盘一个字节都不动。旧项目不迁移，新的工作稿要按 `planners-doc/1` 重建。
+旧的 `.proposal-work/page-architecture.json` / `.bypage-work/page-architecture.json` 也能打开，但**只读**：页面顶部写明原因，保存、重排、派发都被拒绝，磁盘一个字节都不动。旧项目不迁移，新的工作稿要按 `planners-doc/2` 重建。
 
 
 ---
@@ -168,9 +180,10 @@ planners-review-core/
 ├── SECURITY.md
 ├── contracts/
 │   ├── review-surface.schema.json      # review-surface/2.0.0 权威契约
-│   ├── planners-doc.md                 # planners-doc/1 文档契约（工作稿结构）
+│   ├── planners-doc.md                 # planners-doc/2 文档契约（工作稿结构）
 │   ├── doc-assets.md                   # doc-assets/1 图资产清单契约（派生索引）
 │   ├── planners-doc-task.md            # planners-doc-task/1 块级反馈任务形状
+│   ├── planners-doc-diff.md            # planners-doc-diff/1 结构 diff 与基准刷新时机
 │   └── examples/                       # 两份真实样例：storyline / by-page
 ├── assets/
 │   ├── review-bridge.js                # 双宿主运行时桥
@@ -180,7 +193,8 @@ planners-review-core/
 ├── scripts/
 │   ├── open-artifact.mjs               # 任意 HTML 一键建批注面入口
 │   ├── validate-surface.mjs            # surface 结构与包含性校验器
-│   ├── validate-doc.mjs                # planners-doc/1 文档校验器
+│   ├── validate-doc.mjs                # planners-doc/2 文档校验器
+│   ├── migrate-doc.mjs                 # /1 → /2 迁移器（标题层级上移一位）
 │   ├── validate-doc-assets.mjs         # doc-assets/1 资产清单校验器
 │   ├── review-host.mjs                 # 本地宿主生命周期唯一 CLI
 │   ├── serve-review.mjs                # 无 DSH 插件时的本地浏览器宿主
@@ -195,6 +209,7 @@ planners-review-core/
 │   ├── lib/doc-assets.mjs              # 图资产清单：派生、换文件守卫与三边校验
 │   ├── lib/doc-history.mjs             # 每次写盘前存上一版；列出与按档恢复
 │   ├── lib/doc-io.mjs                  # 旁路目录与原子写（fsync + rename）唯一实现
+│   ├── lib/doc-diff.mjs                # 结构 diff：基准落盘、页 / 章节 / 块变化判定与 orphan_notes
 │   ├── lib/doc-tasks.mjs               # 块级反馈任务与块锁
 │   ├── lib/doc-inbox.mjs               # 无插件派发的本地收件箱（一条任务一个文件）
 │   ├── lib/doc-dispatch.mjs            # 派发唯一出口：有插件唤醒 / 无插件落收件箱

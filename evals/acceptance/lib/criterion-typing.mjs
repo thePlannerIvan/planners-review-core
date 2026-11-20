@@ -408,6 +408,172 @@ export async function runTyping(corpus) {
         },
       });
     }
+
+    // ── 行首前缀 → 块类型（票 30，SPEC 第 7 节） ─────────────────────────────
+    // 回车新开一块，敲 `## `：保存路径把这一块变成一页，前缀隐去、目录里出现这一页。
+    const pageResponsePromise = page.waitForResponse((response) => response.url().endsWith('/api/block/split'), { timeout: 10000 }).catch(() => null);
+    await page.locator(selector).click();
+    await caretToEnd(page, selector);
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('.doc-block.is-pending', { timeout: 3000 });
+    await page.keyboard.insertText('## 前缀验收页');
+    const pageResponse = await pageResponsePromise;
+    await sleep(500);
+    const pageReceipt = pageResponse ? await pageResponse.json().catch(() => null) : null;
+    const afterPage = readDoc(path);
+    const pageTitle = afterPage.parsed.pages.find((item) => item.title === '前缀验收页') ?? null;
+    // 目录在中等宽度会把页名藏起来（只留页号），所以按条目自己的 title 判，不看可见文本。
+    const tocPages = await page.locator('#toc [data-page]').evaluateAll((items) => items.map((item) => item.title));
+    details.phases.prefix = { prefix_page: { response_status: pageResponse?.status() ?? null, receipt: pageReceipt } };
+    cases.push({
+      id: 'typing/prefix-page',
+      ok: pageResponse?.status() === 200
+        && Boolean(pageTitle)
+        && afterPage.raw.includes('## 前缀验收页')
+        && !afterPage.raw.includes('\\##')
+        && !afterPage.raw.includes('## 前缀验收页<!--')
+        && tocPages.includes('前缀验收页'),
+      name: '行首 `## ` 得到一页：文件里是真标题行、目录里出现这一页、前缀不被转义',
+      evidence: {
+        response_status: pageResponse?.status() ?? null,
+        page_title: pageTitle?.title ?? null,
+        file_has_real_heading: afterPage.raw.includes('## 前缀验收页'),
+        escaped_prefix: afterPage.raw.includes('\\##'),
+        anchor_on_heading: afterPage.raw.includes('## 前缀验收页<!--'),
+        toc_has_page: tocPages.includes('前缀验收页'),
+        toc_pages: tocPages,
+      },
+    });
+
+    // `### `：得到标题块；写完前缀隐去，编辑面里只剩标题文字。
+    await page.locator(selector).click();
+    await page.evaluate((selectorForBlock) => {
+      const node = document.querySelector(selectorForBlock);
+      node.focus();
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }, selector);
+    const headingResponsePromise = page.waitForResponse((response) => response.url().endsWith('/api/block'), { timeout: 10000 }).catch(() => null);
+    await page.keyboard.insertText('### 前缀验收标题');
+    const headingResponse = await headingResponsePromise;
+    await sleep(500);
+    const headingReceipt = headingResponse ? await headingResponse.json().catch(() => null) : null;
+    const headingDom = {
+      type: await page.locator(`.doc-block[data-anchor="${target.anchor}"]`).getAttribute('data-type'),
+      text: await page.locator(selector).innerText(),
+      prefix: await page.locator(`.doc-block[data-anchor="${target.anchor}"] .block-prefix`).innerText().catch(() => null),
+    };
+    details.phases.prefix.prefix_heading = { response_status: headingResponse?.status() ?? null, receipt: headingReceipt, dom: headingDom };
+    cases.push({
+      id: 'typing/prefix-heading',
+      ok: headingResponse?.status() === 200
+        && headingReceipt?.block?.type === 'heading'
+        && headingReceipt?.block?.raw === '### 前缀验收标题'
+        && headingDom.type === 'heading'
+        && headingDom.text === '前缀验收标题'
+        && headingDom.prefix === '### ',
+      name: '行首 `### ` 得到标题块：写入后前缀从正文隐去，只留排版',
+      evidence: {
+        response_status: headingResponse?.status() ?? null,
+        block_type: headingReceipt?.block?.type ?? null,
+        block_raw: headingReceipt?.block?.raw ?? null,
+        dom: headingDom,
+      },
+    });
+
+    // 标题删空：退回段落，前缀重新出现在正文里。
+    await page.locator(selector).click();
+    await page.evaluate((selectorForBlock) => {
+      const node = document.querySelector(selectorForBlock);
+      node.focus();
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }, selector);
+    const revertResponsePromise = page.waitForResponse((response) => response.url().endsWith('/api/block'), { timeout: 10000 }).catch(() => null);
+    await page.keyboard.press('Backspace');
+    const revertResponse = await revertResponsePromise;
+    await sleep(600);
+    const revertReceipt = revertResponse ? await revertResponse.json().catch(() => null) : null;
+    const revertDom = {
+      type: await page.locator(`.doc-block[data-anchor="${target.anchor}"]`).getAttribute('data-type'),
+      text: await page.locator(selector).innerText(),
+      prefixSpans: await page.locator(`.doc-block[data-anchor="${target.anchor}"] .block-prefix`).count(),
+    };
+    details.phases.prefix.prefix_revert = { response_status: revertResponse?.status() ?? null, receipt: revertReceipt, dom: revertDom };
+    cases.push({
+      id: 'typing/prefix-revert',
+      ok: revertResponse?.status() === 200
+        && revertReceipt?.block?.type === 'paragraph'
+        && revertDom.type === 'paragraph'
+        && revertDom.text.includes('###')
+        && revertDom.prefixSpans === 0,
+      name: '标题里把字删空：退回段落、前缀重新出现，保存不返回 409',
+      evidence: {
+        response_status: revertResponse?.status() ?? null,
+        block_type: revertReceipt?.block?.type ?? null,
+        dom: revertDom,
+      },
+    });
+
+    // 输入法组字期间不转换：组字中不排保存，提交后才按前缀得到标题块。
+    await page.locator(selector).click();
+    await page.evaluate((selectorForBlock) => {
+      const node = document.querySelector(selectorForBlock);
+      node.focus();
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }, selector);
+    const imeBefore = readDoc(path).raw;
+    await cdp.send('Input.imeSetComposition', { text: '#### 组字中', selectionStart: 5, selectionEnd: 5 });
+    await sleep(1200);
+    const imeDuring = readDoc(path).raw;
+    const imeResponsePromise = page.waitForResponse((response) => response.url().endsWith('/api/block'), { timeout: 10000 }).catch(() => null);
+    await cdp.send('Input.insertText', { text: '#### 输入法标题' });
+    const imeResponse = await imeResponsePromise;
+    await sleep(500);
+    const imeReceipt = imeResponse ? await imeResponse.json().catch(() => null) : null;
+    const imeAfter = readDoc(path);
+    details.phases.prefix.prefix_ime = {
+      during_unchanged: imeDuring === imeBefore,
+      response_status: imeResponse?.status() ?? null,
+      receipt: imeReceipt,
+    };
+    cases.push({
+      id: 'typing/prefix-ime',
+      ok: imeDuring === imeBefore
+        && imeResponse?.status() === 200
+        && imeReceipt?.block?.type === 'heading'
+        && imeReceipt?.block?.raw === '#### 输入法标题'
+        && imeAfter.raw.includes('#### 输入法标题')
+        && !imeAfter.raw.includes('\\####'),
+      name: '输入法组字期间不转换；提交后才按 `#### ` 得到四级标题块',
+      evidence: {
+        during_composition_file_unchanged: imeDuring === imeBefore,
+        response_status: imeResponse?.status() ?? null,
+        block_raw: imeReceipt?.block?.raw ?? null,
+        file_has_heading: imeAfter.raw.includes('#### 输入法标题'),
+        escaped_prefix: imeAfter.raw.includes('\\####'),
+      },
+    });
+
+    // 工具栏只有四个行内格式，不做块按钮（块类型靠前缀，不靠菜单）。
+    const toolbarCommands = await page.locator('#inlineToolbar [data-inline]').evaluateAll((items) => items.map((item) => item.dataset.inline));
+    const blockButtons = await page.locator('#inlineToolbar [data-block]').count();
+    cases.push({
+      id: 'typing/toolbar-inline-only',
+      ok: JSON.stringify([...toolbarCommands].sort()) === JSON.stringify(['bold', 'code', 'italic', 'link']) && blockButtons === 0,
+      name: '工具栏只保留加粗、斜体、链接、行内代码四个行内格式，不做块按钮',
+      evidence: { commands: toolbarCommands, block_buttons: blockButtons },
+    });
   } catch (error) {
     cases.push({
       id: 'typing/error',

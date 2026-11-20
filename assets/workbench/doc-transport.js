@@ -8,6 +8,10 @@
  *
  * 两条通道回执同形（`{ok, ...}`），页面逻辑因此只有一份：它只认回执，不认宿主。
  * 写盘、解析、journal、锁判定都在服务端（本地会话 / 侧栏命令后端），这里绝不自己拼文档。
+ *
+ * 通道只有一套动作词汇：每次发 `{ route, body }`。`route` 是本地宿主那条路的动作名，
+ * `body` 是本地服务器本来就会收到的原始请求体。本地页按 `route` 直接路由；侧栏桥只把
+ * 这两个字段原样交给 `review.command(...)`，不翻译、也不另存一份动作名。
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -15,18 +19,27 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
+  // 本地宿主的路由表：route 名与 `scripts/doc-workbench.mjs` 的动作一一对应。
+  // 侧栏桥不复制这张表 —— 它只转发 route 与 body。
   const ROUTES = {
     open: '/api/doc',
     block: '/api/block',
     split: '/api/block/split',
     merge: '/api/block/merge',
     reorder: '/api/reorder',
+    structure: '/api/structure',
+    asset_replace: '/api/asset/replace',
     feedback: '/api/feedback',
     tasks: '/api/tasks',
     conflicts: '/api/conflicts',
     decide: '/api/conflict/decide',
     history: '/api/history',
     restore: '/api/history/restore',
+    notes: '/api/notes',
+    note_add: '/api/note',
+    note_delete: '/api/note/delete',
+    note_reopen: '/api/note/reopen',
+    note_submit: '/api/note/submit',
   };
 
   function bridgeUsable() {
@@ -56,19 +69,28 @@
   }
 
   function localTransport() {
+    const send = (route, body) => httpJson(ROUTES[route], body);
     return {
       mode: 'local',
-      open: () => httpJson(ROUTES.open),
-      saveBlock: (payload) => httpJson(ROUTES.block, payload),
-      splitBlock: (payload) => httpJson(ROUTES.split, payload),
-      mergeBlock: (payload) => httpJson(ROUTES.merge, payload),
-      reorder: (payload) => httpJson(ROUTES.reorder, payload),
-      feedback: (payload) => httpJson(ROUTES.feedback, payload),
-      tasks: () => httpJson(ROUTES.tasks),
-      conflicts: () => httpJson(ROUTES.conflicts),
-      decide: (payload) => httpJson(ROUTES.decide, payload),
-      history: () => httpJson(ROUTES.history),
-      restore: (payload) => httpJson(ROUTES.restore, payload),
+      send,
+      open: () => send('open'),
+      saveBlock: (body) => send('block', body),
+      splitBlock: (body) => send('split', body),
+      mergeBlock: (body) => send('merge', body),
+      reorder: (body) => send('reorder', body),
+      structure: (body) => send('structure', body),
+      replaceAsset: (body) => send('asset_replace', body),
+      feedback: (body) => send('feedback', body),
+      tasks: () => send('tasks'),
+      conflicts: () => send('conflicts'),
+      decide: (body) => send('decide', body),
+      history: () => send('history'),
+      restore: (body) => send('restore', body),
+      notes: () => send('notes'),
+      addNote: (body) => send('note_add', body),
+      deleteNote: (body) => send('note_delete', body),
+      reopenNote: (body) => send('note_reopen', body),
+      submitNotes: (body) => send('note_submit', body),
       // 同源，浏览器直接取；版本参数让换过文件的图不吃旧缓存。
       imageUrl: (path, version) => {
         const base = `/asset?path=${encodeURIComponent(path)}`;
@@ -85,25 +107,34 @@
     if (!Array.isArray(review.capabilities) || review.capabilities.indexOf('command') < 0) {
       throw Error('侧栏宿主没有声明 command：需要同步 planners-review-core，并让 Review Dock 允许 doc-workbench/1');
     }
-    const call = async (op, payload) => {
-      const receipt = await review.command({ op, ...(payload || {}) });
-      if (!receipt || typeof receipt !== 'object') throw Error(`侧栏命令 ${op} 没有回执`);
+    // 桥没有自己的动作词汇表：`{route, body}` 原样转发，白名单在传输层检查 route。
+    const send = async (route, body) => {
+      const receipt = await review.command({ route, body: body || {} });
+      if (!receipt || typeof receipt !== 'object') throw Error(`侧栏命令 ${route} 没有回执`);
       return receipt;
     };
     return {
       mode: 'sidebar',
-      open: () => call('open'),
-      saveBlock: (payload) => call('block', payload),
-      splitBlock: (payload) => call('split', payload),
-      mergeBlock: (payload) => call('merge', payload),
-      reorder: (payload) => call('reorder', payload),
-      tasks: () => call('tasks'),
-      conflicts: () => call('conflicts'),
-      decide: (payload) => call('decide', payload),
-      history: () => call('history'),
-      restore: (payload) => call('restore', payload),
+      send,
+      open: () => send('open'),
+      saveBlock: (body) => send('block', body),
+      splitBlock: (body) => send('split', body),
+      mergeBlock: (body) => send('merge', body),
+      reorder: (body) => send('reorder', body),
+      structure: (body) => send('structure', body),
+      replaceAsset: (body) => send('asset_replace', body),
+      tasks: () => send('tasks'),
+      conflicts: () => send('conflicts'),
+      decide: (body) => send('decide', body),
+      history: () => send('history'),
+      restore: (body) => send('restore', body),
+      notes: () => send('notes'),
+      addNote: (body) => send('note_add', body),
+      deleteNote: (body) => send('note_delete', body),
+      reopenNote: (body) => send('note_reopen', body),
+      submitNotes: (body) => send('note_submit', body),
       async feedback(payload) {
-        const receipt = await call('feedback', payload);
+        const receipt = await send('feedback', payload);
         const dispatch = receipt.dispatch || {};
         // 派发的出口由服务端按「有没有插件」分流：wake 由页面真正唤醒；inbox 已经落盘。
         if (receipt.ok && dispatch.channel === 'wake' && typeof review.wake === 'function') {

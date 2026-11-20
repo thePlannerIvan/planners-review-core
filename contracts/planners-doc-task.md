@@ -19,7 +19,7 @@
   "text": "把这两块写紧一点，只改这两块。",
   "doc": {
     "path": "/path/to/project/.planners/storyline.md",
-    "contract": "planners-doc/1",
+    "contract": "planners-doc/2",
     "doc": "storyline",
     "project": "朗标笔试案"
   },
@@ -27,6 +27,15 @@
     { "anchor": "b:7b057d", "sha256": "9f2c…" },
     { "anchor": "b:81c4d0", "sha256": "41aa…" }
   ],
+  "diff": {
+    "contract": "planners-doc-diff/1",
+    "batch": "b:9f21c4",
+    "baseline_sha256": "9f2c…",
+    "chapters": [],
+    "pages": [],
+    "blocks": [],
+    "orphan_notes": []
+  },
   "status": "pending",
   "created_at": "2026-11-19T12:00:00.000Z",
   "started_at": null,
@@ -39,13 +48,17 @@
 | `contract` | 固定 `planners-doc-task/1`。模型先认版本再消费 |
 | `id` | 任务身份，`t:` + 12 位小写十六进制；claim / complete 用它 |
 | `scope` | `blocks`（选区 / 块尾按钮）、`page`（整页）、`doc`（整份） |
-| `page` | 仅 `scope: "page"` 时有值：`{chapter, number, title}`，与 `planners-doc/1` 的页身份一致 |
+| `page` | 仅 `scope: "page"` 时有值：`{chapter, number, title}`，与 `planners-doc/2` 的页身份一致（章节 + 顺序 + 标题） |
 | `text` | 人的意见原文，非空；是「要模型改什么」，不是批准或保存 |
 | `doc` | 任务对应的文档：绝对路径 + 文档头三元组。模型据此读文件 |
 | `blocks` | 任务绑定的块，**只有锚点与 `sha256(block.raw)`**。顺序即提交顺序/文档顺序 |
+| `diff` | 批注批次附带的 `planners-doc-diff/1`：章节 / 页 / 块相对「模型上次取稿时看到的版本」的结构变化。块级反馈（`/api/feedback`）没有批次，为 `null` |
 | `status` | `pending` → `processing` → `review`（有待核对块）→ `done` |
 | `locked_blocks` | 这条任务此刻还占着哪些块。`processing` 时是 `task.blocks` 的全部；写回后只剩待核对的块；`done` 为空 |
 | `created_at` / `started_at` / `finished_at` | ISO 时间；后两个在 claim / complete 时写入 |
+
+`diff` 的形状、动作与基准见 `contracts/planners-doc-diff.md`：它只说结构哪里动了，不带正文；
+模型读 `tasks` 时一并读到，不必去猜人动过什么。目标块已被删的批注进 `diff.orphan_notes`，不静默消失。
 
 `sha256(block.raw)` 是**提交那一刻**的块内容指纹，不是当前磁盘指纹。模型写回时由服务端拿它和当前磁盘指纹逐块比对：一致才应用，不一致进待核对，不静默覆盖（第 4 节）。
 
@@ -58,8 +71,8 @@
 | `POST /api/task/claim` | 模型 | `{ok, task}` | `pending → processing`，锁定 `task.blocks`；同一任务重复 claim 幂等 |
 | `POST /api/task/complete` | 模型 | `{ok, task}` | `processing → done`，只解自己持有的锁；重复 complete 幂等 |
 | `POST /api/patch` | 模型 | `{ok, contract, task_id, applied, deferred_blocks, sha256, task}` | 按块比对任务基线，一次写回多块：一致的落盘并解锁，不一致的进待核对并保持锁定（第 4 节） |
-| `GET /api/conflicts` | 页面 / 模型 | `{ok, contract, conflicts}` | 只读待核对：每条带人的版本与模型的版本 |
-| `POST /api/conflict/decide` | 人 | `{ok, contract, anchor, decision, written, sha256, block, task, deferred_blocks}` | 裁决一块：`mine` / `model` / `discard`，三种都解锁并删除待核对记录 |
+| `GET /api/conflicts` | 页面 / 模型 | `{ok, contract, sha256, conflicts}` | 只读待核对：每条带两个版本与 `source`（`model` 模型撞人 / `human` 人撞人）；`sha256` 是当前文档指纹，页面据此知道别处已裁决 |
+| `POST /api/conflict/decide` | 人 | `{ok, contract, anchor, source, decision, written, sha256, block, task, deferred_blocks}` | 裁决一块：模型那条选 `mine` / `model` / `discard`，人撞人选 `mine` / `theirs`；都删除待核对记录 |
 
 请求体都带 `task_id`（也接受 `id`）。错误码：
 
@@ -71,7 +84,8 @@
 | `task_missing` / `task_state` | 任务不存在、或状态不允许这一步（409） |
 | `task_stale` | claim 时任务绑定的块已不在文档里（409，重新提交反馈） |
 | `patch_request` / `patch_blocks` / `patch_anchor` | 写回请求不是对象、patch 为空 / 不是文本 / 锚点重复、锚点不在这条任务里或文档里已不存在（400 / 409） |
-| `block_conflict` | 人保存时整份基线与这一块的基线都过期（409，这一块在别处被改过；请刷新后再核对） |
+| `block_conflict` | 人保存 / 分块 / 合并时**同一块**在别处也被改过（409，停下来让人核对；错误里点名锚点，`details` 带回 `disk_raw` 与 `your_content` 两版，磁盘不动）。人保存撞车时两版同时写进待核对队列（`source: "human"`），刷新 / 重开工作台后还在，后保存的那一方选一版落盘 |
+| `stale_document` | 整份基线过期且没带这一块的 `base_block_sha256`，无法判断是不是同一块（409，刷新后再保存） |
 | `conflict_request` / `conflict_anchor` / `conflict_decision` / `conflict_missing` / `conflict_stale` | 裁决请求形状不对、裁决值非法、没有这条待核对 / 块已不存在（400 / 409） |
 | `locked` | 拿不到写锁（另一个工作台正在写盘，409，稍后重试） |
 
@@ -80,11 +94,17 @@
 ## 3. 锁
 
 - **派发不锁块，模型开始处理才锁**（claim）。`pending` 只是「等人/模型来读」。
-- 锁的粒度为块：同一任务处理的块显示「模型正在改这一段」且不可编辑，其余块照常编辑、照常保存。
-- 保存路径在服务端再拦一次：锁定块返回 `block_locked`，磁盘一个字节都不动。
+- 锁的粒度为块：**只锁 `task.blocks` 里那几块**。它们显示「模型正在改这一段」且不可编辑，
+  其余块照常编辑、照常保存。
+- 保存路径在服务端再拦一次：锁定块返回 `block_locked`，**错误里点名是哪一块**，磁盘一个字节都不动。
+- 文件在别处变了不预先拒绝：保存 / 分块 / 合并 / 重排都自动重读当前全文，把这次改动重放到新版本上
+  （回执 `merged` / `replayed: true`）。只有重放到**同一块**（这一块的 `base_block_sha256` 也对不上）才返回
+  `block_conflict` 停下来让人核对；重排只挪位置、不覆盖块内容，所以块还在就重放，块没了才返回
+  `block_missing`。
 - 分块（`/api/block/split`）与删空合并（`/api/block/merge`）同样先拒锁定块：
   锚点随内容走，块被锁着时改它的身份会和模型手里的基线打架。
 - 模型写回后只解已应用的块；进待核对的块继续锁着（任务状态变 `review`），人裁决后才解锁。
+- 待核对的块也不能派给模型（`submitFeedback` / `claim` 都返回 `block_locked`）：模型写回会盖掉还没裁决的那一版。
 - complete 只解自己持有的块；别的任务占着的块不受影响。`review` 状态的任务不能直接 complete。
 
 ## 4. 模型写回与待核对
@@ -128,8 +148,8 @@ POST /api/patch
 `GET /api/conflicts` 才返回两个版本的全文，供人裁决：
 
 ```json
-{"ok": true, "contract": "planners-doc-conflict/1", "conflicts": [
-  { "contract": "planners-doc-conflict/1", "anchor": "b:7b057d", "task_id": "t:…",
+{"ok": true, "contract": "planners-doc-conflict/1", "sha256": "当前文档指纹", "conflicts": [
+  { "contract": "planners-doc-conflict/1", "anchor": "b:7b057d", "source": "model", "task_id": "t:…",
     "reason": "block_changed", "base_sha256": "9f2c…", "disk_sha256": "41aa…",
     "disk_raw": "人改过的块 raw。", "model_content": "模型版块 raw。",
     "created_at": "2026-11-19T12:00:00.000Z" }
@@ -145,11 +165,29 @@ POST /api/conflict/decide
 
 | decision | 磁盘 | 是否写盘 | 回执 `written` |
 |---|---|---|---|
-| `mine` 保留我的 | 保持人当前版本 | 否 | `false` |
+| `mine` 保留我的 / 保留磁盘版 | 保持当前磁盘上的版本 | 否 | `false` |
 | `model` 用模型版 | 写入 `model_content` | 是（journal） | `true` |
-| `discard` 放弃该块 | 保持人当前版本，放弃模型的这一块 | 否 | `false` |
+| `discard` 放弃该块 | 保持当前磁盘上的版本，放弃模型的这一块 | 否 | `false` |
+| `theirs` 用我这一版 | 写入 `your_content`（人撞人的记录） | 是（journal） | `true` |
 
-三种裁决都会解锁该块、删除待核对记录；任务手里没有别的块时转 `done`，否则仍是 `review`。
+裁决都会删除待核对记录。模型那条记录还会解锁该块、任务手里没有别的块时转 `done`，否则仍是 `review`；
+出口按记录的 `source` 收窄，模型那条没有 `theirs`，人撞人那条没有 `model` / `discard`。
+
+### 人与人撞同一块（`source: "human"`）
+
+两个标签页改同一块时，后保存的那一方拿到 `block_conflict`。这时没有模型的参与：磁盘上是先落盘的那一版，
+回执带着后保存那个标签页的版本，两版同时进待核对队列：
+
+```json
+{"contract": "planners-doc-conflict/1", "anchor": "b:7b057d", "source": "human", "task_id": null,
+ "reason": "block_changed", "base_block_sha256": "9f2c…", "disk_sha256": "41aa…",
+ "disk_raw": "先落盘的那一版。", "your_content": "后保存那一方的版本。",
+ "created_at": "2026-11-20T12:00:00.000Z"}
+```
+
+- 记录落在 `conflicts.json`：刷新页面、关掉重开、换一个进程，两版都还在（**未落盘的编辑不只在内存里**）。
+- 待核对期间这一块不可编辑，也不能派给模型；两边都能裁决，裁决后两个标签页读到同一份结果。
+- 同一块再来一次撞车（第三个标签页）以最新一次的磁盘版与后保存版为准：队列按锚点一条，不堆三条。
 
 任务、锁与待核对落在文档同目录的 `.doc-workbench/state/tasks.json` 与 `conflicts.json`（`planners-doc-board/1`）。所以本地页、DSH 侧栏的命令后端与模型侧的 `doc-command.mjs` CLI 即使不在同一个进程里，也看到同一组锁；每次写前在文档写锁里读回最新状态，避免两份旧板互相覆盖。
 
@@ -180,8 +218,8 @@ POST /api/conflict/decide
 ```
 
 - 由任务 id `t:<12 位十六进制>` 派生，文件名把 `:` 换成 `-` 以便跨平台。
-- 文件内容就是第 1 节的任务对象（含 `contract` / `id` / `blocks[].anchor` / `blocks[].sha256` / `text`），
-  不另包一层、不复制块 raw 或全文。
+- 文件内容就是第 1 节的任务对象（含 `contract` / `id` / `blocks[].anchor` / `blocks[].sha256` / `text`，
+  批注批次还含 `diff`），不另包一层、不复制块 raw 或全文。
 - **一条任务一个文件**：重复派发同一条任务只覆盖同一个文件，不产生第二个条目。
 - 收件箱是任务的落盘副本；任务板（含锁与待核对）落在 `.doc-workbench/state/`。模型在工作台运行时参与锁与写回：
   本地页走 `/api/task/claim`、`/api/patch`；侧栏或工作台不在时用 `scripts/doc-command.mjs <surface> claim|patch`，
@@ -214,13 +252,13 @@ node scripts/doc-inbox.mjs take <文档路径> [--id <任务 id>]  # pending →
 
 - 检测按扩展名 `.json`；打开时不补锚点、不恢复 journal、不写任何旁路文件。
 - `GET /api/doc` 返回 `readonly: {reason: "legacy-json", message}`，页与块只作预览（块没有锚点、`readonly: true`）。
-- 所有写入口（`/api/block`、`/api/reorder`、`/api/feedback`、`/api/task/*`、`/api/patch`、`/api/conflict/decide`、`/api/history/restore`）
+- 所有写入口（`/api/block`、`/api/reorder`、`/api/structure`、`/api/feedback`、`/api/task/*`、`/api/patch`、`/api/conflict/decide`、`/api/history/restore`）
   一律 `409 {code: "readonly", error: <可读原因>}`；磁盘一个字节都不动。
 - 页面顶部显示「旧项目 · 只读」，不显示反馈入口、拖柄与编辑面；保存失败直接显示服务端原因。
 
 ## 8. 历史与恢复（SPEC 第 4 节）
 
-- 每一次真正改变文档的写盘（人保存 / 分块 / 合并 / 重排 / 模型写回 / 裁决 / 补锚点 / 恢复）
+- 每一次真正改变文档的写盘（人保存 / 分块 / 合并 / 重排 / 改结构 / 模型写回 / 裁决 / 补锚点 / 恢复）
   在写前把**上一版整份**存进 `.doc-workbench/history/<文档文件名>/`，一版一个 JSON 文件，
   记录 `contract` / `doc` / `sha256` / `bytes` / `operation` / `archived_at` / `raw`。
 - 列表 `GET /api/history`（侧栏 `command({op:'history'})`）新的在前，每条带 id、时间、操作、

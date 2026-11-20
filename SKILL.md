@@ -156,20 +156,24 @@ Proposal 与 By-page 调用 `scripts/render-content-review.mjs` 的 `renderConte
 | 路径 | 用途 |
 |---|---|
 | `contracts/review-surface.schema.json` | `review-surface/2.0.0` 契约（**唯一真相源**；含可选的 `annotate` 开关） |
-| `contracts/planners-doc.md` | `planners-doc/1` 文档契约：文档头、层级、七种块、锚点、页为空、图片；样例在 `contracts/examples/` |
+| `contracts/planners-doc.md` | `planners-doc/2` 文档契约：文档头（文档名只从 `project` 出）、层级（`#` 章节 / `##` 页 / `###`–`######` 标题块）、七种块、锚点、页末引用即出处、页为空、图片、`/1`→`/2` 迁移；样例在 `contracts/examples/` |
 | `contracts/planners-doc-task.md` | `planners-doc-task/1` 块级反馈任务：只带块身份与内容指纹、任务状态机、锁、模型写回 / 待核对 / journal 判据；无插件派发的本地收件箱与旧 JSON 只读也在这里 |
+| `contracts/planners-doc-diff.md` | `planners-doc-diff/1` 结构 diff：章节 / 页 / 块相对「模型上次取稿时看到的版本」的新增、删除、改名、移动、合并、拆分，目标块被删的批注进 `orphan_notes`；基准 `planners-doc-baseline/1` 的刷新时机也在这里 |
 | `contracts/doc-assets.md` | `doc-assets/1` 图资产清单：正文派生、同名清单、换文件留上一版指纹；不碰 bypage 的素材取舍 |
 | `scripts/doc-inbox.mjs` | 模型侧收件箱命令：`list` 未处理任务（块身份 + 指纹 + 意见），`take` 把 pending 标成 processing |
-| `scripts/doc-surface.mjs` | 为一份 `planners-doc/1` 工作稿生成侧栏 `review-surface`（`doc-workbench/1`）与自包含入口；同 id 再开 = 刷新 |
-| `scripts/doc-command.mjs` | 侧栏命令后端（保存 / 派发 / 裁决 / 看锁）与模型侧 CLI（`tasks` / `claim` / `complete` / `patch` / `conflicts`），共用 `lib/doc-session.mjs` |
+| `scripts/doc-surface.mjs` | 为一份 `planners-doc/2` 工作稿生成侧栏 `review-surface`（`doc-workbench/1`）与自包含入口；同 id 再开 = 刷新 |
+| `scripts/doc-command.mjs` | 侧栏命令后端（保存 / 改结构 / 派发 / 裁决 / 看锁）与模型侧 CLI（`tasks` / `claim` / `complete` / `patch` / `conflicts`），共用 `lib/doc-session.mjs` |
 | `scripts/lib/doc-session.mjs` | 两个入口共用的块级内核：解析、块级写、journal、锁与待核对的唯一实现 |
+| `scripts/lib/doc-structure.mjs` | 结构编辑：改章节名 / 页名、页尾加页、章节尾加章；只换标题行或插入结构行，其余字节逐字不动 |
 | `scripts/lib/doc-boards.mjs` | 任务板与待核对的落盘（`.doc-workbench/state/`），让本地页 / 侧栏 / 模型 CLI 跨进程看到同一组锁 |
+| `scripts/lib/doc-diff.mjs` | 结构 diff 的唯一实现：基准落盘 / 读回，页匹配（标题 + 块锚点归属）与章节 / 页 / 块的变化判定，`orphan_notes` 原样带出 |
 | `scripts/lib/doc-history.mjs` | 历史版本：每次写盘前存上一版，按文档分桶；列出与按档恢复（恢复也是一次新编辑） |
 | `scripts/lib/doc-io.mjs` | 旁路目录与原子写（fsync + rename）的唯一实现；journal / 任务板 / 收件箱 / 资产清单 / 历史共用 |
 | `assets/workbench/doc-transport.js` | 页面到存储的唯一通道：侧栏走 `review.command` / `review.wake` / `review.asset`，无插件走 `/api/*` |
 | `scripts/validate-doc-assets.mjs` | `doc-assets/1` 唯一校验器：正文引用、清单、磁盘三边对得上（哈希 / 字节 / 类型 / 锚点 / 上一版） |
 | `scripts/lib/doc-assets.mjs` | 清单派生与同步、换文件字节守卫（扩展名 + 真签名、SVG 结构）——工作台与校验器共用 |
-| `scripts/validate-doc.mjs` | `planners-doc/1` 唯一校验器：结构 + 锚点唯一 + 块白名单 + 图片可解析，错误带行号与块身份 |
+| `scripts/validate-doc.mjs` | `planners-doc/2` 唯一校验器：结构 + 锚点唯一 + 块白名单 + 图片可解析 + 出处区认定，错误带行号与块身份 |
+| `scripts/migrate-doc.mjs` | `/1` → `/2` 迁移器：标题层级上移一位、文档标题退出正文，锚点与块 raw 不动；`--sources-to-quote` 可选把页末 Sources 小节转成引用 |
 | `scripts/open-artifact.mjs` | 给已有 HTML 产物一条命令做出 surface（`annotate: true` + feedback/draft + 校验），产物不用改 |
 | `scripts/validate-surface.mjs` | 唯一校验器：结构 + 路径包含性 + 注入点形态 |
 | `assets/review-bridge.js` | 桥。**由宿主注入**（页面只留 `{{REVIEW_BRIDGE}}` 注入点），所以不存在副本漂移 |
@@ -186,11 +190,17 @@ Proposal 与 By-page 调用 `scripts/render-content-review.mjs` 的 `renderConte
 | `evals/review-host-example.mjs` | 最小示例：**纯 Node、不碰 python** 走完 `write → validate → start → alive → stop`（bypage 那类调用方的用法） |
 | `references/architecture.md` | module 表、缝、DSH 侧的接入要求 |
 | `evals/run.mjs` | 回归（JS；条数以脚本实际输出为准，当前 75 条）：校验器 + 宿主 + 第二形状 + 线协议 + 轮询 + 桥 |
-| `evals/test_doc_contract.mjs` | `planners-doc/1` 文档契约回归（13 条）：两份样例通过 + 锚点重复 / 块类型越界 / 图片缺失 / 页为空四类拒绝 |
-| `evals/test_doc_workbench.mjs` | 文字工作台回归（27 条）：只改一块、未编辑块逐字不动、补锚点幂等、退化显示、行内序列化；页内 / 跨页移动块、整页重排、拒绝空页空章节、锁定 / 待核对块不可拖动、历史按次存档与恢复、落点算法与目录 / 句柄接线、一处事实一个来源 |
+| `evals/test_doc_contract.mjs` | `planners-doc/2` 文档契约回归（16 条）：两份样例通过 + 层级（`#` 章节 / `##` 页 / `###`–`######` 标题块）+ 出处区按位置认定 + 锚点重复 / 块类型越界 / 图片缺失 / 页为空 / `/1` 不降级读取 |
+| `evals/test_doc_migration.mjs` | 迁移回归（6 条）：真实 `/1` 样例迁到 `/2`（锚点与块 raw 不动、迁移后通过校验）、`--sources-to-quote`、非 `/1` 拒绝、报错不阻断、用法错误 |
+| `evals/test_doc_workbench.mjs` | 文字工作台回归（34 条）：只改一块、未编辑块逐字不动、补锚点幂等、退化显示、行内序列化；页内 / 跨页移动块、整页重排、坏落点拒绝、锁定 / 待核对块不可拖动、历史按次存档与恢复、落点算法与目录 / 句柄接线、结构可编辑（章节名 / 页名 / 加页 / 加章）、一处事实一个来源 |
+| `evals/test_doc_never_block.mjs` | 编辑器不拦人回归（10 条）：块拖到页外 / 页被清空 / 章节被清空照样落盘、结构问题只进快照与顶部黄条（可跳转）、校验器只留交付口、整份基线过期按块重放、同块冲突才停、锁只锁模型正在写的块且点名、页外拖动落点、加页后文件里没有占位正文 |
+| `evals/test_doc_structure.mjs` | 结构编辑回归（4 条）：改章节名 / 页名只换标题行、过期基线 / 空标题 / 找不到章节页都拒绝且不落盘、页尾加页与章节尾加章（新页是真正的空页，文件里没有占位正文）、目录视图立即跟着变 |
+| `evals/test_doc_notes.mjs` | 批注回归（13 条）：草稿落盘 / 跨页分组 / 计数气泡 / 一次提交整批 / 删除与重开 / 已处理归档进历史与 2MB 搬迁 |
+| `evals/test_channel_parity.mjs` | 通道同义回归（5 条）：本地宿主与侧栏桥拖块 / 整页拖动 / 改结构的字节与回执一致、拒绝同码同句、模型侧动作不能从浏览器口进来 |
 | `evals/test_doc_feedback.mjs` | 块级反馈与派发回归（6 条）：任务只带块身份与指纹、整页 / 整份范围、锁定期间改别的块、完成后解锁、任务状态机、半句吸成整块 |
+| `evals/test_doc_diff.mjs` | 结构 diff 回归（13 条）：模型取稿刷新基准、提交批次随附 `planners-doc-diff/1`、空 diff 照常提交、章节 / 页 / 块的新增删除改名移动合并拆分、孤儿批注、页面轮询不冲基准、模型 CLI 用 `tasks` 读得到 |
 | `evals/test_doc_assets.mjs` | 图块与资产回归（10 条）：位图 / SVG 加载与脚本隔离、未能加载文案、放大只读；清单派生 / 新增登记 / 换图留上一版；锁定图块拒绝替换；清单漂移四类；两份样例清单 |
-| `evals/test_doc_conflict.mjs` | 待核对与并发回归（5 条）：同块双改只锁该块其余落盘、裁决两个方向、跨块并发按块合并、journal 崩溃恢复、页面裁决入口 |
+| `evals/test_doc_conflict.mjs` | 待核对与并发回归（9 条）：同块双改只锁该块其余落盘、裁决两个方向、跨块并发按块合并、journal 崩溃恢复、人与人撞车两版并存（后保存方拿回两版、两边都看到待核对）、选一版落盘后两边同结果、刷新后未落盘版本还在、页面裁决入口与人 vs 人并排面板 |
 | `evals/test_doc_dispatch.mjs` | 无插件派发与旧项目只读回归（5 条）：收件箱落盘 / 读回 / 重复写不重复、pending→processing、有插件与无插件同形、旧 JSON 只读拒绝且磁盘不变、界面状态如实 |
 | `evals/test_sidebar_surface.mjs` | 侧栏接入回归（8 条）：侧栏通道只改被编辑块的字节、同 id 刷新、派发两通道同形、模型 CLI 跨进程 claim/patch 与侧栏裁决、侧栏历史列出与恢复、页面源码只有一条 transport、无插件宿主直接打开生成的 surface、transport 的 command/wake 映射 |
 | `evals/acceptance/run.mjs` | 验收（票 10）：十份真实语料往返零字节差异、块内中文输入 / 撤销 / 跨块选区、同块双改复跑两遍；生成 `REPORT.md` 与 `records/*.json`。需要本机 Playwright / Chromium，**不并进日常回归** |
