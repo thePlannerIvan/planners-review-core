@@ -1272,7 +1272,7 @@ test('通道只有一套动作名：路由表在 doc-command 定义一次，白�
 
   const expected = [
     'open', 'block', 'split', 'merge', 'reorder', 'asset_replace', 'feedback', 'tasks', 'conflicts', 'decide',
-    'history', 'restore', 'notes', 'note_add', 'note_delete', 'note_submit',
+    'history', 'restore', 'notes', 'note_add', 'note_delete', 'note_submit', 'note_reopen',
   ];
   for (const route of expected) {
     assert.equal(DOC_ROUTES.has(route), true, `${route} 必须在那唯一的路由表里`);

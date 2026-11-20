@@ -81,7 +81,12 @@ export function createTaskBoard({ now = () => new Date().toISOString(), nextId =
   const view = (task) => ({ ...clone(task), locked_blocks: lockedBlocks(task) });
 
   return {
-    submit({ scope, page = null, text, doc, blocks }) {
+    /**
+     * `batch` 是批注批次的编号（块级反馈没有批次，为 null）。它同时出现在任务文案里，
+     * 模型能把它与 notes.json 的 `batch` 对上；这里结构化存一份，是因为归档要按批次
+     * 认出「这批里哪几条被改到」，不能靠解析文案。
+     */
+    submit({ scope, page = null, text, doc, blocks, batch = null }) {
       if (!TASK_SCOPES.includes(scope)) fail('task_scope', `任务范围只能是 ${TASK_SCOPES.join(' / ')}`);
       if (!Array.isArray(blocks) || blocks.length === 0) fail('task_blocks', '任务至少要绑定一块');
       const task = {
@@ -90,6 +95,7 @@ export function createTaskBoard({ now = () => new Date().toISOString(), nextId =
         scope,
         page: scope === 'page' ? { ...page } : null,
         text,
+        batch: typeof batch === 'string' && batch ? batch : null,
         doc: { ...doc },
         blocks: blocks.map(({ anchor, sha256 }) => ({ anchor, sha256 })),
         status: 'pending',

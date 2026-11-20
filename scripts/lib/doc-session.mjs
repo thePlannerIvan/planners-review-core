@@ -27,7 +27,7 @@ import { createFileBoardStores } from './doc-boards.mjs';
 import { HISTORY_CONTRACT, listVersions, readVersion } from './doc-history.mjs';
 import {
   MAX_NOTE_TEXT, NOTES_CONTRACT, commitDrafts as markDraftsCommitted, createNoteStore, draftNote, draftsOf,
-  newBatchId, removeNote as dropNote,
+  newBatchId, removeNote as dropNote, reopenNote as reopenNoteEntry, settleModelChange,
 } from './doc-notes.mjs';
 import { atomicWrite } from './doc-io.mjs';
 import { LEGACY_READONLY_MESSAGE, legacySnapshot, readLegacyMaster } from './doc-legacy.mjs';
@@ -388,7 +388,10 @@ function completeTask(docPath, payload, board) {
   const id = payload.task_id ?? payload.id;
   return withWriteLock(docPath, () => {
     board.refresh();
-    return { ok: true, task: board.complete(id) };
+    const task = board.complete(id);
+    // 不写回就完成 = 这块一个字都没动：这批批注留在右侧并如实标注，不误归档。
+    const notes = settleBatchNotes(docPath, { batch: task.batch, markUntouched: true });
+    return { ok: true, task, ...(notes ? { notes } : {}) };
   });
 }
 
@@ -426,6 +429,8 @@ function patchTask(docPath, payload, board, conflicts, faults) {
     let raw = document.raw;
     const applied = [];
     const deferred = [];
+    // 归档要的块快照：改前是这一块在磁盘上的 raw，改后是这次写回后的 raw（ADR 0007）。
+    const snapshots = new Map();
     for (const patch of patches) {
       const block = blockAt(document, patch.anchor);
       if (!block) fail('patch_anchor', `找不到块 ${patch.anchor}；文档可能已被修改`);
@@ -447,6 +452,7 @@ function patchTask(docPath, payload, board, conflicts, faults) {
       const result = applyBlockContent(raw, patch.anchor, patch.content);
       raw = result.raw;
       applied.push(patch.anchor);
+      snapshots.set(patch.anchor, { before: block.raw, after: result.block.raw });
     }
 
     let sha = document.hash;
@@ -464,6 +470,8 @@ function patchTask(docPath, payload, board, conflicts, faults) {
 
     for (const item of deferred) conflicts.defer({ task_id: id, ...item });
     const updated = board.release(id, applied);
+    // 归档以回执的 applied 为准：改到的块上这批批注自动 resolved，没改到的标「模型没动这条」。
+    const notes = settleBatchNotes(docPath, { batch: updated.batch, snapshots, markUntouched: true });
     return {
       ok: true,
       contract: TASK_CONTRACT,
@@ -474,6 +482,7 @@ function patchTask(docPath, payload, board, conflicts, faults) {
       })),
       sha256: sha,
       task: updated,
+      ...(notes ? { notes } : {}),
     };
   });
 }
@@ -494,6 +503,8 @@ function decideConflict(docPath, payload, board, conflicts, faults) {
     const conflict = conflicts.get(anchor);
     if (!conflict) fail('conflict_missing', `${anchor} 没有待核对的版本；可能已经被裁决过了`);
     const document = readDocument(docPath);
+    // 模型版落地时同样要归档：改前是裁决时的磁盘 raw，改后是这次写进去的 raw。
+    const beforeRaw = blockAt(document, anchor)?.raw ?? conflict.disk_raw;
     let block;
     let sha = document.hash;
     let written = false;
@@ -517,6 +528,13 @@ function decideConflict(docPath, payload, board, conflicts, faults) {
     const taskId = conflict.task_id;
     conflicts.resolve(anchor);
     const task = board.release(taskId, [anchor]);
+    // 裁决成模型版：这一块确实改成了模型的内容，这条批注才归档；保留人的版本则仍是没动。
+    const notes = written
+      ? settleBatchNotes(docPath, {
+        batch: task.batch,
+        snapshots: new Map([[anchor, { before: beforeRaw, after: block.raw }]]),
+      })
+      : null;
     return {
       ok: true,
       contract: CONFLICT_CONTRACT,
@@ -526,6 +544,7 @@ function decideConflict(docPath, payload, board, conflicts, faults) {
       sha256: sha,
       block: viewBlock(block, (value) => board.lockOf(value), (value) => conflicts.get(value)),
       task,
+      ...(notes ? { notes } : {}),
       deferred_blocks: conflicts.list().map(({ anchor: value, task_id: owner, reason }) => ({
         anchor: value, task_id: owner, reason,
       })),
@@ -684,17 +703,41 @@ function restoreVersion(docPath, payload, board, conflicts, faults) {
 }
 
 
-/* ── 批注草稿：攒在抽屉里，一次提交整批 ────────────────────────────────────────
+/* ── 批注：攒在抽屉里、一次提交整批、模型改到的进历史 ──────────────────────────
  *
- * 只做两态：draft → committed。`resolved` 要等模型回执的 applied 才落，属于归档那条线。
+ * 三态：draft → committed（提交时）→ resolved（模型回执的 applied 落定时，ADR 0007）。
  * 批注写盘和正文写盘共用文档写锁：两个进程同时提交时，看到的草稿是同一条队列。
+ * 读的时候主文件与 `notes-archive.json` 合成一份 —— 超过 2 MB 搬走的是存放位置，
+ * 不是人的历史。
  */
+
+/** 主文件 + 档案：列表、历史与模型回查读的是同一份批注。 */
+function mergeArchived(store, notes) {
+  return [...notes, ...store.archived()];
+}
 
 /** 只读列出：读批注不需要写锁，坏文件由 store 报错，不静默清空。 */
 function listNotes(docPath) {
   const store = createNoteStore(docPath);
   const state = store.load();
-  return { ok: true, contract: NOTES_CONTRACT, notes: state.notes };
+  return { ok: true, contract: NOTES_CONTRACT, notes: mergeArchived(store, state.notes) };
+}
+
+/**
+ * 模型回执落定一批批注：`snapshots` 的锚点归档，其余按 `markUntouched` 标注。
+ * 返回回执里给人看的两个 id 列表；没有这批批注时返回 null，不改盘。
+ */
+function settleBatchNotes(docPath, { batch, snapshots = new Map(), markUntouched = false }) {
+  if (!batch) return null;
+  const store = createNoteStore(docPath);
+  const state = store.load();
+  const settled = settleModelChange(state.notes, { batch, snapshots, markUntouched });
+  if (!settled.resolved.length && !settled.untouched.length) return null;
+  store.save(state);
+  return {
+    resolved: settled.resolved.map((note) => note.id),
+    untouched: settled.untouched.map((note) => note.id),
+  };
 }
 
 /** 一次加一条或几条：同一段话落到多个块上时，每块各得一条，各自可删。 */
@@ -723,7 +766,7 @@ function addNotes(docPath, payload) {
     }));
     state.notes.push(...added);
     store.save(state);
-    return { ok: true, contract: NOTES_CONTRACT, note: added[0], added, notes: state.notes };
+    return { ok: true, contract: NOTES_CONTRACT, note: added[0], added, notes: mergeArchived(store, state.notes) };
   });
 }
 
@@ -736,7 +779,32 @@ function deleteNote(docPath, payload) {
     const state = store.load();
     const removed = dropNote(state.notes, payload.id);
     store.save(state);
-    return { ok: true, contract: NOTES_CONTRACT, removed, notes: state.notes };
+    return { ok: true, contract: NOTES_CONTRACT, removed, notes: mergeArchived(store, state.notes) };
+  });
+}
+
+/**
+ * 重新打开：已提交 / 已归档 → 草稿。归档错了或模型没动这条，人能退回去重新提。
+ * 档案里的那条先搬回主文件再退回草稿；先写主文件再删档案，宁可重复也不丢。
+ */
+function reopenNote(docPath, payload) {
+  if (!payload || typeof payload !== 'object') fail('note_request', '请求体必须是 JSON 对象');
+  if (typeof payload.id !== 'string' || !payload.id) fail('note_id', '需要批注 id');
+  return withWriteLock(docPath, () => {
+    const store = createNoteStore(docPath);
+    const state = store.load();
+    let note = state.notes.find((item) => item.id === payload.id) ?? null;
+    let archived = false;
+    if (!note) {
+      note = store.archived().find((item) => item.id === payload.id) ?? null;
+      archived = note !== null;
+    }
+    if (!note) fail('note_missing', `找不到批注 ${payload.id}；可能已被删除，刷新后再试`);
+    const reopened = reopenNoteEntry(archived ? [note] : state.notes, payload.id);
+    if (archived) state.notes.push(reopened);
+    store.save(state);
+    if (archived) store.dropArchived(payload.id);
+    return { ok: true, contract: NOTES_CONTRACT, note: reopened, notes: mergeArchived(store, state.notes) };
   });
 }
 
@@ -795,6 +863,8 @@ function submitNotes(docPath, payload, board) {
       // 同一块上的多条批注只绑一块：任务锁的是块，不是批注条数。
       blocks: [...new Map(entries.map(({ block }) => [block.anchor, block])).values()]
         .map((block) => ({ anchor: block.anchor, sha256: sha256(block.raw) })),
+      // 批次号也结构化存进任务：归档按它认出「这批里哪几条被改到」，不解析文案。
+      batch,
     });
     // 只提交有目标的那些；失去目标的留在草稿里，等它自己重新选块。
     const { notes: committed } = markDraftsCommitted(entries.map(({ note }) => note), { batch });
@@ -806,7 +876,7 @@ function submitNotes(docPath, payload, board) {
       task,
       committed: committed.map((note) => note.id),
       orphaned,
-      notes: state.notes,
+      notes: mergeArchived(store, state.notes),
     };
   });
 }
@@ -882,6 +952,7 @@ export async function createDocSession({ docPath, faults = null, persistent = tr
     addNote: (payload) => guarded(() => addNotes(file, payload)),
     deleteNote: (payload) => guarded(() => deleteNote(file, payload)),
     submitNotes: (payload) => guarded(() => submitNotes(file, payload, board)),
+    reopenNote: (payload) => guarded(() => reopenNote(file, payload)),
     // 侧栏每 3 秒轮询一次锁：读之前先读回磁盘，模型 CLI 在另一个进程里加的锁才看得见。
     tasks: () => { board.refresh(); return { ok: true, contract: TASK_CONTRACT, tasks: board.list() }; },
     claim: (payload) => guarded(() => claimTask(file, payload, board)),

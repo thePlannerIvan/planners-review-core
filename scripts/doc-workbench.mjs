@@ -24,6 +24,11 @@
  *   POST /api/conflict/decide    裁决一块：{anchor, decision: mine|model|discard}
  *   GET  /api/history            列出历史版本（每次写盘前存上一版，新的在前）
  *   POST /api/history/restore    恢复一版：{id, base_sha256}（恢复也是一次新编辑）
+ *   GET  /api/notes              列出批注（主文件 + 归档，含块快照）
+ *   POST /api/note               加一条草稿：{anchor|anchors, text}
+ *   POST /api/note/delete        删一条草稿：{id}
+ *   POST /api/note/reopen        重新打开：{id}（已提交 / 已归档 → 草稿）
+ *   POST /api/note/submit        整批提交：草稿 → 已提交，建一条任务
  *
  * 没有侧栏插件时，派发把同一条任务落进文档同目录的 `.doc-workbench/inbox/`，
  * 模型用 `scripts/doc-inbox.mjs list|take` 读；有插件（onTask）时同一条任务交给它唤醒。
@@ -243,6 +248,12 @@ export async function startDocWorkbench({
           console.error(`派发失败：${error?.message ?? error}`);
         }
         return json(response, 200, { ...receipt, dispatch: delivery });
+      }
+      if (url.pathname === '/api/note/reopen') {
+        if (request.method !== 'POST') return json(response, 405, { ok: false, code: 'method', error: '用 POST 重新打开批注' });
+        if (!allowWrite(request, response, server, host, 'note')) return;
+        const payload = JSON.parse((await readBody(request)) || '{}');
+        return json(response, 200, session.reopenNote(payload));
       }
       if (url.pathname === '/api/tasks') {
         if (request.method !== 'GET') return json(response, 405, { ok: false, code: 'method', error: '用 GET 读取任务' });
