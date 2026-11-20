@@ -4,12 +4,13 @@
  * 形状写在 `.doc-workbench/notes.json`，契约 `planners-doc-notes/1`：
  *
  *   { contract, notes: [{ id, scope: 'blocks' | 'doc', anchor,
- *                         page: {chapter, index} | null, text,
- *                         state: 'draft' | 'committed' | 'resolved',
+ *                         page: {chapter, index} | null, target: 'block' | 'page' | null,
+ *                         text, state: 'draft' | 'committed' | 'resolved',
  *                         batch, created_at, resolved_at, model_state, snapshot }] }
  *
  * `scope` 是这条意见针对的范围：
- *   · `blocks`（缺省）：落在一块上，`anchor` 是块身份，`page` 记它当初在第几章第几页；
+ *   · `blocks`（缺省）：落在一块上（票 38 起也可以是 `##` 页标题的页锚点），`anchor` 是目标
+ *     身份，`page` 记它当初在第几章第几页；
  *   · `doc`：针对整份文档（抽屉底部的「整篇反馈」）。它**没有锚点** —— `anchor` 与
  *     `page` 都是 `null`。硬给它挂一块就是在任务里撒谎，说这条意见只改那一处。
  * 老文件里的批注没有 `scope` 字段，一律按 `blocks` 读（契约没换版本：这是加字段，不是改形状）。
@@ -84,12 +85,13 @@ function normalizeNote(note, path) {
     if (note.anchor !== null && note.anchor !== undefined) {
       fail('notes_state', `整份批注（${id}）不该挂块锚点：${path}`);
     }
-    return { ...note, scope, anchor: null, page: null };
+    return { ...note, scope, anchor: null, page: null, target: null };
   }
   if (typeof note.anchor !== 'string' || !BLOCK_ANCHOR_RE.test(note.anchor)) {
-    fail('notes_state', `块级批注（${id}）要落在一块上：${path}`);
+    fail('notes_state', `块级批注（${id}）要落在一块或一页标题上：${path}`);
   }
-  return { ...note, scope };
+  // 老文件没有 target：按块读（页批注是票 38 才有的），形状仍归一成 block / page 两种。
+  return { ...note, scope, target: note.target === 'page' ? 'page' : 'block' };
 }
 
 /** 批注文件只认自己的契约；坏文件不静默清空，宁可报错让人看见。 */
@@ -184,20 +186,26 @@ export function createNoteStore(docPath) {
 /**
  * 一条草稿：人只看自己写的那句话，快照等模型改到才生成。
  * `scope: 'doc'` 是整份意见：没有锚点，也没有页 —— 它不属于任何一块。
+ *
+ * `target` 记 `scope: 'blocks'` 的批注挂在什么上：块（缺省，老文件没有这个字段也按块读）
+ * 或页（票 38，挂在 `##` 页标题的页锚点上）。它只用来在目标消失时说清「失去的是一块还是
+ * 一页」，不影响批注文本与状态流转；整份批注两者都不是，`target` 为 `null`。
  */
 export function draftNote({
-  scope = 'blocks', anchor = null, page = null, text, id = newNoteId(), now = new Date().toISOString(),
+  scope = 'blocks', anchor = null, page = null, target = 'block',
+  text, id = newNoteId(), now = new Date().toISOString(),
 }) {
   if (!NOTE_SCOPES.includes(scope)) fail('note_scope', `批注范围只能是 ${NOTE_SCOPES.join(' / ')}`);
   if (scope === 'doc' && anchor !== null) fail('note_scope', '整份批注不绑块，不要带锚点');
   if (scope === 'blocks' && (typeof anchor !== 'string' || !BLOCK_ANCHOR_RE.test(anchor))) {
-    fail('note_anchor', '批注要落在一块上，锚点形状不对');
+    fail('note_anchor', '批注要落在一块或一页标题的锚点上，锚点形状不对');
   }
   return {
     id,
     scope,
     anchor: scope === 'doc' ? null : anchor,
     page: scope === 'doc' ? null : { chapter: page.chapter, index: page.index },
+    target: scope === 'doc' ? null : (target === 'page' ? 'page' : 'block'),
     text,
     state: 'draft',
     batch: null,

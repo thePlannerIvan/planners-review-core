@@ -496,6 +496,27 @@ body[data-ds-dark-theme] .history-note-badge { color: #E5C26A; }
 .page-divider { position: relative; }
 .page-title { cursor: grab; }
 
+/* 页标题右侧的批注气泡（票 38）：与块尾那一枚同一套尺寸、笔画与显形时机。
+ * 页标题的行高比块大，气泡按标题首行中线对齐。 */
+.page-feedback {
+  position: absolute; z-index: 2; right: -24px; top: 7px;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; padding: 0;
+  appearance: none; border: 0; border-radius: 4px; background: transparent;
+  color: var(--muted); font-size: inherit; line-height: inherit;
+  opacity: 0; cursor: pointer;
+  transition: opacity .12s ease, color .12s ease;
+}
+.page-feedback svg {
+  width: 14px; height: 14px;
+  fill: none; stroke: currentColor; stroke-width: 1.7;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.page-divider:hover > .page-feedback, .page-feedback:focus-visible { opacity: 1; }
+.page-feedback:hover, .page-feedback:focus-visible { color: var(--accent); outline: none; }
+/* 跳转到一条页批注：页标题短暂亮一下，和块的高亮同一段动画。 */
+.page-divider.is-note-flash { animation: note-flash 1.2s ease-out both; border-radius: 6px; }
+
 /* 拖动：纸片浮起来，原位退后，其余块平移让位——过程里不铺灰底，不整行变色。 */
 .doc-block, .page-divider { transition: transform 180ms cubic-bezier(.2,.8,.2,1); }
 .doc-block.is-dragging, .page-divider.is-dragging { opacity: .28; }

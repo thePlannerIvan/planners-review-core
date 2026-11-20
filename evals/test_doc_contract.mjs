@@ -239,7 +239,7 @@ test('层级：## 是页、###–###### 都是合法标题块', () => {
   assert.equal(parsed.title, undefined, '# 不再是文档标题');
 });
 
-test('层级越界被拒：页写在章节外、块写在页外、章节 / 页带锚点', () => {
+test('层级越界被拒：页写在章节外、块写在页外、章节带锚点（页可以带，见票 38）', () => {
   const noChapter = docWith(['## 页一', '', '一段话。<!-- b:ad0001 -->'].join('\n'));
   const rNoChapter = validate(noChapter);
   const [chapterError] = errorsOf(rNoChapter, 'page_without_chapter');
@@ -264,11 +264,12 @@ test('层级越界被拒：页写在章节外、块写在页外、章节 / 页�
   assert.ok(chapterAnchor, JSON.stringify(codesOf(rAnchoredChapter)));
   assert.equal(chapterAnchor.line, 7);
 
+  // 页锚点是合法的页身份（票 38）：不再报 anchor_on_structure，标题里也读不到那段注释。
   const anchoredPage = docWith(['# 章节', '## 页一<!-- b:ad0006 -->', '', '一段话。<!-- b:ad0007 -->'].join('\n'));
   const rAnchoredPage = validate(anchoredPage);
-  const [structureError] = errorsOf(rAnchoredPage, 'anchor_on_structure');
-  assert.ok(structureError, JSON.stringify(codesOf(rAnchoredPage)));
-  assert.equal(structureError.line, 8);
+  assert.equal(rAnchoredPage.code, 0, rAnchoredPage.stdout);
+  assert.deepEqual(codesOf(rAnchoredPage), []);
+  assert.equal(rAnchoredPage.out.checked.anchors, 2);
 });
 
 test('锚点位置：行内锚点必须在块尾，独立锚点必须紧跟元素', () => {

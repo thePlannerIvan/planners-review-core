@@ -138,12 +138,12 @@ export function wakeTextOf(surface, task) {
   return [
     `文字工作台派发了一条块级反馈任务 ${task.id}。`,
     `工作稿：${task.doc.path}`,
-    `只改这些块：${anchors}（块外一个字都不要动）。`,
+    `只改这些目标：${anchors}（目标之外一个字都不要动；页锚点指的是一页的标题行）。`,
     ...(diffLine ? [diffLine] : []),
     '',
     `人的意见：${task.text}`,
     '',
-    `下一步：运行 \`${next}\` 读取任务，claim 后按块 patch 写回；不要直接重写整份文件。`,
+    `下一步：运行 \`${next}\` 读取任务，claim 后按块 patch 写回（页目标改标题行 / 内容后 complete）；不要直接重写整份文件。`,
   ].join('\n');
 }
 

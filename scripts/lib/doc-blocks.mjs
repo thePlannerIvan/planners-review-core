@@ -279,8 +279,21 @@ export function parseDocument(raw, options = {}) {
     const anchorAtEnd = ANCHOR_AT_END_RE.exec(probe);
 
     if (anchorMatches.length) {
-      if (level <= 2) {
-        pushError('anchor_on_structure', '章节 / 页的标题不是块，不能带锚点；锚点属于块', {
+      if (level === 1) {
+        // 章节不参与可批注这件事：`#` 永远不是块，也不带锚点（票 38）。页（`##`）可以带。
+        pushError('anchor_on_structure', '章节的标题不是块，不能带锚点；锚点属于块或页', {
+          line: lineNo,
+          page: pageLabel(),
+          block: anchorMatches[0][1],
+        });
+        title = title.replace(ANCHOR_RE, '').trim();
+      } else if (level === 2 && anchorMatches.length === 1 && anchorAtEnd) {
+        inlineAnchor = anchorMatches[0][1];
+        const leftTrim = match[2].length - match[2].trimStart().length;
+        anchorIndexInRaw = rawLine.length - match[2].length + leftTrim + anchorMatches[0].index;
+        title = title.slice(0, anchorMatches[0].index).trim();
+      } else if (level === 2) {
+        pushError('anchor_position', '页标题的锚点只能有一个，且必须写在标题末尾', {
           line: lineNo,
           page: pageLabel(),
           block: anchorMatches[0][1],
@@ -301,6 +314,22 @@ export function parseDocument(raw, options = {}) {
         title = title.replace(ANCHOR_RE, '').trim();
       }
     }
+    if (!anchorMatches.length && /<!--\s*b:/i.test(probe)) {
+      if (level === 1) {
+        pushError('anchor_on_structure', '章节的标题不是块，不能带锚点；锚点属于块或页', {
+          line: lineNo,
+          page: pageLabel(),
+          block: '锚点行',
+        });
+      } else if (level === 2) {
+        pushError('anchor_format', '锚点必须是 <!-- b:6–12 位小写十六进制 -->', {
+          line: lineNo,
+          page: pageLabel(),
+          block: `页「${title}」`,
+        });
+      }
+      title = title.replace(/<!--[\s\S]*?-->/g, '').trim();
+    }
     if (title === '') {
       pushError('heading_empty', `${'#'.repeat(level)} 标题不能为空`, { line: lineNo, page: pageLabel() });
     }
@@ -320,6 +349,11 @@ export function parseDocument(raw, options = {}) {
         line: lineNo,
         chapter: state.chapter,
         blocks: [],
+        // 页身份：可选的一个隐藏锚点（与块锚点同写法）。页因此可以被批注。
+        anchor: inlineAnchor,
+        anchorLine: inlineAnchor ? lineNo : null,
+        anchorStartColumn: inlineAnchor !== null ? anchorIndexInRaw : null,
+        anchorEndColumn: inlineAnchor !== null ? anchorIndexInRaw + `<!-- ${inlineAnchor} -->`.length : null,
       };
       if (state.chapter) state.chapter.pages.push(page);
       state.pages.push(page);
@@ -582,18 +616,31 @@ export function parseDocument(raw, options = {}) {
   }
 
   const seenAnchors = new Map();
-  for (const block of state.blocks) {
-    if (!block.anchor) continue;
-    const line = block.anchorLine ?? block.startLine;
-    if (seenAnchors.has(block.anchor)) {
-      const first = seenAnchors.get(block.anchor);
-      pushError('anchor_duplicate', `锚点 ${block.anchor} 与第 ${first.anchorLine ?? first.startLine} 行重复；锚点必须全局唯一`, {
-        line,
-        page: pageLabel(block.page),
-        block: block.anchor,
+  // 页锚点与块锚点共用同一个全局身份空间：重复照样报错，错误落在后出现的那一行。
+  const anchoredItems = [
+    ...state.pages.filter((page) => page.anchor).map((page) => ({
+      anchor: page.anchor,
+      line: page.anchorLine ?? page.line,
+      page,
+      label: `页「${page.title}」`,
+    })),
+    ...state.blocks.filter((block) => block.anchor).map((block) => ({
+      anchor: block.anchor,
+      line: block.anchorLine ?? block.startLine,
+      page: block.page,
+      label: blockLabel(block),
+    })),
+  ].sort((left, right) => left.line - right.line);
+  for (const item of anchoredItems) {
+    if (seenAnchors.has(item.anchor)) {
+      const first = seenAnchors.get(item.anchor);
+      pushError('anchor_duplicate', `锚点 ${item.anchor} 与第 ${first.line} 行重复；锚点必须全局唯一`, {
+        line: item.line,
+        page: pageLabel(item.page),
+        block: item.label,
       });
     } else {
-      seenAnchors.set(block.anchor, block);
+      seenAnchors.set(item.anchor, item);
     }
   }
 
@@ -645,6 +692,16 @@ export function parseDocument(raw, options = {}) {
     else if (text[cursor] === '\n') cursor += 1;
   }
   const lineEnds = lines.map((line, index) => lineStarts[index] + line.length);
+  // 页的标题行也是身份载体：记下标题行的正文末端与页锚点的字符区间（补 / 重建锚点要用）。
+  for (const page of state.pages) {
+    page.startOffset = lineStarts[page.line - 1] ?? 0;
+    page.contentEndColumn = trimmedLength(lines[page.line - 1] ?? '');
+    page.contentEndOffset = page.startOffset + page.contentEndColumn;
+    if (page.anchor) {
+      page.anchorStartOffset = page.startOffset + page.anchorStartColumn;
+      page.anchorEndOffset = page.startOffset + page.anchorEndColumn;
+    }
+  }
   for (const block of state.blocks) {
     block.startOffset = lineStarts[block.startLine - 1] ?? 0;
     const lastLine = block.endLine - 1;
@@ -696,6 +753,14 @@ export function outsidePageCount(parsed) {
   return (parsed.blocks ?? []).filter((block) => !block.page).length;
 }
 
+/** 文档里已经用掉的全部身份：块锚点与页锚点（同一个全局空间）。 */
+export function anchorSetOf(parsed) {
+  return new Set([
+    ...(parsed.blocks ?? []).map((block) => block.anchor),
+    ...(parsed.pages ?? []).map((page) => page.anchor),
+  ].filter(Boolean));
+}
+
 /** 生成一个 6 位小写十六进制锚点，避开 already 里已有的身份。 */
 export function generateAnchor(already = new Set()) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -717,39 +782,56 @@ export function repairAnchors(raw, options = {}) {
   const parsed = parseDocument(raw, { checkImages: false });
   const source = parsed.text;
   const bom = String(raw).startsWith('\uFEFF') ? '\uFEFF' : '';
-  const seen = new Set(parsed.blocks.filter((block) => block.anchor).map((block) => block.anchor));
+  // 页锚点与块锚点共用同一个身份空间：去重、补写、重建都不能只看见块。
+  const seen = anchorSetOf(parsed);
   const firstSeen = new Set();
   const repairs = [];
   const edits = [];
   const eol = source.includes('\r\n') ? '\r\n' : '\n';
 
-  for (const block of parsed.blocks) {
-    if (!BLOCK_TYPES.has(block.type)) continue; // 七种之外的块不伪造身份，原样显示
-    if (block.type === 'code' && block.closed === false) {
+  // 已有锚点按文档顺序过一遍：第一次出现的保留，后出现的换新身份（页与块一视同仁）。
+  const anchored = [
+    ...parsed.pages.filter((page) => page.anchor).map((page) => ({
+      kind: 'page', anchor: page.anchor, line: page.anchorLine ?? page.line, page,
+    })),
+    ...parsed.blocks.filter((block) => block.anchor).map((block) => ({
+      kind: 'block', anchor: block.anchor, line: block.anchorLine ?? block.startLine, block,
+    })),
+  ].sort((left, right) => left.line - right.line);
+  for (const item of anchored) {
+    if (item.kind === 'block' && item.block.type === 'code' && item.block.closed === false) {
       // 围栏没闭合，补在里面的锚点会被当成代码；它的身份也不能参与去重。
-      if (block.anchor) firstSeen.add(block.anchor);
+      firstSeen.add(item.anchor);
       continue;
     }
-    if (!block.anchor) {
-      const anchor = generate(seen);
-      seen.add(anchor);
-      if (STANDALONE.has(block.type)) {
-        edits.push({ start: block.contentEndOffset, end: block.contentEndOffset, text: `${eol}${anchorText(anchor)}` });
-      } else {
-        edits.push({ start: block.contentEndOffset, end: block.contentEndOffset, text: anchorText(anchor) });
-      }
-      repairs.push({ anchor, action: 'added', line: block.startLine });
-      continue;
-    }
-    if (!firstSeen.has(block.anchor)) {
-      firstSeen.add(block.anchor);
+    if (!firstSeen.has(item.anchor)) {
+      firstSeen.add(item.anchor);
       continue;
     }
     // 后出现的重复锚点重建；第一次出现的保留。
     const anchor = generate(seen);
     seen.add(anchor);
-    edits.push({ start: block.anchorStartOffset, end: block.anchorEndOffset, text: anchorText(anchor) });
-    repairs.push({ anchor, action: 'rebuilt', line: block.anchorLine ?? block.startLine });
+    if (item.kind === 'page') {
+      edits.push({ start: item.page.anchorStartOffset, end: item.page.anchorEndOffset, text: anchorText(anchor) });
+      repairs.push({ anchor, action: 'rebuilt', line: item.line });
+    } else {
+      edits.push({ start: item.block.anchorStartOffset, end: item.block.anchorEndOffset, text: anchorText(anchor) });
+      repairs.push({ anchor, action: 'rebuilt', line: item.line });
+    }
+  }
+
+  for (const block of parsed.blocks) {
+    if (!BLOCK_TYPES.has(block.type)) continue; // 七种之外的块不伪造身份，原样显示
+    if (block.type === 'code' && block.closed === false) continue;
+    if (block.anchor) continue;
+    const anchor = generate(seen);
+    seen.add(anchor);
+    if (STANDALONE.has(block.type)) {
+      edits.push({ start: block.contentEndOffset, end: block.contentEndOffset, text: `${eol}${anchorText(anchor)}` });
+    } else {
+      edits.push({ start: block.contentEndOffset, end: block.contentEndOffset, text: anchorText(anchor) });
+    }
+    repairs.push({ anchor, action: 'added', line: block.startLine });
   }
 
   if (!edits.length) return { raw: String(raw), changed: false, repairs: [] };
@@ -1274,7 +1356,7 @@ export function splitBlockContent(raw, { anchor, before, after, keep = 'before' 
   const firstPlan = withAutoPage(plannedFirst, firstFollowing);
   const secondPlan = withAutoPage(plannedSecond, blocksAfter);
 
-  const seen = new Set(parsed.blocks.map((item) => item.anchor).filter(Boolean));
+  const seen = anchorSetOf(parsed);
   const newAnchor = generate(seen);
   const firstAnchor = anchorSide === 'second' ? newAnchor : anchor;
   const secondAnchor = anchorSide === 'first' ? newAnchor : anchor;
@@ -1468,7 +1550,7 @@ export function createBlockInPage(raw, { chapter, index, content } = {}, options
   const overall = content.replace(/\r\n?/g, '\n').replace(/\s+$/, '');
   if (!overall.trim()) reorderFail('block_empty', '第一块不能为空');
   if (ANCHOR_ANY_RE.test(overall)) reorderFail('block_content_anchor', '块内容里不能写锚点');
-  const seen = new Set(parsed.blocks.map((item) => item.anchor).filter(Boolean));
+  const seen = anchorSetOf(parsed);
   const anchor = generate(seen);
   // 空页的第一块同样由行首前缀决定类型：`### ` 落成标题块而不是把锚点写进标题行。
   // 空页里没有别的块可收，所以造章只在前缀后面还带着正文时才补占位页（票 36）：
@@ -1589,8 +1671,9 @@ export function joinLinesBack(raw, lines, eol = String(raw).includes('\r\n') ? '
 /**
  * 造结构（`#` / `##`）之后源页一块都不剩：页标题跟着消失（票 39 的「删空即消失」）。
  *
- * 同一次写入里做掉，人看不到中间那个空页。页里没有块，所以块身份一个都不动 ——
- * 挂在这一页上的批注本来就跟块身份走，不再有第二处要挪的东西。
+ * 同一次写入里做掉，人看不到中间那个空页。页里没有块，所以块身份一个都不动；
+ * 页锚点（票 38）随标题行一起没了，挂在这一页上的批注提交时按 `target_page_removed`
+ * 进 `orphan_notes`，不静默消失。
  * 只删页标题：源章因此空了也照旧留着（造结构不是删章，章的去留另有 delete-chapter）。
  *
  * @returns {{raw:string, dropped:boolean, removedLines:number}}
@@ -1670,7 +1753,8 @@ function joinDocument(raw, lines) {
   return bom + lines.join(eol);
 }
 
-const pageSignature = (page) => page.blocks[0]?.anchor ?? `#${page.title}`;
+/** 页签名：页锚点就是页身份（票 38）；旧页没有页锚点时退回页内第一块 / 标题。 */
+const pageSignature = (page) => page.anchor ?? page.blocks[0]?.anchor ?? `#${page.title}`;
 
 /**
  * 重排之后必须仍然是一份「同样的文档，只是顺序变了」：块的身份与 raw 一个不少。

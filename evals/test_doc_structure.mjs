@@ -76,8 +76,9 @@ async function openWorkbench(t, docPath) {
   return server;
 }
 
-/** 找到某个标题行，用来断言插入位置在谁之前 / 谁之后。 */
-const headingLine = (text, heading) => linesOf(text).findIndex((line) => line === heading);
+/** 找到某个标题行，用来断言插入位置在谁之前 / 谁之后。页标题可能带一个隐藏页锚点（票 38）。 */
+const headingLine = (text, heading) => linesOf(text)
+  .findIndex((line) => line === heading || line.startsWith(`${heading}<!--`));
 
 // ── 改名：点进去能改，失焦写回；只有标题行变化 ──────────────────────────────
 test('改章节名与页名：只有标题行变化，块 raw 与锚点逐字不动，回执与磁盘一致', async (t) => {
@@ -275,7 +276,7 @@ test('页尾加页：新页插在这一页之后，仍在同一章；目录与�
   assert.equal(added.body.page.chapter, 1, '新页留在同一章');
   assert.equal(added.body.page.index, 2, '新页插在页一之后，成为这一章第 2 页');
   assert.equal(added.body.page.title, '新页');
-  assert.equal(added.body.page.anchor, undefined, '空页没有块身份');
+  assert.match(added.body.page.anchor, /^b:[0-9a-f]{6,12}$/, '空页没有块身份，但新页自带页锚点（票 38）');
 
   const saved = readFileSync(path, 'utf8');
   const lines = linesOf(saved);
@@ -341,7 +342,7 @@ test('章节尾加章：新章带第一页插在这一章之后，章末加章�
   );
   assert.equal(added.body.page.chapter, 2);
   assert.equal(added.body.page.index, 1);
-  assert.equal(added.body.page.anchor, undefined, '新章的第一页也是真正的空页');
+  assert.match(added.body.page.anchor, /^b:[0-9a-f]{6,12}$/, '新章的第一页也是真正的空页，但有页锚点（票 38）');
 
   const saved = readFileSync(path, 'utf8');
   const chapterLine = headingLine(saved, '# 新章节');
@@ -380,7 +381,7 @@ test('章节尾加章：新章带第一页插在这一章之后，章末加章�
   assert.equal(appended.status, 200, JSON.stringify(appended.body));
   assert.equal(appended.body.chapter.index, 4);
   const appendedText = readFileSync(path, 'utf8');
-  assert.ok(appendedText.trimEnd().endsWith('## 新页'), '新章落在文件末尾（最后一页是空页）');
+  assert.match(appendedText.trimEnd(), /## 新页(?:<!-- b:[0-9a-f]{6,12} -->)?$/, '新章落在文件末尾（最后一页是空页）');
   const last = await getDoc(server.url);
   assert.deepEqual(last.chapters.map((chapter) => chapter.title), ['第一章', '新章节', '第二章', '新章节']);
   assert.equal(validate(path).code, 1, '空页仍然由交付校验器报出来');

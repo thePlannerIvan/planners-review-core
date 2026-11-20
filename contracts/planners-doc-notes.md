@@ -21,6 +21,7 @@
       "scope": "blocks",
       "anchor": "b:7b057d",
       "page": { "chapter": 1, "index": 2 },
+      "target": "block",
       "text": "这句太虚，补一个数字。",
       "state": "draft",
       "batch": null,
@@ -37,9 +38,10 @@
 |---|---|
 | `contract` | 固定 `planners-doc-notes/1`；文件里只认这个版本 |
 | `id` | 批注身份，`n:` + 8 位小写十六进制 |
-| `scope` | `blocks`（落在一块上）或 `doc`（针对整份文档）。**老文件没有这个字段时按 `blocks` 读** |
-| `anchor` | `scope: "blocks"` 时是块锚点（`<!-- b:… -->`）；`scope: "doc"` 时**必须是 `null`** —— 整份意见没有锚点，硬挂一块就是伪造 |
-| `page` | `{chapter, index}`：块级批注当初在第几章第几页；`scope: "doc"` 时为 `null` |
+| `scope` | `blocks`（落在一块或一页标题上）或 `doc`（针对整份文档）。**老文件没有这个字段时按 `blocks` 读** |
+| `anchor` | `scope: "blocks"` 时是目标锚点：块锚点，或 `##` 页标题上的页锚点（票 38，与块锚点同写法）；`scope: "doc"` 时**必须是 `null`** —— 整份意见没有锚点，硬挂一块就是伪造 |
+| `page` | `{chapter, index}`：块级批注当初在第几章第几页（页批注就是这一页自己）；`scope: "doc"` 时为 `null` |
+| `target` | `scope: "blocks"` 时是 `block` 或 `page`（票 38）：只用来在目标消失时说清失去的是一块还是一页。老文件没有这个字段按 `block` 读；`scope: "doc"` 时为 `null` |
 | `text` | 人写的那句话，非空，≤ 2000 字 |
 | `state` | `draft` → `committed`（提交批次）→ `resolved`（模型改到，已归档） |
 | `batch` | 提交时的批次号 `b:` + 12 位小写十六进制；草稿为空 |
@@ -48,7 +50,7 @@
 | `snapshot` | 归档时存的改前 / 改后：块级是块 raw，`scope: "doc"` 是整份文档的 raw；草稿与未归档为空 |
 
 校验与归一化在 `readState`：坏 JSON、契约名不对、`scope` 非法、块级没有合法锚点、整份带了锚点
-都会报 `notes_state`，**不静默清空**。缺 `scope` 的旧条目补成 `blocks`。
+都会报 `notes_state`，**不静默清空**。缺 `scope` 的旧条目补成 `blocks`，缺 `target` 的补成 `block`。
 
 ## 2. 命令面
 
@@ -64,10 +66,13 @@
 
 - `scope: "doc"` 的 `note_add` **不接受** `anchor` / `anchors`（`note_scope`）：整份批注没有锚点，
   它随后进批次、进任务时目标写「整份」。
-- 一批 = 一条任务：同块的块级批注只绑一块；有整份批注时任务 `scope` 是 `"doc"`，
-  `blocks` 只装块级批注点名的块（可以为空），整份批注不伪造锚点。
-- 失去目标的**块级**草稿不静默消失：留在 `draft`，回执 `orphaned` 带 `{note, text, anchor, reason}`，
-  同一批的 `diff.orphan_notes` 也带一份。整份批注没有目标块，永远随批次走。
+- 页批注走同一条 `note_add`：`anchor` 换成页锚点即可（旧页没有页锚点时页面先 `add-page-anchor`
+  补一个，只改标题行、幂等）；落盘的 `target` 是 `"page"`，抽屉里引用的就是这一页的标题。
+- 一批 = 一条任务：同一目标上的块级 / 页级批注只绑一次；有整份批注时任务 `scope` 是 `"doc"`，
+  `blocks` 只装同批块级 / 页级批注点名的目标（块或页锚点，可以为空），整份批注不伪造锚点。
+- 失去目标的**块级**草稿不静默消失：留在 `draft`，回执 `orphaned` 带 `{note, text, anchor, reason}`
+  （块没了是 `target_block_removed`，页没了是 `target_page_removed`），同一批的 `diff.orphan_notes`
+  也带一份。整份批注没有目标块，永远随批次走。
 - 目标块正被模型处理（`block_locked`）时不提交这一批，草稿一条不动。
 - 提交不是保存、也不是批准：它只建任务与落盘批次，唤醒由入口决定。
 
@@ -87,8 +92,8 @@
 |---|---|
 | `note_request` / `note_text` / `note_id` | 请求体不是 JSON 对象、批注为空或超长、缺 id（400） |
 | `note_scope` | `scope` 不是 `blocks` / `doc`，或整份批注带了锚点（400） |
-| `note_anchor` | 块级批注的锚点形状不对、块已不存在、同一块出现两次（400 / 409） |
+| `note_anchor` | 块级批注的锚点形状不对、块 / 页已不存在、同一目标出现两次（400 / 409） |
 | `note_state` | 已提交的批注不让删、还是草稿不用重新打开（409）；批注文件形状不对也用它（409） |
 | `note_missing` | 找不到这条批注（400） |
-| `notes_empty` / `notes_orphaned` | 没有草稿可提交、这批草稿的块都没了（400） |
-| `block_locked` | 这批点名的块正由模型处理或待核对（409） |
+| `notes_empty` / `notes_orphaned` | 没有草稿可提交、这批草稿的目标都没了（400） |
+| `block_locked` | 这批点名的块或页锚点正由模型处理或待核对（409） |

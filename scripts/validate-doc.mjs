@@ -47,7 +47,7 @@ const checked = {
   chapters: chapters.length,
   pages: pages.length,
   blocks: blocks.length,
-  anchors: blocks.filter((block) => block.anchor).length,
+  anchors: blocks.filter((block) => block.anchor).length + pages.filter((page) => page.anchor).length,
   sources: pages.reduce((total, page) => total + page.sources.length, 0),
 };
 
