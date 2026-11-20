@@ -16,7 +16,23 @@ jobs:
     env:
       REVIEW_TEST_NO_OPEN: '1'
     steps:
+      # 回归里有几条用例要真的解析到 Bypage / Proposal 的适配器，所以按运行时的目录形状
+      # 把兄弟仓放到同一棵树下；缺了它们只会跑过一半还看不出缺的是什么。
       - uses: actions/checkout@v4
+        with:
+          path: 02-skills-library/00-system/planners-review-core
+      - uses: actions/checkout@v4
+        with:
+          repository: thePlannerIvan/planners-bypage
+          path: 02-skills-library/02-content-assembly/planners-bypage
+      - uses: actions/checkout@v4
+        with:
+          repository: thePlannerIvan/planners-proposal-system
+          path: 02-skills-library/02-content-assembly/planners-proposal-system
+      - uses: actions/checkout@v4
+        with:
+          repository: thePlannerIvan/planners-source-index
+          path: 02-skills-library/00-system/planners-source-index
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -24,4 +40,6 @@ jobs:
         with:
           python-version: '3.12'
       - run: npm test
+        working-directory: 02-skills-library/00-system/planners-review-core
       - run: npm run test:python
+        working-directory: 02-skills-library/00-system/planners-review-core
