@@ -33,6 +33,10 @@ jobs:
         with:
           repository: thePlannerIvan/planners-source-index
           path: 02-skills-library/00-system/planners-source-index
+      - uses: actions/checkout@v4
+        with:
+          repository: thePlannerIvan/planners-ppt-hell
+          path: 02-skills-library/03-design-delivery/planners-ppt-hell
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
