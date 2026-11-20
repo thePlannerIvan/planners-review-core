@@ -37,6 +37,18 @@
       <nav class="toc" id="toc"></nav>
     </aside>
     <main class="doc" id="blocks" aria-label="文档正文"></main>
+    <aside class="notes-panel" id="notesPanel" aria-label="批注">
+      <header class="notes-head">
+        <strong class="notes-title">批注</strong>
+        <span class="notes-summary" id="notesSummary" role="status">0 条草稿</span>
+        <button type="button" class="notes-collapse" id="notesCollapse" aria-expanded="true" aria-controls="notesList">收起</button>
+      </header>
+      <div class="notes-body" id="notesList"></div>
+      <footer class="notes-foot">
+        <p class="notes-hint" id="notesHint"></p>
+        <button type="button" class="notes-submit" id="notesSubmit" disabled>提交给模型修改</button>
+      </footer>
+    </aside>
   </div>
   <div class="inline-toolbar" id="inlineToolbar" role="toolbar" aria-label="行内格式" hidden></div>
   <button type="button" class="selection-feedback" id="selectionFeedback" data-feedback-selection hidden>反馈</button>
@@ -45,6 +57,7 @@
     <textarea id="feedbackText" rows="3" placeholder="要模型改什么？只改高亮的这几块。"></textarea>
     <p class="feedback-error" id="feedbackError" hidden></p>
     <div class="feedback-actions">
+      <button type="button" class="feedback-note" id="feedbackNote">加入批注</button>
       <button type="button" class="feedback-cancel" id="feedbackCancel">取消</button>
       <button type="button" class="feedback-submit" id="feedbackSubmit">提交反馈</button>
     </div>
@@ -55,6 +68,7 @@
   <script src="/doc-drag.js"></script>
   <script src="/doc-feedback.js"></script>
   <script src="/doc-images.js"></script>
+  <script src="/doc-notes.js"></script>
   <script src="/doc-workbench.js"></script>
 </body>
 </html>
