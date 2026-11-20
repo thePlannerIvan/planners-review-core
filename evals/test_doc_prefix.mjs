@@ -129,6 +129,75 @@ test('行首 `# ` 得到一章：文件里是真正的 `# 标题` 行，后面�
   assert.equal(after.pages.find((item) => item.title === '页一').chapter, '章一', '前面的页还在原章');
 });
 
+// ── 页中间敲 `# ` / `## `：结构落在边界上，页里的块不被推出去（票 34） ──────
+/** 一页四块（两块正文 + 一组出处）：在页中间造结构时，后面的块不能变成页外块。 */
+const MIDDLE_DOC = `# 章一
+
+## 页一
+
+第一块。<!-- b:aaaaaa -->
+
+第二块。<!-- b:bbbbbb -->
+
+第三块。<!-- b:cccccc -->
+
+> 出处。<!-- b:dddddd -->
+
+## 页二
+
+第四块。<!-- b:eeeeee -->
+`;
+
+test('页中间敲 `# ` 不造章：前缀退回字面段落，页里的块一个都不出页', async (t) => {
+  const { path } = scratchDoc(MIDDLE_DOC);
+  const server = await openWorkbench(t, path);
+  const opened = await getDoc(server.url);
+
+  const receipt = await save(server, opened, 'b:bbbbbb', '# 新章');
+  assert.equal(receipt.status, 200, JSON.stringify(receipt.body));
+  assert.equal(receipt.body.ok, true, '保存永远成功');
+  assert.notEqual(receipt.body.retype?.to, 'chapter', '页中间不造出页外块：这一块退回字面段落');
+
+  const saved = readFileSync(path, 'utf8');
+  assert.ok(!/^# 新章$/m.test(saved), '文件里不能出现落在页中间的 `# 新章` 行');
+  assert.ok(saved.includes('新章'), '用户敲的字不丢');
+
+  const after = await getDoc(server.url);
+  assert.equal(after.chapters.length, 1, '没有凭空多出一章');
+  for (const anchor of ['b:aaaaaa', 'b:bbbbbb', 'b:cccccc', 'b:dddddd']) {
+    assert.ok(blockOf(after, anchor), `块 ${anchor} 不应消失`);
+    assert.equal(blockOf(after, anchor).page.title, '页一', `块 ${anchor} 仍在这一页里`);
+  }
+  assert.equal(blockOf(after, 'b:bbbbbb').type, 'paragraph');
+  assert.ok(blockOf(after, 'b:bbbbbb').raw.includes('新章'), '前缀退回字面段落，文字还在');
+
+  const verdict = validate(path);
+  assert.equal(verdict.code, 0, `不该有校验错误：${verdict.stdout}`);
+  assert.deepEqual(verdict.out.errors.map((error) => error.code), [], '不出现 block_outside_page');
+});
+
+test('页中间敲 `## ` 得到一页：页边界就在这一行，后面的块归新页而不是变成页外块', async (t) => {
+  const { path } = scratchDoc(MIDDLE_DOC);
+  const server = await openWorkbench(t, path);
+  const opened = await getDoc(server.url);
+
+  const receipt = await save(server, opened, 'b:bbbbbb', '## 新半页');
+  assert.equal(receipt.status, 200, JSON.stringify(receipt.body));
+  assert.equal(receipt.body.retype?.to, 'page');
+
+  const saved = readFileSync(path, 'utf8');
+  assert.ok(saved.includes('## 新半页'), '文件里要是真正的 `## 标题` 行');
+
+  const after = await getDoc(server.url);
+  assert.equal(blockOf(after, 'b:aaaaaa').page.title, '页一', '前面的块还在原页');
+  assert.equal(blockOf(after, 'b:cccccc').page.title, '新半页', '后面的块归新页');
+  assert.equal(blockOf(after, 'b:dddddd').page.title, '新半页', '出处跟着后面的块走，仍在页里');
+  assert.equal(blockOf(after, 'b:bbbbbb'), null, '页标题不是块');
+
+  const verdict = validate(path);
+  assert.equal(verdict.code, 0, `不该有校验错误：${verdict.stdout}`);
+});
+
 // ── `### `–`###### `：对应层级的标题块，任意层级都合法 ─────────────────────
 test('`### `–`###### ` 得到对应层级的标题块：前缀隐去、锚点还在、任意层级合法', async (t) => {
   const { path } = scratchDoc();
