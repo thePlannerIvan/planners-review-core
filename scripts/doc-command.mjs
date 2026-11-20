@@ -203,7 +203,12 @@ export async function runDocCommand(surface, payload, { browser = true } = {}) {
     // 模型取稿才刷新结构 diff 的基准，页面每 3 秒轮询 tasks 不会把基准冲掉。
     return await handler({ surface, session, body, model: !browser });
   } catch (error) {
-    return { ok: false, code: error?.code ?? 'doc_command', error: error?.message ?? String(error) };
+    return {
+      ok: false,
+      code: error?.code ?? 'doc_command',
+      error: error?.message ?? String(error),
+      ...(error?.details ? { details: error.details } : {}),
+    };
   }
 }
 

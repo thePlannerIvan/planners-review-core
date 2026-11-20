@@ -29,9 +29,20 @@ body { min-height: 100vh; }
 .save-state.failed { color: var(--danger); }
 
 .structure-notice {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px;
   margin: 0; padding: 8px clamp(20px, 6vw, 96px);
-  font-size: 12px; color: var(--danger); background: #fff6f5; border-bottom: 1px solid var(--line);
+  font-size: 12px; line-height: 1.7; color: #6b4e00;
+  background: #fff8e1; border-bottom: 1px solid #ecd9a0;
 }
+.structure-title { font-weight: 600; }
+.structure-group { color: #8a6a12; }
+.structure-jump {
+  padding: 1px 7px; border: 1px solid #ecd9a0; border-radius: 999px;
+  background: #fffdf5; color: #6b4e00; font: inherit; cursor: pointer;
+  max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.structure-jump:hover, .structure-jump:focus-visible { background: #fff3cf; outline: none; }
+.structure-extra { color: #8a6a12; }
 
 /* 旧 JSON 主稿：顶部说清楚为什么只读，正文没有编辑面、没有反馈与拖柄。 */
 .readonly-notice {
@@ -90,6 +101,18 @@ body.is-readonly .page-handle { display: none; }
 .page-divider:first-child { margin-top: 0; }
 .page-chapter { display: block; font-size: 12px; letter-spacing: .08em; color: var(--muted); }
 .page-title { margin: 2px 0 0; font-size: 26px; line-height: 1.25; font-weight: 650; letter-spacing: -.01em; }
+/* 空页：页还在（身份是章节 + 顺序 + 标题），只是暂时没有块；保存不受影响。 */
+.page-divider.is-empty { margin-bottom: 18px; }
+.page-divider.is-empty .page-title { color: var(--muted); }
+.page-empty-note {
+  margin: 6px 0 0; padding: 10px 12px;
+  border: 1px dashed var(--line); border-radius: 8px;
+  color: var(--muted); font-size: 12px;
+}
+/* 页外块：不属于任何页的中间态；给一段自己的位置，才能被黄条跳到。 */
+.page-divider.is-orphan { margin-top: 32px; }
+.page-divider.is-orphan .page-chapter { color: #8a6a12; }
+.page-divider.is-orphan .page-title { font-size: 20px; color: #6b4e00; }
 
 .doc-block {
   position: relative;

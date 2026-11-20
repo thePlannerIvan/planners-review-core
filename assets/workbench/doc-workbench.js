@@ -46,21 +46,39 @@ const renderInline = (markdown) => {
   return escapeHtml(markdown);
 };
 
-function pageHeading(page, { editable = false } = {}) {
+/**
+ * 页的分隔头。页的身份是章节 + 顺序 + 标题；空页也画出来（否则黄条「跳到那一页」无处可去），
+ * 页外块单独一段（它们不属于任何页，但仍然能编辑、能拖回页里）。
+ * `editable` 是结构稿：页名点进去改；页外段与只读主稿不给改名入口。
+ */
+function pageHeading(page, { editable = false, orphan = false } = {}) {
   const node = document.createElement('div');
   node.className = 'page-divider';
-  node.dataset.pageKey = page.key ?? '';
+  if (orphan) node.classList.add('is-orphan');
+  if (page.empty) node.classList.add('is-empty');
+  if (page.key) node.dataset.pageKey = page.key;
   const chapter = document.createElement('span');
   chapter.className = 'page-chapter';
   // 页号由顺序决定、不写进正文，所以这里按当前位置算出「第 N 页」。
-  chapter.textContent = editable
-    ? `第 ${page.index ?? 1} 页`
-    : [page.chapter, `第 ${page.number ?? page.index ?? 1} 页`].filter(Boolean).join(' · ');
+  chapter.textContent = orphan
+    ? '结构提醒 · 不在任何页里'
+    : editable
+      ? `第 ${page.index ?? 1} 页`
+      : [page.chapter, `第 ${page.number ?? page.index ?? 1} 页`].filter(Boolean).join(' · ');
   const title = document.createElement('h2');
   title.className = 'page-title';
-  title.textContent = page.title ?? '';
-  if (editable) wireStructureTitle(title, { op: 'rename-page', chapter: page.chapterIndex, index: page.index });
+  title.textContent = orphan ? '页外块' : (page.title ?? '');
+  if (editable && !orphan) {
+    wireStructureTitle(title, { op: 'rename-page', chapter: page.chapterIndex, index: page.index });
+  }
   node.append(chapter, title);
+  if (page.empty && !orphan) {
+    // 提示只在渲染层：真正的空页在文件里没有正文（加页不再塞占位文字）。
+    const note = document.createElement('p');
+    note.className = 'page-empty-note';
+    note.textContent = '这一页还是空的；从上面写第一块，或把别处的块拖进来。';
+    node.append(note);
+  }
   return node;
 }
 
@@ -482,24 +500,48 @@ function renderFlatBlocks(root) {
   }
 }
 
+/** 页外块的一段：它们不属于任何页，但仍在文档里，单独给一段位置（黄条要能跳到）。 */
+function renderOrphanRun(root, blocks, cursor, chapterIndex) {
+  if (cursor >= blocks.length) return cursor;
+  const at = blocks[cursor];
+  if (at.page?.key || (at.page?.chapterIndex ?? null) !== chapterIndex) return cursor;
+  root.append(pageHeading({ orphan: true }, { orphan: true }));
+  while (cursor < blocks.length && !blocks[cursor].page?.key
+    && (blocks[cursor].page?.chapterIndex ?? null) === chapterIndex) {
+    root.append(renderBlock(blocks[cursor]));
+    cursor += 1;
+  }
+  return cursor;
+}
+
 /** 结构稿：章节 → 页 → 块；页尾「＋ 新页」、章节尾「＋ 新章节」。 */
 function renderStructuredBlocks(root) {
   const blocks = snapshot.blocks ?? [];
   const pages = snapshot.pages ?? [];
   let cursor = 0;
+  // 第一个 # 之前的页外块（文档头之后）：它们不属于任何章。
+  cursor = renderOrphanRun(root, blocks, cursor, null);
   for (const chapter of chaptersOf(snapshot)) {
     root.append(chapterHeading(chapter));
+    // 章节标题下的页外块：先于本章的页出现。
+    cursor = renderOrphanRun(root, blocks, cursor, chapter.index);
     for (const page of pages.filter((item) => item.chapterIndex === chapter.index)) {
-      root.append(pageHeading(page, { editable: true }));
+      const empty = page.blocks === 0;
+      root.append(pageHeading({ ...page, empty }, { editable: true }));
       while (cursor < blocks.length && blocks[cursor].page?.key === page.key) {
         root.append(renderBlock(blocks[cursor]));
         cursor += 1;
       }
+      // 空页：第一块是渲染层的待定块，输入后才落盘（文件里没有占位正文）。
+      if (empty) root.append(pendingFirstBlock(page));
       root.append(pageAddButton(page));
     }
     root.append(chapterAddButton(chapter));
   }
-  // 结构坏了也不能吞块：没落到页里的块按原文显示在末尾。
+  // 兜底：不吞块（章节结构坏了 / 页没有章节时，页外块仍然按原文显示）。
+  if (cursor < blocks.length) {
+    cursor = renderOrphanRun(root, blocks, cursor, blocks[cursor].page?.chapterIndex ?? null);
+  }
   while (cursor < blocks.length) {
     root.append(renderBlock(blocks[cursor]));
     cursor += 1;
@@ -524,12 +566,92 @@ function renderDocument() {
   $('#docKind').textContent = snapshot.doc === 'by-page' ? '逐页文案' : '主线';
   document.title = `${snapshot.project ?? '文字工作台'} · ${snapshot.doc === 'by-page' ? '逐页文案' : '主线'}`;
   renderReadonlyState();
+  renderStructureNotice();
+}
+
+const excerptOf = (value, size = 18) => {
+  const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+  return text.length > size ? `${text.slice(0, size)}…` : text;
+};
+
+/** 同一块两边都改过时，把磁盘上那一版也说出来：停下来问人，但人要看得见两版。 */
+const conflictHint = (receipt) => {
+  const disk = receipt?.details?.disk_raw;
+  return typeof disk === 'string' && disk ? ` · 磁盘上这一块是「${excerptOf(disk, 24)}」` : '';
+};
+
+/**
+ * 顶部黄条：结构问题只提示、不拦人（ADR 0006）。
+ *
+ * 分两组，每条都点得动：页外块跳到那一块，空页跳到那一页。
+ * 其余结构问题（锚点、图片、文档头……）压成一句人话，不抢走跳转入口。
+ */
+function renderStructureNotice() {
+  const notice = $('#structureNotice');
+  if (!notice) return;
+  const readonly = Boolean(snapshot?.readonly);
   const broken = snapshot.errors ?? [];
-  if (broken.length) {
-    const note = $('#structureNotice');
-    note.hidden = false;
-    note.textContent = broken.slice(0, 3).map((error) => `行 ${error.line ?? '?'}：${error.message}`).join(' · ');
+  const orphans = readonly ? [] : (snapshot.blocks ?? []).filter((block) => !block.page?.key);
+  const emptyPages = readonly ? [] : (snapshot.pages ?? []).filter((page) => page.blocks === 0);
+  if (readonly || (!orphans.length && !emptyPages.length && !broken.length)) {
+    notice.hidden = true;
+    notice.replaceChildren();
+    return;
   }
+  notice.hidden = false;
+  notice.replaceChildren();
+  const heading = document.createElement('strong');
+  heading.className = 'structure-title';
+  heading.textContent = '结构提醒 · 保存不受影响';
+  notice.append(heading);
+
+  const group = (label, entries) => {
+    if (!entries.length) return;
+    const name = document.createElement('span');
+    name.className = 'structure-group';
+    name.textContent = label;
+    notice.append(name, ...entries);
+  };
+  group('不在任何页里的块：', orphans.map((block) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'structure-jump';
+    button.dataset.jumpAnchor = block.anchor;
+    button.title = '跳到这一块';
+    button.textContent = excerptOf(block.inline) || `第 ${block.index} 块`;
+    return button;
+  }));
+  group('空页：', emptyPages.map((page) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'structure-jump';
+    button.dataset.jumpPage = page.key;
+    button.title = '跳到这一页';
+    button.textContent = `${page.chapter ? `${page.chapter} · ` : ''}第 ${page.index} 页「${page.title ?? ''}」`;
+    return button;
+  }));
+
+  const others = broken.filter((error) => error.code !== 'block_outside_page' && error.code !== 'page_empty');
+  if (others.length) {
+    const extra = document.createElement('span');
+    extra.className = 'structure-extra';
+    extra.textContent = `另有 ${others.length} 处：${others.slice(0, 3).map((error) => error.message).join(' · ')}`;
+    notice.append(extra);
+  }
+}
+
+/** 黄条上的跳转走拖拽模块的同一套滚动定位：正文里怎么跳，这里就怎么跳。 */
+function wireStructureNotice() {
+  const notice = $('#structureNotice');
+  notice?.addEventListener('click', (event) => {
+    const block = event.target.closest?.('[data-jump-anchor]');
+    if (block) {
+      DocDrag.focusAnchor(block.dataset.jumpAnchor);
+      return;
+    }
+    const page = event.target.closest?.('[data-jump-page]');
+    if (page) DocDrag.scrollToPage(page.dataset.jumpPage);
+  });
 }
 
 /**
@@ -551,6 +673,9 @@ function renderReadonlyState() {
   notice.textContent = `${readonly.message}${contract}`;
   $('#docKind').textContent = '旧项目 · 只读';
   document.title = `${snapshot.project ?? '旧 JSON 主稿'} · 只读`;
+  // 只读主稿没有编辑面：结构提醒（页外块 / 空页）对它没有意义。
+  const structure = $('#structureNotice');
+  if (structure) { structure.hidden = true; structure.replaceChildren(); }
   const feedback = $('#overallFeedback');
   feedback.disabled = true;
   feedback.hidden = true;
@@ -1526,7 +1651,7 @@ async function persist(node) {
     return;
   }
   if (!receipt.ok) {
-    status(`保存失败 · ${receipt.error ?? receipt.status ?? '未知错误'}`, true);
+    status(`保存失败 · ${receipt.error ?? receipt.status ?? '未知错误'}${conflictHint(receipt)}`, true);
     return;
   }
   snapshot.sha256 = receipt.sha256;
@@ -1707,6 +1832,80 @@ function wirePendingBlock(node, editable) {
 }
 
 /** 待定块有内容了：连同原块的内容一次性 split，锚点由服务端分配。 */
+/**
+ * 空页的第一块：文件里没有正文，页面上先放一个「待定块」。
+ * 输入前它只是渲染层的一段提示（`.is-pending .block-text:empty::before`），
+ * 第一次输入 / 回车 / 失焦才按页身份落成真正的第一块（`POST /api/block {new:true, page}`）。
+ */
+function pendingFirstBlock(page) {
+  const node = document.createElement('div');
+  node.className = 'doc-block is-pending';
+  node.dataset.type = 'paragraph';
+  node.dataset.newPage = page.key;
+  const editable = document.createElement('div');
+  editable.className = 'block-text';
+  editable.contentEditable = 'true';
+  editable.spellcheck = false;
+  editable.dataset.inline = '1';
+  editable.dataset.placeholder = '在这里写这一页。';
+  node.append(editable);
+  wireFirstBlock(node, editable, page);
+  return node;
+}
+
+function wireFirstBlock(node, editable, page) {
+  let committing = false;
+  let timer = null;
+  const clearTimer = () => { clearTimeout(timer); timer = null; };
+  const commit = async () => {
+    clearTimer();
+    if (committing || snapshot?.readonly) return;
+    const content = inlineOf(editable);
+    if (isEmptyInline(content)) return; // 空页保持空页：不往文件里写占位正文
+    committing = true;
+    // 落盘前冻结这一块：回执回来会重画，这期间敲的字不能静默丢掉。
+    editable.contentEditable = 'false';
+    await enqueueOperation(async () => {
+      let receipt;
+      try {
+        receipt = await transport.saveBlock({
+          new: true,
+          page: { chapter: page.chapterIndex, index: page.index },
+          content,
+          base_sha256: snapshot.sha256,
+        });
+      } catch (error) {
+        if (editable.isConnected) editable.contentEditable = 'true';
+        committing = false;
+        status(`写第一块失败 · ${error.message}`, true);
+        return;
+      }
+      if (!receipt.ok) {
+        if (editable.isConnected) editable.contentEditable = 'true';
+        committing = false;
+        status(`写第一块失败 · ${receipt.error ?? receipt.status ?? '未知错误'}${conflictHint(receipt)}`, true);
+        return;
+      }
+      applySnapshot(receipt);
+      status('已自动保存');
+      focusBlock(receipt.block?.anchor, 'end');
+    });
+  };
+  editable.addEventListener('input', (event) => {
+    if (committing || event.isComposing) return;
+    clearTimer();
+    if (isEmptyInline(inlineOf(editable))) return;
+    timer = setTimeout(commit, 400);
+  });
+  editable.addEventListener('blur', () => { if (!committing) void commit(); });
+  editable.addEventListener('keydown', (event) => {
+    if (event.isComposing || event.keyCode === 229) return;
+    if (event.key !== 'Enter' || event.shiftKey) return;
+    event.preventDefault();
+    void commit();
+  });
+}
+
 async function commitPendingBlock(pending, editable) {
   const anchor = pending.dataset.pendingAnchor;
   const side = pending.dataset.pendingSide;
@@ -1727,13 +1926,15 @@ async function commitPendingBlock(pending, editable) {
         after: side === 'after' ? content : sourceInline,
         keep: side === 'after' ? 'before' : 'after',
         base_sha256: snapshot.sha256,
+        // 这一块的基线指纹：文件在别处变了也能安全重放；只有这一块自己变了才停下来问人。
+        base_block_sha256: blockByAnchor.get(anchor)?.block?.sha256,
       });
     } catch (error) {
       status(`分块失败 · ${error.message}`, true);
       return;
     }
     if (!receipt.ok) {
-      status(`分块失败 · ${receipt.error ?? receipt.status ?? '未知错误'}`, true);
+      status(`分块失败 · ${receipt.error ?? receipt.status ?? '未知错误'}${conflictHint(receipt)}`, true);
       return;
     }
     applySnapshot(receipt);
@@ -1770,6 +1971,7 @@ function splitAtCaret(node, editable) {
         after: pieces.after,
         keep: 'before',
         base_sha256: snapshot.sha256,
+        base_block_sha256: blockByAnchor.get(anchor)?.block?.sha256,
       });
     } catch (error) {
       if (editable.isConnected) editable.contentEditable = 'true';
@@ -1778,7 +1980,7 @@ function splitAtCaret(node, editable) {
     }
     if (!receipt.ok) {
       if (editable.isConnected) editable.contentEditable = 'true';
-      status(`分块失败 · ${receipt.error ?? receipt.status ?? '未知错误'}`, true);
+      status(`分块失败 · ${receipt.error ?? receipt.status ?? '未知错误'}${conflictHint(receipt)}`, true);
       return;
     }
     applySnapshot(receipt);
@@ -1805,6 +2007,7 @@ function mergeIntoPrevious(node, editable) {
         previous: previous.dataset.anchor,
         content: '',
         base_sha256: snapshot.sha256,
+        base_block_sha256: blockByAnchor.get(anchor)?.block?.sha256,
       });
     } catch (error) {
       if (editable.isConnected) editable.contentEditable = 'true';
@@ -1813,7 +2016,7 @@ function mergeIntoPrevious(node, editable) {
     }
     if (!receipt.ok) {
       if (editable.isConnected) editable.contentEditable = 'true';
-      status(`合并失败 · ${receipt.error ?? receipt.status ?? '未知错误'}`, true);
+      status(`合并失败 · ${receipt.error ?? receipt.status ?? '未知错误'}${conflictHint(receipt)}`, true);
       return;
     }
     applySnapshot(receipt);
@@ -1849,6 +2052,7 @@ async function boot() {
   wireComposer();
   wireSelectionFeedback();
   wireOverallFeedback();
+  wireStructureNotice();
   wireNotes();
   try {
     transport = await DocTransport.connect();
@@ -1865,7 +2069,8 @@ async function boot() {
     await syncTasks();
     pollTasks();
     const broken = snapshot.errors ?? [];
-    status(broken.length ? `已载入 · ${broken.length} 处结构问题按原文显示` : '已载入', broken.length > 0);
+    // 结构问题是一条黄条，不是保存失败：保存态只说「载入了」，不报红。
+    status(broken.length ? '已载入 · 有结构提醒（不影响保存）' : '已载入');
   } catch (error) {
     status(`打开失败 · ${error.message}`, true);
   }

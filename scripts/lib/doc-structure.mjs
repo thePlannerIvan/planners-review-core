@@ -8,13 +8,14 @@
  * 四个动作名与本地路由表 / 命令后端同名：`rename-chapter` / `rename-page` /
  * `add-page` / `add-chapter`。回执里给出新结构的 `{chapter, page}`，页面据此定位并聚焦。
  */
-import { generateAnchor, parseDocument } from './doc-blocks.mjs';
+import { parseDocument } from './doc-blocks.mjs';
 
 export const STRUCTURE_OPS = new Set(['rename-chapter', 'rename-page', 'add-page', 'add-chapter']);
 export const NEW_CHAPTER_TITLE = '新章节';
 export const NEW_PAGE_TITLE = '新页';
-/** 新页的第一块：空页在契约里是 `page_empty`，也不进目录，所以给它一个可写的起点。 */
-const NEW_PAGE_BLOCK = '在这里写这一页。';
+// 新页就是**真正的空页**：文件里只有 `## 标题`，没有任何占位正文、也没有块身份。
+// 空页在编辑时合法（ADR 0006），交付校验器会报 `page_empty`，写不写由模型/人补。
+// 页面上那句「在这里写这一页。」是渲染层的 pending 块，输入后才落成真正的第一块。
 
 const fail = (code, message) => { throw Object.assign(Error(message), { code }); };
 
@@ -59,12 +60,6 @@ function pageAt(parsed, chapter, value) {
   const page = Number.isInteger(index) ? chapter.pages[index - 1] : null;
   if (!page) fail('page_missing', `找不到「${chapter.title}」的第 ${value} 页`);
   return page;
-}
-
-/** 新块只在现有锚点之外生成，避开文档里已有的身份。 */
-function freshAnchor(parsed) {
-  const seen = new Set(parsed.blocks.map((block) => block.anchor).filter(Boolean));
-  return generateAnchor(seen);
 }
 
 /**
@@ -118,17 +113,16 @@ export function applyStructure(raw, payload) {
     const chapter = chapterAt(parsed, payload.chapter);
     const page = pageAt(parsed, chapter, payload.index);
     const title = cleanTitle(payload.title, NEW_PAGE_TITLE);
-    const anchor = freshAnchor(parsed);
-    const insert = `## ${title}${eol}${eol}${NEW_PAGE_BLOCK}<!-- ${anchor} -->${eol}${eol}`;
+    const insert = `## ${title}${eol}`;
     // 落点：同一页之后。下一页 / 下一章的标题行就是边界；都没有就追加到文件末尾。
     const nextPage = chapter.pages[page.index]; // 1-based 页号，数组下标正好是下一页
     const nextChapter = parsed.chapters[chapter.index];
     const boundary = nextPage?.line ?? nextChapter?.line ?? null;
-    const output = boundary ? insertBeforeLine(boundary, insert) : appendAtEnd(insert);
+    const output = boundary ? insertBeforeLine(boundary, `## ${title}${eol}${eol}`) : appendAtEnd(insert);
     return {
       raw: bom + output,
       changed: true,
-      page: { chapter: chapter.index, index: page.index + 1, title, key: `${chapter.index}-${page.index + 1}`, anchor },
+      page: { chapter: chapter.index, index: page.index + 1, title, key: `${chapter.index}-${page.index + 1}` },
     };
   }
 
@@ -136,15 +130,14 @@ export function applyStructure(raw, payload) {
   const chapter = chapterAt(parsed, payload.chapter);
   const title = cleanTitle(payload.title, NEW_CHAPTER_TITLE);
   const pageTitle = cleanTitle(payload.page_title, NEW_PAGE_TITLE);
-  const anchor = freshAnchor(parsed);
-  const insert = `# ${title}${eol}${eol}## ${pageTitle}${eol}${eol}${NEW_PAGE_BLOCK}<!-- ${anchor} -->${eol}${eol}`;
+  const insert = `# ${title}${eol}${eol}## ${pageTitle}${eol}`;
   const nextChapter = parsed.chapters[chapter.index];
-  const output = nextChapter ? insertBeforeLine(nextChapter.line, insert) : appendAtEnd(insert);
+  const output = nextChapter ? insertBeforeLine(nextChapter.line, `${insert}${eol}`) : appendAtEnd(insert);
   return {
     raw: bom + output,
     changed: true,
     chapter: { index: chapter.index + 1, title },
-    page: { chapter: chapter.index + 1, index: 1, title: pageTitle, key: `${chapter.index + 1}-1`, anchor },
+    page: { chapter: chapter.index + 1, index: 1, title: pageTitle, key: `${chapter.index + 1}-1` },
   };
 }
 
