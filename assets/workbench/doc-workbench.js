@@ -178,6 +178,20 @@ function beginStructureEdit(node, spec) {
   node.addEventListener('blur', () => finish({ commit: true }), { once: true });
 }
 
+/**
+ * 造章之后自动补的那一页（票 36）：页名切到可编辑、占位文字整个选中，
+ * 人可以直接打字覆盖，不用再点一次。
+ */
+function focusAutoPage(retype) {
+  const auto = retype?.auto_page;
+  if (!auto || snapshot?.readonly) return false;
+  const divider = auto.key ? document.querySelector(`.page-divider[data-page-key="${auto.key}"]`) : null;
+  const title = divider?.querySelector('.page-title');
+  if (!title) return false;
+  beginStructureEdit(title, { op: 'rename-page', chapter: auto.chapter, index: auto.index });
+  return true;
+}
+
 async function renameStructure(node, spec, title, original) {
   await flushSaves();
   status('保存中');
@@ -2069,6 +2083,8 @@ async function persist(node) {
     // `# ` / `## `：这一块变成了章节 / 页，目录与正文一起重画（回执带整份快照）。
     node.__dirty = false;
     if (receipt.blocks && receipt.pages) applySnapshot(receipt);
+    // 造章补了占位页：新页标题直接切到可编辑、占位文字已选中，人接着打字就是改名。
+    focusAutoPage(receipt.retype);
     status(receipt.retype.structure === 'page' ? '已自动保存 · 已变成一页' : '已自动保存 · 已变成一章');
     return;
   }
@@ -2319,6 +2335,7 @@ function wireFirstBlock(node, editable, page) {
       }
       applySnapshot(receipt);
       status('已自动保存');
+      if (focusAutoPage(receipt.retype)) return;
       focusBlock(receipt.block?.anchor, 'end');
     });
   };
@@ -2378,6 +2395,7 @@ async function commitPendingBlock(pending, editable) {
     }
     applySnapshot(receipt);
     status('已自动保存 · 已分块');
+    if (focusAutoPage(receipt.retype)) return;
     focusBlock(receipt.new_block?.anchor, 'end');
   });
 }
@@ -2424,6 +2442,7 @@ function splitAtCaret(node, editable) {
     }
     applySnapshot(receipt);
     status('已自动保存 · 已分块');
+    if (focusAutoPage(receipt.retype)) return;
     focusBlock(receipt.new_block?.anchor, 'start');
   });
 }

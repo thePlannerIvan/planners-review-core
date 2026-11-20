@@ -371,8 +371,10 @@ function splitBlock(docPath, payload, board, conflicts, faults) {
       sha256: receipt.sha256,
       replayed,
       block: result.block ? viewBlock(result.block, (value) => board.lockOf(value)) : null,
-      // 后半是 `# ` / `## ` 时这一半得到结构，没有新块：页面按快照重画即可。
+      // 后一半是 `# ` / `## ` 时这一半得到结构，没有新块：页面按快照重画即可。
+      // 造章补了占位页时，`retype.auto_page` 让页面把新页标题切到可编辑（票 36）。
       new_block: result.newBlock ? viewBlock(result.newBlock, (value) => board.lockOf(value)) : null,
+      ...(result.retype ? { retype: result.retype } : {}),
       ...snapshotFrom(readDocument(docPath), docPath, board, conflicts),
     };
   });
