@@ -220,13 +220,13 @@ node scripts/doc-inbox.mjs take <文档路径> [--id <任务 id>]  # pending →
 
 - 检测按扩展名 `.json`；打开时不补锚点、不恢复 journal、不写任何旁路文件。
 - `GET /api/doc` 返回 `readonly: {reason: "legacy-json", message}`，页与块只作预览（块没有锚点、`readonly: true`）。
-- 所有写入口（`/api/block`、`/api/reorder`、`/api/feedback`、`/api/task/*`、`/api/patch`、`/api/conflict/decide`、`/api/history/restore`）
+- 所有写入口（`/api/block`、`/api/reorder`、`/api/structure`、`/api/feedback`、`/api/task/*`、`/api/patch`、`/api/conflict/decide`、`/api/history/restore`）
   一律 `409 {code: "readonly", error: <可读原因>}`；磁盘一个字节都不动。
 - 页面顶部显示「旧项目 · 只读」，不显示反馈入口、拖柄与编辑面；保存失败直接显示服务端原因。
 
 ## 8. 历史与恢复（SPEC 第 4 节）
 
-- 每一次真正改变文档的写盘（人保存 / 分块 / 合并 / 重排 / 模型写回 / 裁决 / 补锚点 / 恢复）
+- 每一次真正改变文档的写盘（人保存 / 分块 / 合并 / 重排 / 改结构 / 模型写回 / 裁决 / 补锚点 / 恢复）
   在写前把**上一版整份**存进 `.doc-workbench/history/<文档文件名>/`，一版一个 JSON 文件，
   记录 `contract` / `doc` / `sha256` / `bytes` / `operation` / `archived_at` / `raw`。
 - 列表 `GET /api/history`（侧栏 `command({op:'history'})`）新的在前，每条带 id、时间、操作、

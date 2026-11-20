@@ -86,6 +86,8 @@ node scripts/doc-workbench.mjs path/to/.planners/storyline.md --open
 
 图片按正文里的 `![说明](相对路径)` 就地显示，点开是只读放大层（滚轮 / 按钮缩放，可切「适应窗口」与「1:1」看裁切）；文件取不到时块内标「未能加载 · 路径」，不画占位图。SVG 与位图一样只经 `<img>` 加载，`/asset` 只发图片 MIME 并给 SVG 带 `sandbox; script-src 'none'` 的 CSP，图里的脚本不执行。换图只换文件字节：`POST /api/asset/replace` 的请求里没有路径，用哪张图始终由正文引用决定；锁定的图块会被拒绝，正文与其他块一个字节都不动。文档引用的图登记在同名清单（`storyline.md` → `storyline.assets.json`，`doc-assets/1`），打开时按正文与磁盘重建，换过文件会留下 `replaced_from_sha256`；`node scripts/validate-doc-assets.mjs <doc>` 独立核对三边是否一致。
 
+结构就在正文里改：`#` 章节与 `##` 页的标题点进去就能改，失焦写回文件；页尾「＋ 新页」、章节尾「＋ 新章节」直接加结构，新页是**真正的空页**（文件里没有正文，提示只在渲染层出现），加完就选中名字。左侧目录与正文从同一份快照重画，改完立刻同步。结构操作走 `POST /api/structure`（`rename-chapter` / `rename-page` / `add-page` / `add-chapter`），与本地页、侧栏桥共用同一个 `structure` 动作名；改结构只换标题行或插入结构行，其余字节逐字不动。
+
 左侧目录按「章节 → 页」两级列出，点页跳转，滚动时高亮当前页。块前缀的六点句柄可拖，落点用一条提示线说明「插到哪两块之间」；拖页标题移动整页（连同其下所有块），页号随新顺序重排；`Alt+↑↓` 移动光标所在的块。拖动与页重排走同一个显式重排操作 `POST /api/reorder`（`move-block` / `move-page`），未参与重排的块逐字不动；拖到章节标题下是「搬到页外」（`to.outside`），之后还能再拖回任一页。锁定（模型正在改）与待核对的块不是可编辑块：不给拖柄，`Alt+↑↓` 也不动；页里只要有一块被占住，整页也不能拖，服务端同样按 `block_locked` 拒绝。
 
 历史按次记录：每次写盘前把上一版整份存进 `.doc-workbench/history/<文档文件名>/`，顶部「历史」列出时间、操作、指纹与摘要；「恢复这一版」把旧档作为一次新的编辑落盘，恢复前的那一版也会再存一档，旧记录一个不删。接口是 `GET /api/history` 与 `POST /api/history/restore`（`{id, base_sha256}`）。

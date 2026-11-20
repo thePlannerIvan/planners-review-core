@@ -171,6 +171,8 @@ export function parseDocument(raw, options = {}) {
   const addBlock = (block) => {
     if (!block.index) block.index = state.page ? state.page.blocks.length + 1 : state.blocks.length + 1;
     block.page = state.page;
+    // 块所在的章节：页内块的章节从页出，页外块只能从这里知道自己在哪一章下（渲染与提示要用）。
+    block.chapter = state.chapter;
     state.blocks.push(block);
     if (state.page) state.page.blocks.push(block);
     else pushError('block_outside_page', `${typeName(block.type)}必须写在某个 ## 页里`, {
@@ -951,6 +953,43 @@ export function mergeBlockContent(raw, { anchor, previous, content } = {}, optio
   }
   if (pageOf(kept) !== pageOf(target)) reorderFail('block_structure', '合并把前一块挪出了原来那一页，已拒绝');
   return { raw: next, block: kept, removed: anchor };
+}
+
+/**
+ * 给一个**空页**写第一块：空页在文件里只有 `## 标题`，没有正文可写；页面在渲染层给一个
+ * 待定块，人一输入就调这里把第一个真正的块落盘。
+ *
+ * 只对空页生效（页里已经有块就拒绝，追加请用拖入或拆分）：插入位置紧跟页标题，
+ * 生成一个新锚点，其余字节逐字不动。插入后重解析，确认只多出这一个块、页与章节数量不变 ——
+ * 这样 `#` / `##` 开头的正文不会把一页偷偷变成一章。
+ *
+ * @returns {{raw:string, block:object}}
+ */
+export function createBlockInPage(raw, { chapter, index, content } = {}, options = {}) {
+  const { eol = String(raw).includes('\r\n') ? '\r\n' : '\n', generate = generateAnchor } = options;
+  const parsed = parseDocument(raw, { checkImages: false });
+  const page = locatePage(parsed, { chapter, index });
+  if (page.blocks.length) reorderFail('page_not_empty', `页「${page.title}」已经有块；新块请用拆分或拖入`);
+  if (typeof content !== 'string') reorderFail('block_content', '块内容必须是文本');
+  const normalized = normalizeInline(content);
+  if (!normalized.trim()) reorderFail('block_empty', '第一块不能为空');
+  if (ANCHOR_ANY_RE.test(normalized)) reorderFail('block_content_anchor', '块内容里不能写锚点');
+  const seen = new Set(parsed.blocks.map((item) => item.anchor).filter(Boolean));
+  const anchor = generate(seen);
+  const headingEnd = parsed.lineStarts[page.line - 1] + (parsed.lines[page.line - 1] ?? '').length;
+  const insert = `${eol}${eol}${normalized}<!-- ${anchor} -->`;
+  const next = parsed.text.slice(0, headingEnd) + insert + parsed.text.slice(headingEnd);
+  const after = parseDocument(next, { checkImages: false });
+  const written = after.blocks.find((item) => item.anchor === anchor);
+  if (after.blocks.length !== parsed.blocks.length + 1
+    || after.chapters.length !== parsed.chapters.length
+    || after.pages.length !== parsed.pages.length
+    || !written || written.raw !== normalized
+    || written.page?.chapter?.index !== page.chapter.index
+    || written.page.index !== page.index) {
+    reorderFail('block_structure', '第一块没有干净地落在这一页里，已拒绝');
+  }
+  return { raw: raw.startsWith('\uFEFF') ? `\uFEFF${next}` : next, block: written };
 }
 
 // ───────────── 重排：只挪位置，不换内容 ─────────────

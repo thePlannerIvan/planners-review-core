@@ -393,3 +393,76 @@ test('拖动落点：页外块没有页内落点，每章留一个「搬到页�
   ];
   assert.equal(drag.stepGap(flat, 2, 'up'), null, '上一块是页外块时不猜归属');
 });
+
+// ── 加页写真正的空页：文件里没有占位正文，提示只在渲染层 ──────────────────
+test('加页是真正的空页：文件里没有占位正文，提示只在渲染层，空页只进结构提醒', async (t) => {
+  const { path } = scratchDoc();
+  const server = await openWorkbench(t, path);
+  const before = await getDoc(server.url);
+  const anchorCount = (text) => (text.match(/<!-- b:[0-9a-f]{6,12} -->/g) ?? []).length;
+  const anchorsBefore = anchorCount(readFileSync(path, 'utf8'));
+
+  const added = await postJson(server.url, '/api/structure', {
+    op: 'add-page', chapter: 1, index: 1, base_sha256: before.sha256,
+  });
+  assert.equal(added.status, 200, JSON.stringify(added.body));
+
+  const saved = readFileSync(path, 'utf8');
+  assert.doesNotMatch(saved, /在这里写这一页/, '文件里不能留占位正文');
+  assert.equal(anchorCount(saved), anchorsBefore, '空页不该凭空多出一块身份');
+
+  const after = await getDoc(server.url);
+  const newPage = after.pages.find((page) => page.title === '新页');
+  assert.ok(newPage, '新页进入目录');
+  assert.equal(newPage.blocks, 0, '新页一个块都没有');
+  assert.equal(after.blocks.length, before.blocks.length, '加页不新增块');
+  assert.ok(after.errors.some((error) => error.code === 'page_empty' && /新页/.test(error.block)),
+    `空页只进快照提醒：${JSON.stringify(after.errors)}`);
+  assert.equal(validate(path).code, 1, '交付校验仍然看得见空页（编辑时保存不拦）');
+
+  // 提示在渲染层：第一块是一个内存里的 pending 块，靠 CSS 的 :empty::before 出字。
+  const page = readFileSync(join(core, 'assets', 'workbench', 'doc-workbench.js'), 'utf8');
+  const css = readFileSync(join(core, 'assets', 'workbench', 'doc-workbench.css'), 'utf8');
+  assert.match(page, /在这里写这一页。/, '空页的第一块提示只在页面源码里');
+  assert.match(page, /is-pending/, '空页第一块复用待定块那一套');
+  assert.match(css, /is-pending \.block-text:empty::before/, '提示是渲染层的伪元素，不落进文件');
+});
+
+// ── 空页的第一块：渲染层的待定块输入后才落盘 ───────────────────────────────
+test('空页的第一块：输入前文件里没有块，输入后按页身份落成真正的第一块', async (t) => {
+  const { path } = scratchDoc();
+  const server = await openWorkbench(t, path);
+  const before = await getDoc(server.url);
+  const added = await postJson(server.url, '/api/structure', {
+    op: 'add-page', chapter: 1, index: 1, base_sha256: before.sha256,
+  });
+  assert.equal(added.status, 200, JSON.stringify(added.body));
+  const empty = await getDoc(server.url);
+  const page = empty.pages.find((item) => item.title === '新页');
+  assert.equal(page.blocks, 0);
+  assert.equal(empty.blocks.filter((block) => block.page.key === page.key).length, 0, '空页里一个块都没有');
+
+  const created = await postJson(server.url, '/api/block', {
+    new: true,
+    page: { chapter: 1, index: page.index },
+    content: '这一页的第一块正文。',
+    base_sha256: empty.sha256,
+  });
+  assert.equal(created.status, 200, JSON.stringify(created.body));
+  assert.match(created.body.block.anchor, /^b:[0-9a-f]{6}$/);
+  assert.equal(created.body.block.raw, '这一页的第一块正文。');
+  assert.equal(created.body.block.page.key, page.key, '第一块落在这一页里');
+  assert.match(readFileSync(path, 'utf8'), /这一页的第一块正文。<!-- b:[0-9a-f]{6} -->/);
+  assert.equal(validate(path).code, 0, '有了第一块以后文档重新合规');
+
+  // 另一个窗口已经先写了第一块：停下来，不覆盖别人写的。
+  const again = await postJson(server.url, '/api/block', {
+    new: true,
+    page: { chapter: 1, index: page.index },
+    content: '想再写一个第一块。',
+    base_sha256: created.body.sha256,
+  });
+  assert.equal(again.status, 409, JSON.stringify(again.body));
+  assert.equal(again.body.code, 'page_not_empty');
+  assert.doesNotMatch(readFileSync(path, 'utf8'), /想再写一个第一块/);
+});

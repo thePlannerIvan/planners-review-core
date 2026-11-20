@@ -13,8 +13,8 @@
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import {
-  BLOCK_ANCHOR_RE, BLOCK_TYPES, applyBlockContent, assessBlock, blockPrefix, imageReference, mergeBlockContent,
-  moveBlock, movePage, parseDocument, repairAnchors, splitBlockContent, tableModel,
+  BLOCK_ANCHOR_RE, BLOCK_TYPES, applyBlockContent, assessBlock, blockPrefix, createBlockInPage, imageReference,
+  mergeBlockContent, moveBlock, movePage, parseDocument, repairAnchors, splitBlockContent, tableModel,
 } from './doc-blocks.mjs';
 import {
   assertImageBytes, buildManifest, imageMime, manifestPathFor, realPathInside, resolveInside,
@@ -24,6 +24,7 @@ import { TASK_CONTRACT, TASK_SCOPES, createTaskBoard } from './doc-tasks.mjs';
 import { CONFLICT_CONTRACT, CONFLICT_DECISIONS, createConflictBoard } from './doc-conflicts.mjs';
 import { commitDocument, journalPathFor, recoverJournal, withWriteLock } from './doc-journal.mjs';
 import { createFileBoardStores } from './doc-boards.mjs';
+import { applyStructure } from './doc-structure.mjs';
 import { HISTORY_CONTRACT, listVersions, readVersion } from './doc-history.mjs';
 import {
   MAX_NOTE_TEXT, NOTES_CONTRACT, commitDrafts as markDraftsCommitted, createNoteStore, draftNote, draftsOf,
@@ -44,14 +45,16 @@ export function viewBlock(block, lockOf = () => null, conflictOf = () => null) {
   const lockedBy = block.anchor ? lockOf(block.anchor) : null;
   const image = block.type === 'image' ? imageReference(block.raw) : null;
   const conflict = block.anchor ? conflictOf(block.anchor) : null;
+  // 页内块的章节从页出；页外块没有页身份，但仍在某一章标题下，章节从块自身出。
+  const chapter = block.page?.chapter ?? block.chapter ?? null;
   return {
     anchor: block.anchor ?? null,
     type: block.type,
     index: block.index,
     page: {
       key: block.page ? `${block.page.chapter?.index ?? 0}-${block.page.index}` : null,
-      chapter: block.page?.chapter?.title ?? null,
-      chapterIndex: block.page?.chapter?.index ?? null,
+      chapter: chapter?.title ?? null,
+      chapterIndex: chapter?.index ?? null,
       number: block.page?.index ?? null,
       title: block.page?.title ?? null,
     },
@@ -152,6 +155,12 @@ function snapshotFrom(document, docPath, board, conflicts, journalState = null) 
     doc: parsed.front.doc ?? null,
     project: parsed.front.project ?? null,
     sha256: sha256(raw),
+    // 章节是结构的一层（契约第 2 节）：目录与正文要按它分组，不能只靠页反推。
+    chapters: parsed.chapters.map((chapter) => ({
+      index: chapter.index,
+      title: chapter.title,
+      pages: chapter.pages.length,
+    })),
     pages: parsed.pages.map(viewPage),
     blocks: parsed.blocks.map((block) => viewBlock(
       block,
@@ -173,6 +182,42 @@ function blockAt(document, anchor) {
 }
 
 /**
+ * 空页的第一块：页面在渲染层放一个待定块，人一输入就按页身份创建真正的块。
+ *
+ * 与保存一块同一把写锁、同样的重放语义：整份基线过期不拒绝，重读到当前版本再落；
+ * 目标页已经有块（另一个窗口先写了）才停下（`page_not_empty`），不覆盖别人的第一块。
+ */
+function createFirstBlock(docPath, payload, board, conflicts, faults) {
+  const { page, content, base_sha256: baseSha } = payload;
+  if (typeof content !== 'string') fail('block_content', '块内容必须是文本');
+  if (!page || typeof page !== 'object' || !Number.isInteger(Number(page.chapter)) || !Number.isInteger(Number(page.index))) {
+    fail('block_request', '空页的第一块需要页身份 {chapter, index}');
+  }
+  const ref = { chapter: Number(page.chapter), index: Number(page.index) };
+  return withWriteLock(docPath, () => {
+    board.refresh();
+    const document = readDocument(docPath);
+    const replayed = typeof baseSha === 'string' && baseSha !== document.hash;
+    const repaired = persistRepairs(docPath, document, faults);
+    const result = createBlockInPage(repaired.raw, { ...ref, content });
+    const receipt = commitDocument(docPath, {
+      oldRaw: repaired.raw,
+      raw: result.raw,
+      applied: [result.block.anchor],
+      operation: 'block',
+      faults,
+    });
+    return {
+      ok: true,
+      sha256: receipt.sha256,
+      replayed,
+      block: viewBlock(result.block, (value) => board.lockOf(value)),
+      ...snapshotFrom(readDocument(docPath), docPath, board, conflicts),
+    };
+  });
+}
+
+/**
  * 人保存一块：块级合并。
  *
  * `base_sha256` 是整份基线，`base_block_sha256` 是这一块加载时的指纹。
@@ -181,8 +226,10 @@ function blockAt(document, anchor) {
  * 同一块被改过才停下来问人（`block_conflict`）：这时没有安全的落点，重放会覆盖别人的写入。
  * 没带这一块的基线指纹时无法判断是不是同一块，按 `stale_document` 让人刷新后再核对。
  */
-function saveBlock(docPath, payload, board, faults) {
+function saveBlock(docPath, payload, board, conflicts, faults) {
   if (!payload || typeof payload !== 'object') fail('block_request', '请求体必须是 JSON 对象');
+  // 空页的第一块：没有锚点可定位，按页身份创建（`new: true`）。其余保存都必须带锚点。
+  if (payload.new === true) return createFirstBlock(docPath, payload, board, conflicts, faults);
   const { anchor, content, base_sha256: baseSha, base_block_sha256: baseBlockSha } = payload;
   if (typeof anchor !== 'string' || !BLOCK_ANCHOR_RE.test(anchor)) fail('block_anchor', '锚点形状不对');
   if (typeof content !== 'string') fail('block_content', '块内容必须是文本');
@@ -635,6 +682,44 @@ function reorderDocument(docPath, payload, board, conflicts, faults) {
 }
 
 /**
+ * 改结构：改章节名 / 页名，或在页尾加页、章节尾加章。
+ *
+ * 结构不是块（`#` / `##` 不能带锚点），所以这里不经过块级写：按行补丁整份落盘，
+ * 与重排共用一把写锁、一份基线判据与同一个 journal。改完回整份快照，
+ * 页面据此重画正文与目录 —— 目录不是另一份状态。
+ */
+function structureDocument(docPath, payload, board, conflicts, faults) {
+  if (!payload || typeof payload !== 'object') fail('structure_request', '请求体必须是 JSON 对象');
+  return withWriteLock(docPath, () => {
+    board.refresh();
+    conflicts.refresh();
+    const document = readDocument(docPath);
+    if (typeof payload.base_sha256 !== 'string' || payload.base_sha256 !== sha256(document.raw)) {
+      fail('stale_document', '文档已在别处被修改；请刷新工作台后再改结构');
+    }
+    const repaired = persistRepairs(docPath, document, faults);
+    const result = applyStructure(repaired.raw, payload);
+    if (result.changed) {
+      commitDocument(docPath, {
+        oldRaw: repaired.raw,
+        raw: result.raw,
+        applied: [],
+        operation: 'structure',
+        faults,
+      });
+    }
+    return {
+      ok: true,
+      op: payload.op,
+      changed: result.changed,
+      ...(result.chapter ? { chapter: result.chapter } : {}),
+      ...(result.page ? { page: result.page } : {}),
+      ...snapshotFrom(readDocument(docPath), docPath, board, conflicts),
+    };
+  });
+}
+
+/**
  * 换掉一个图块引用的文件。
  *
  * 请求里只有块身份与图字节，**没有路径**：用哪张图由正文的 Markdown 引用决定，
@@ -987,10 +1072,11 @@ export async function createDocSession({ docPath, faults = null, persistent = tr
       conflicts.refresh();
       return snapshotFrom(document, file, board, conflicts, journalState);
     },
-    saveBlock: (payload) => guarded(() => saveBlock(file, payload, board, faults)),
+    saveBlock: (payload) => guarded(() => saveBlock(file, payload, board, conflicts, faults)),
     splitBlock: (payload) => guarded(() => splitBlock(file, payload, board, conflicts, faults)),
     mergeBlocks: (payload) => guarded(() => mergeBlocks(file, payload, board, conflicts, faults)),
     reorder: (payload) => guarded(() => reorderDocument(file, payload, board, conflicts, faults)),
+    structure: (payload) => guarded(() => structureDocument(file, payload, board, conflicts, faults)),
     replaceAsset: (payload) => guarded(() => replaceImageAsset(file, payload, board, conflicts)),
     history: () => historyOf(file),
     restore: (payload) => guarded(() => restoreVersion(file, payload, board, conflicts, faults)),

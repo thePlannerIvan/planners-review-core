@@ -161,8 +161,9 @@ Proposal 与 By-page 调用 `scripts/render-content-review.mjs` 的 `renderConte
 | `contracts/doc-assets.md` | `doc-assets/1` 图资产清单：正文派生、同名清单、换文件留上一版指纹；不碰 bypage 的素材取舍 |
 | `scripts/doc-inbox.mjs` | 模型侧收件箱命令：`list` 未处理任务（块身份 + 指纹 + 意见），`take` 把 pending 标成 processing |
 | `scripts/doc-surface.mjs` | 为一份 `planners-doc/2` 工作稿生成侧栏 `review-surface`（`doc-workbench/1`）与自包含入口；同 id 再开 = 刷新 |
-| `scripts/doc-command.mjs` | 侧栏命令后端（保存 / 派发 / 裁决 / 看锁）与模型侧 CLI（`tasks` / `claim` / `complete` / `patch` / `conflicts`），共用 `lib/doc-session.mjs` |
+| `scripts/doc-command.mjs` | 侧栏命令后端（保存 / 改结构 / 派发 / 裁决 / 看锁）与模型侧 CLI（`tasks` / `claim` / `complete` / `patch` / `conflicts`），共用 `lib/doc-session.mjs` |
 | `scripts/lib/doc-session.mjs` | 两个入口共用的块级内核：解析、块级写、journal、锁与待核对的唯一实现 |
+| `scripts/lib/doc-structure.mjs` | 结构编辑：改章节名 / 页名、页尾加页、章节尾加章；只换标题行或插入结构行，其余字节逐字不动 |
 | `scripts/lib/doc-boards.mjs` | 任务板与待核对的落盘（`.doc-workbench/state/`），让本地页 / 侧栏 / 模型 CLI 跨进程看到同一组锁 |
 | `scripts/lib/doc-history.mjs` | 历史版本：每次写盘前存上一版，按文档分桶；列出与按档恢复（恢复也是一次新编辑） |
 | `scripts/lib/doc-io.mjs` | 旁路目录与原子写（fsync + rename）的唯一实现；journal / 任务板 / 收件箱 / 资产清单 / 历史共用 |
@@ -189,8 +190,11 @@ Proposal 与 By-page 调用 `scripts/render-content-review.mjs` 的 `renderConte
 | `evals/run.mjs` | 回归（JS；条数以脚本实际输出为准，当前 75 条）：校验器 + 宿主 + 第二形状 + 线协议 + 轮询 + 桥 |
 | `evals/test_doc_contract.mjs` | `planners-doc/2` 文档契约回归（16 条）：两份样例通过 + 层级（`#` 章节 / `##` 页 / `###`–`######` 标题块）+ 出处区按位置认定 + 锚点重复 / 块类型越界 / 图片缺失 / 页为空 / `/1` 不降级读取 |
 | `evals/test_doc_migration.mjs` | 迁移回归（6 条）：真实 `/1` 样例迁到 `/2`（锚点与块 raw 不动、迁移后通过校验）、`--sources-to-quote`、非 `/1` 拒绝、报错不阻断、用法错误 |
-| `evals/test_doc_workbench.mjs` | 文字工作台回归（28 条）：只改一块、未编辑块逐字不动、补锚点幂等、退化显示、行内序列化；页内 / 跨页移动块、整页重排、坏落点拒绝、锁定 / 待核对块不可拖动、历史按次存档与恢复、落点算法与目录 / 句柄接线、一处事实一个来源 |
-| `evals/test_doc_never_block.mjs` | 编辑器不拦人回归（8 条）：块拖到页外 / 页被清空 / 章节被清空照样落盘、结构问题只进快照与顶部黄条（可跳转）、校验器只留交付口、整份基线过期按块重放、同块冲突才停、锁只锁模型正在写的块且点名、页外拖动落点 |
+| `evals/test_doc_workbench.mjs` | 文字工作台回归（34 条）：只改一块、未编辑块逐字不动、补锚点幂等、退化显示、行内序列化；页内 / 跨页移动块、整页重排、坏落点拒绝、锁定 / 待核对块不可拖动、历史按次存档与恢复、落点算法与目录 / 句柄接线、结构可编辑（章节名 / 页名 / 加页 / 加章）、一处事实一个来源 |
+| `evals/test_doc_never_block.mjs` | 编辑器不拦人回归（10 条）：块拖到页外 / 页被清空 / 章节被清空照样落盘、结构问题只进快照与顶部黄条（可跳转）、校验器只留交付口、整份基线过期按块重放、同块冲突才停、锁只锁模型正在写的块且点名、页外拖动落点、加页后文件里没有占位正文 |
+| `evals/test_doc_structure.mjs` | 结构编辑回归（4 条）：改章节名 / 页名只换标题行、过期基线 / 空标题 / 找不到章节页都拒绝且不落盘、页尾加页与章节尾加章（新页是真正的空页，文件里没有占位正文）、目录视图立即跟着变 |
+| `evals/test_doc_notes.mjs` | 批注回归（13 条）：草稿落盘 / 跨页分组 / 计数气泡 / 一次提交整批 / 删除与重开 / 已处理归档进历史与 2MB 搬迁 |
+| `evals/test_channel_parity.mjs` | 通道同义回归（5 条）：本地宿主与侧栏桥拖块 / 整页拖动 / 改结构的字节与回执一致、拒绝同码同句、模型侧动作不能从浏览器口进来 |
 | `evals/test_doc_feedback.mjs` | 块级反馈与派发回归（6 条）：任务只带块身份与指纹、整页 / 整份范围、锁定期间改别的块、完成后解锁、任务状态机、半句吸成整块 |
 | `evals/test_doc_assets.mjs` | 图块与资产回归（10 条）：位图 / SVG 加载与脚本隔离、未能加载文案、放大只读；清单派生 / 新增登记 / 换图留上一版；锁定图块拒绝替换；清单漂移四类；两份样例清单 |
 | `evals/test_doc_conflict.mjs` | 待核对与并发回归（5 条）：同块双改只锁该块其余落盘、裁决两个方向、跨块并发按块合并、journal 崩溃恢复、页面裁决入口 |
