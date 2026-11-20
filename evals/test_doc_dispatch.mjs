@@ -240,6 +240,12 @@ test('旧 JSON 主稿被打开时只读：界面状态可读、保存被拒且�
   assert.equal(reorder.status, 409, JSON.stringify(reorder.body));
   assert.equal(reorder.body.code, 'readonly');
 
+  const structure = await postJson(`${server.url}/api/structure`, {
+    op: 'rename-chapter', chapter: 1, title: '不该落盘', base_sha256: doc.sha256,
+  });
+  assert.equal(structure.status, 409, JSON.stringify(structure.body));
+  assert.equal(structure.body.code, 'readonly', '只读主稿不能改结构');
+
   assert.deepEqual(readFileSync(path), original, '被拒的保存一个字节都不写');
   assert.equal(existsSync(join(dir, '.doc-workbench')), false, '只读打开不应留下工作台旁路文件');
 });

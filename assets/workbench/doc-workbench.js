@@ -46,19 +46,196 @@ const renderInline = (markdown) => {
   return escapeHtml(markdown);
 };
 
-function pageHeading(block) {
+function pageHeading(page, { editable = false } = {}) {
   const node = document.createElement('div');
   node.className = 'page-divider';
-  node.dataset.pageKey = block.page.key ?? '';
+  node.dataset.pageKey = page.key ?? '';
   const chapter = document.createElement('span');
   chapter.className = 'page-chapter';
   // 页号由顺序决定、不写进正文，所以这里按当前位置算出「第 N 页」。
-  chapter.textContent = [block.page.chapter, `第 ${block.page.number ?? 1} 页`].filter(Boolean).join(' · ');
+  chapter.textContent = editable
+    ? `第 ${page.index ?? 1} 页`
+    : [page.chapter, `第 ${page.number ?? page.index ?? 1} 页`].filter(Boolean).join(' · ');
   const title = document.createElement('h2');
   title.className = 'page-title';
-  title.textContent = block.page.title ?? '';
+  title.textContent = page.title ?? '';
+  if (editable) wireStructureTitle(title, { op: 'rename-page', chapter: page.chapterIndex, index: page.index });
   node.append(chapter, title);
   return node;
+}
+
+/**
+ * 章节是结构的一层，不是页眉里的装饰：正文里每个 `#` 章节有自己的可改标题，
+ * 页排在它下面。页身份仍只挂在 page-divider 上，目录高亮只认页（见 doc-drag）。
+ */
+function chapterHeading(chapter) {
+  const node = document.createElement('div');
+  node.className = 'chapter-divider';
+  node.dataset.chapterIndex = String(chapter.index ?? '');
+  const title = document.createElement('h1');
+  title.className = 'chapter-title';
+  title.textContent = chapter.title ?? '未命名章节';
+  title.dataset.chapterIndex = String(chapter.index ?? '');
+  wireStructureTitle(title, { op: 'rename-chapter', chapter: chapter.index });
+  node.append(title);
+  return node;
+}
+
+// ── 结构改名：点进去就能改，失焦写回；与块保存共用同一条 structure 命令 ─────────
+function wireStructureTitle(node, spec) {
+  node.dataset.structureTitle = spec.op === 'rename-chapter' ? 'chapter' : 'page';
+  node.title = '点击改名字';
+  node.addEventListener('click', (event) => {
+    if (event.target.closest('a')) return;
+    beginStructureEdit(node, spec);
+  });
+}
+
+function selectContents(node) {
+  const range = document.createRange();
+  range.selectNodeContents(node);
+  const selection = getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+/** 拖页标题仍走原生拖动；只有「点一下」才进入编辑，编辑期间先关掉 draggable。 */
+function beginStructureEdit(node, spec) {
+  if (node.getAttribute('contenteditable') === 'true' || snapshot?.readonly) return;
+  const original = node.textContent;
+  const wasDraggable = node.draggable;
+  let finished = false;
+  node.contentEditable = 'true';
+  node.draggable = false;
+  node.classList.add('is-editing-title');
+  node.focus();
+  selectContents(node);
+
+  const finish = ({ commit }) => {
+    if (finished) return;
+    finished = true;
+    node.removeEventListener('keydown', onKeydown);
+    const title = String(node.textContent ?? '').replace(/\s+/g, ' ').trim();
+    node.contentEditable = 'false';
+    node.removeAttribute('contenteditable');
+    node.draggable = wasDraggable;
+    node.classList.remove('is-editing-title');
+    if (!commit || title === original) {
+      node.textContent = original;
+      return;
+    }
+    if (!title) {
+      node.textContent = original;
+      status('改名失败 · 标题不能为空', true);
+      return;
+    }
+    node.textContent = title;
+    void renameStructure(node, spec, title, original);
+  };
+
+  const onKeydown = (event) => {
+    if (event.isComposing || event.keyCode === 229) return;
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      node.blur();
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      finish({ commit: false });
+      node.blur();
+    }
+  };
+  node.addEventListener('keydown', onKeydown);
+  node.addEventListener('blur', () => finish({ commit: true }), { once: true });
+}
+
+async function renameStructure(node, spec, title, original) {
+  await flushSaves();
+  status('保存中', true);
+  let receipt;
+  try {
+    receipt = await transport.structure({ ...spec, title, base_sha256: snapshot.sha256 });
+  } catch (error) {
+    if (node.isConnected) node.textContent = original;
+    status(`改名失败 · ${error.message}`, true);
+    return;
+  }
+  if (!receipt.ok) {
+    if (node.isConnected) node.textContent = original;
+    status(`改名失败 · ${receipt.error ?? receipt.status ?? '未知错误'}`, true);
+    return;
+  }
+  if (!receipt.changed) {
+    status('名字没变');
+    return;
+  }
+  applySnapshot(receipt);
+  status('已自动保存 · 已改名');
+}
+
+// ── 加页 / 加章：页尾与章节尾各一个入口，回执带新结构位置，随即进入改名 ────────
+function structureAddButton(kind, label, run) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = kind === 'page' ? 'page-add' : 'chapter-add';
+  button.dataset.addKind = kind;
+  button.textContent = label;
+  button.addEventListener('mousedown', (event) => event.preventDefault()); // 不抢正文光标
+  button.addEventListener('click', (event) => {
+    event.preventDefault();
+    void run();
+  });
+  return button;
+}
+
+function pageAddButton(page) {
+  const button = structureAddButton('page', '＋ 新页', () => addStructure({ op: 'add-page', chapter: page.chapterIndex, index: page.index }));
+  button.dataset.addPage = page.key;
+  button.title = '在这一页后面加一页';
+  return button;
+}
+
+function chapterAddButton(chapter) {
+  const button = structureAddButton('chapter', '＋ 新章节', () => addStructure({ op: 'add-chapter', chapter: chapter.index }));
+  button.dataset.addChapter = String(chapter.index ?? '');
+  button.title = '在这一章后面加一章';
+  return button;
+}
+
+async function addStructure(body) {
+  if (snapshot?.readonly) return;
+  await flushSaves();
+  status('保存中', true);
+  let receipt;
+  try {
+    receipt = await transport.structure({ ...body, base_sha256: snapshot.sha256 });
+  } catch (error) {
+    status(`加不了 · ${error.message}`, true);
+    return;
+  }
+  if (!receipt.ok) {
+    status(`加不了 · ${receipt.error ?? receipt.status ?? '未知错误'}`, true);
+    return;
+  }
+  const chapter = body.op === 'add-chapter';
+  applySnapshot(receipt);
+  status(chapter ? '已加一章 · 点章节名可以改' : '已加一页 · 点页名可以改');
+  focusNewStructure(receipt, chapter ? 'chapter' : 'page');
+}
+
+/** 新结构出现后滚到它、直接把名字选中：加完就能打字，不用再找一遍。 */
+function focusNewStructure(receipt, kind) {
+  const selector = kind === 'chapter'
+    ? `.chapter-divider[data-chapter-index="${receipt.chapter?.index}"] .chapter-title`
+    : `.page-divider[data-page-key="${receipt.page?.key}"] .page-title`;
+  const node = document.querySelector(selector);
+  if (!node) return;
+  node.scrollIntoView({ block: 'center' });
+  const spec = kind === 'chapter'
+    ? { op: 'rename-chapter', chapter: receipt.chapter.index }
+    : { op: 'rename-page', chapter: receipt.page.chapter, index: receipt.page.index };
+  beginStructureEdit(node, spec);
 }
 
 function textBlock(block) {
@@ -281,19 +458,60 @@ function attachBlockFeedback(node, block) {
   node.append(button);
 }
 
+function chaptersOf(snapshot) {
+  if (Array.isArray(snapshot.chapters) && snapshot.chapters.length) return snapshot.chapters;
+  // 旧快照 / 坏结构没有 chapters 字段时按页反推：章节名仍然从页视图来，不另造一份。
+  const seen = new Map();
+  for (const page of snapshot.pages ?? []) {
+    if (!seen.has(page.chapterIndex)) {
+      seen.set(page.chapterIndex, { index: page.chapterIndex, title: page.chapter, pages: 0 });
+    }
+  }
+  return [...seen.values()];
+}
+
+/** 旧 JSON 主稿：只有页与块，不给结构编辑入口，也不画章节分隔。 */
+function renderFlatBlocks(root) {
+  let pageKey = null;
+  for (const block of snapshot.blocks) {
+    if (block.page.key !== pageKey) {
+      pageKey = block.page.key;
+      root.append(pageHeading(block.page));
+    }
+    root.append(renderBlock(block));
+  }
+}
+
+/** 结构稿：章节 → 页 → 块；页尾「＋ 新页」、章节尾「＋ 新章节」。 */
+function renderStructuredBlocks(root) {
+  const blocks = snapshot.blocks ?? [];
+  const pages = snapshot.pages ?? [];
+  let cursor = 0;
+  for (const chapter of chaptersOf(snapshot)) {
+    root.append(chapterHeading(chapter));
+    for (const page of pages.filter((item) => item.chapterIndex === chapter.index)) {
+      root.append(pageHeading(page, { editable: true }));
+      while (cursor < blocks.length && blocks[cursor].page?.key === page.key) {
+        root.append(renderBlock(blocks[cursor]));
+        cursor += 1;
+      }
+      root.append(pageAddButton(page));
+    }
+    root.append(chapterAddButton(chapter));
+  }
+  // 结构坏了也不能吞块：没落到页里的块按原文显示在末尾。
+  while (cursor < blocks.length) {
+    root.append(renderBlock(blocks[cursor]));
+    cursor += 1;
+  }
+}
+
 function renderDocument() {
   const root = $('#blocks');
   blockByAnchor.clear();
   root.replaceChildren();
-  let pageKey = null;
-  for (const block of snapshot.blocks) {
-    const key = `${block.page.chapter ?? ''}\u0000${block.page.number ?? ''}\u0000${block.page.title ?? ''}`;
-    if (key !== pageKey) {
-      pageKey = key;
-      root.append(pageHeading(block));
-    }
-    root.append(renderBlock(block));
-  }
+  if (snapshot.readonly) renderFlatBlocks(root);
+  else renderStructuredBlocks(root);
   DocDrag.render(root, {
     snapshot: () => snapshot,
     apply: (next) => { snapshot = next; renderAll(); },
@@ -346,7 +564,10 @@ function currentEditable() {
   const selection = getSelection();
   if (!selection || !selection.rangeCount) return null;
   const node = selection.anchorNode?.nodeType === 3 ? selection.anchorNode.parentElement : selection.anchorNode;
-  return node?.closest?.('[contenteditable="true"]') ?? null;
+  const editable = node?.closest?.('[contenteditable="true"]') ?? null;
+  // 结构标题也是 contenteditable，但不是块：不给它弹块内格式工具条。
+  if (editable?.closest?.('[data-structure-title]')) return null;
+  return editable;
 }
 
 function positionToolbar() {
@@ -679,6 +900,7 @@ const OPERATION_LABELS = {
   split: '回车分块',
   merge: '删空合并',
   reorder: '重排',
+  structure: '改结构',
   patch: '模型写回',
   conflict: '裁决待核对',
   repair: '补锚点',

@@ -15,6 +15,7 @@
  *   POST /api/block/merge        人把空块并进前一块：{anchor, previous, content, base_sha256}
  *   POST /api/asset/replace      换掉图块引用的文件：{anchor, content_base64, base_sha256}
  *   POST /api/reorder            重排（一次一个动作），返回重排后的整份快照
+ *   POST /api/structure          改结构（rename-chapter / rename-page / add-page / add-chapter）
  *   POST /api/feedback           派发块级反馈任务；回执带 dispatch.channel（wake / inbox）
  *   GET  /api/tasks              模型读任务
  *   POST /api/task/claim         模型开始处理（锁块）
@@ -60,7 +61,7 @@ const BAD_REQUEST_CODES = new Set([
   'block_request', 'feedback_request', 'feedback_text', 'feedback_scope',
   'task_request', 'task_id', 'task_scope', 'task_blocks',
   'patch_request', 'patch_blocks', 'conflict_request', 'conflict_decision', 'conflict_anchor',
-  'reorder_request', 'reorder_op',
+  'reorder_request', 'reorder_op', 'structure_request', 'structure_op', 'structure_title',
   'asset_request', 'asset_type', 'asset_content',
   'history_request', 'history_id',
 ]);
@@ -185,6 +186,12 @@ export async function startDocWorkbench({
         if (!allowWrite(request, response, server, host, 'reorder')) return;
         const payload = JSON.parse((await readBody(request)) || '{}');
         return json(response, 200, session.reorder(payload));
+      }
+      if (url.pathname === '/api/structure') {
+        if (request.method !== 'POST') return json(response, 405, { ok: false, code: 'method', error: '用 POST 改结构' });
+        if (!allowWrite(request, response, server, host, 'structure')) return;
+        const payload = JSON.parse((await readBody(request)) || '{}');
+        return json(response, 200, session.structure(payload));
       }
       if (url.pathname === '/api/feedback') {
         if (request.method !== 'POST') return json(response, 405, { ok: false, code: 'method', error: '用 POST 提交反馈' });

@@ -782,6 +782,52 @@ test('工作台源码：六点句柄、页标题可拖、两级目录随滚动�
   assert.match(css, /\.toc/, '目录要有左侧栏样式');
 });
 
+// ── 结构可编辑：章节名与页名点进去改、页尾加页、章节尾加章，目录跟着重画 ─────
+test('工作台源码：章节名与页名点进去能改，页尾加页、章节尾加章，目录随结构重画', async () => {
+  const page = readFileSync(join(core, 'assets', 'workbench', 'doc-workbench.js'), 'utf8');
+  const html = readFileSync(join(core, 'assets', 'workbench', 'doc-workbench.html'), 'utf8');
+  const css = readFileSync(join(core, 'assets', 'workbench', 'doc-workbench.css'), 'utf8');
+
+  // 文档名只在顶栏：正文从 # 章节开始，没有「文档标题」这一行。
+  assert.match(html, /<header class="topbar">[\s\S]*id="projectName"[\s\S]*<\/header>/, '文档名在顶栏左上');
+  const bodyRender = page.match(/function renderStructuredBlocks\(root\)[\s\S]*?\n}/);
+  assert.ok(bodyRender, '正文渲染要能读出来');
+  assert.doesNotMatch(bodyRender[0], /projectName|snapshot\.project/, '正文从章节开始，不再有文档标题行');
+  assert.match(page, /\$\('#projectName'\)\.textContent = snapshot\.project/, '文档名只写到顶栏');
+  assert.match(page, /function chapterHeading/, '正文按 # 章节分组，不只是页');
+  assert.match(page, /chapter-title/, '章节名是正文里可点的一层');
+
+  // 点进去改、失焦写回：结构标题走同一个 structure 路由，不是块保存。
+  assert.match(page, /function wireStructureTitle/, '章节名与页名共用同一段改名接线');
+  assert.match(page, /contentEditable = 'true'/, '点进去进入可编辑状态');
+  assert.match(page, /addEventListener\('blur'/, '失焦时写回');
+  assert.match(page, /transport\.structure\(/, '改名走结构命令，不是块保存');
+  assert.match(page, /'rename-chapter'/, '章节改名动作名');
+  assert.match(page, /'rename-page'/, '页改名动作名');
+  const chapterHeading = page.match(/function chapterHeading[\s\S]*?\n}/);
+  assert.ok(chapterHeading, 'chapterHeading 要能读出来');
+  assert.doesNotMatch(chapterHeading[0], /dataset\.pageKey/, '章节不是页：目录高亮只认页身份，不能被章节抢占');
+
+  // 页尾加页、章节尾加章节。
+  assert.match(page, /'＋ 新页'/, '页尾按钮文案');
+  assert.match(page, /'＋ 新章节'/, '章节尾按钮文案');
+  assert.match(page, /'add-page'/, '加页动作名');
+  assert.match(page, /'add-chapter'/, '加章动作名');
+  assert.match(page, /function pageAddButton/, '每一页末尾都有加页入口');
+  assert.match(page, /function chapterAddButton/, '每一章末尾都有加章入口');
+
+  // 改完结构立即重画：回执带着整份快照回来，正文与目录都从同一份快照重画。
+  assert.match(page, /applySnapshot\(receipt\)/, '结构回执直接重画，不等轮询');
+  assert.match(page, /DocDrag\.render\(root/, '每次重画正文都重建目录与页句柄');
+  assert.match(page, /function renderStructuredBlocks/, '结构与块的渲染顺序由同一份快照决定');
+
+  // 目录点击滚动到页、滚动高亮当前页保留：页身份仍在 page-divider 上。
+  assert.match(page, /dataset\.pageKey = page\.key/, '页标题仍带页身份，目录才能跳转');
+  assert.match(css, /\.chapter-divider/, '章节要有一层正文样式');
+  assert.match(css, /\.page-add/, '加页入口要有样式');
+  assert.match(css, /\.chapter-add/, '加章入口要有样式');
+});
+
 // ── 锁定与待核对：不可编辑的块也不可拖动（SPEC 第 5 节） ─────────────────────
 const postJson = (url, path, body) => fetch(`${url}${path}`, {
   method: 'POST',
@@ -1043,8 +1089,8 @@ test('通道只有一套动作名：路由表在 doc-command 定义一次，白�
   assert.match(reviewCommand, /DOC_IDENTITY_ROUTES/, '传输层只引用命令后端导出的身份集');
 
   const expected = [
-    'open', 'block', 'split', 'merge', 'reorder', 'asset_replace', 'feedback', 'tasks', 'conflicts', 'decide',
-    'history', 'restore',
+    'open', 'block', 'split', 'merge', 'reorder', 'structure', 'asset_replace', 'feedback', 'tasks', 'conflicts',
+    'decide', 'history', 'restore',
   ];
   for (const route of expected) {
     assert.equal(DOC_ROUTES.has(route), true, `${route} 必须在那唯一的路由表里`);
@@ -1057,7 +1103,7 @@ test('通道只有一套动作名：路由表在 doc-command 定义一次，白�
   assert.doesNotMatch(transport, /review\.command\(\{\s*op/, '侧栏桥不再把 op 当动作名');
   assert.doesNotMatch(
     transport,
-    /\bop:\s*'(open|block|split|merge|reorder|asset_replace|feedback|tasks|conflicts|decide|history|restore)'/,
+    /\bop:\s*'(open|block|split|merge|reorder|structure|asset_replace|feedback|tasks|conflicts|decide|history|restore)'/,
     'transport 不许再出现第二套动作名',
   );
 
