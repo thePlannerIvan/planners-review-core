@@ -28,12 +28,22 @@ Node backend in this Core: `runBrowserCommand` dispatches to
 `scripts/doc-command.mjs`, which resolves the document from a `binding.json`
 written next to the surface (the generic surface contract deliberately carries
 no review semantics) and runs the same `scripts/lib/doc-session.mjs` the local
-workbench page uses. Browser operations are <!-- ops:browser -->`open`, `block`, `split`, `merge`,
-`reorder`, `asset_replace`, `feedback`, `tasks`, `conflicts`, `decide`, `history`,
-`restore`<!-- /ops:browser -->; <!-- ops:model -->`tasks`, `claim`, `complete`, `patch`, `conflicts`<!-- /ops:model --> are also
-exposed to the model by the `doc-command.mjs` CLI (`tasks` and `conflicts` are
-readable from both sides). That backend exports the browser allowlist and
-`review-command.mjs` imports it, so the transport does not keep a second copy.
+workbench page uses.
+
+The doc channel has one action vocabulary, and it is the local host's: a browser
+call is `{ "route": ..., "body": ... }`. `route` is the local host's action name
+and `body` is the raw request body the local server already receives. The local
+page routes by `route`; the bridge forwards the same two fields unchanged and
+has no action names of its own. The browser gate is identity, not an action
+allowlist: <!-- routes:identity -->`claim`, `complete`, `patch`<!-- /routes:identity -->
+are model-side and can only enter through the `doc-command.mjs` CLI, so a browser
+call using one of them is rejected with a readable reason. Everything else the
+page needs is forwarded: <!-- routes:page -->`open`, `block`, `split`, `merge`, `reorder`,
+`asset_replace`, `feedback`, `tasks`, `conflicts`, `decide`, `history`, `restore`<!-- /routes:page -->.
+`tasks` and `conflicts` are readable from both sides. `doc-command.mjs` exports
+that one route table (`DOC_ROUTES`) and identity set (`DOC_IDENTITY_ROUTES`);
+`review-command.mjs` imports the identity set, so the transport never keeps a
+second list of action names.
 
 The backend implementation is fixed by the declared backend identifier. For
 `content-workbench/1`, Core resolves its Node adapter from trusted runtime
@@ -54,6 +64,11 @@ surface file, made absolute/canonical and checked to contain `surface.dir`.
 Command-level path/executable/root overrides are rejected.
 
 ## Browser Calls
+
+The example below is a fixed-processor backend (`svg-workbench/1`): its payload
+is the processor's own command body. `doc-workbench/1` uses the `{route, body}`
+envelope described above — its `route` is the local host action name and its
+`body` is that same processor-style request body, unchanged.
 
 ```js
 const review = await ReviewBridge.connect();

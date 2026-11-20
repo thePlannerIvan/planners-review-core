@@ -9,7 +9,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 // 只测公开的缝：
 //   · 生成的 review-surface（validate-surface 认得的文件）与它的自包含入口；
-//   · 侧栏命令通道 runBrowserCommand(surface, op) —— 与本地页 HTTP 共用块级逻辑；
+//   · 侧栏命令通道 runBrowserCommand(surface, {route, body}) —— 与本地页 HTTP 共用块级逻辑；
 //   · 模型侧的 doc-command CLI（跨进程 claim / patch）；
 //   · 页面源码里「两个入口，同一套逻辑」那条界线。
 // 块怎么切、锚点怎么写是 lib 的实现细节，断言只落在磁盘字节、回执与任务形状上。
@@ -71,7 +71,7 @@ test('侧栏命令通道保存一块：只改这一块，其余字节逐字不�
   assert.deepEqual(built.surface.capabilities, ['command']);
 
   const surface = loadSurface(built.surfacePath);
-  const opened = await command(surface, { op: 'open' });
+  const opened = await command(surface, { route: 'open' });
   assert.equal(opened.ok, true, JSON.stringify(opened));
   assert.equal(opened.sha256, sha256(original), '打开一份锚点齐全的稿子不应改写文件');
   assert.ok(opened.blocks.length > 0, '侧栏要看到正文块');
@@ -80,11 +80,13 @@ test('侧栏命令通道保存一块：只改这一块，其余字节逐字不�
   assert.ok(target, '样例里应有一块可编辑段落');
   const content = '侧栏改过的这一段。';
   const saved = await command(surface, {
-    op: 'block',
-    anchor: target.anchor,
-    content,
-    base_sha256: opened.sha256,
-    base_block_sha256: target.sha256,
+    route: 'block',
+    body: {
+      anchor: target.anchor,
+      content,
+      base_sha256: opened.sha256,
+      base_block_sha256: target.sha256,
+    },
   });
   assert.equal(saved.ok, true, JSON.stringify(saved));
   assert.equal(saved.block.raw, content);
@@ -131,18 +133,20 @@ test('侧栏命令通道也能回车分块与删空合并，锚点随内容走',
   const { buildDocSurface } = await import('../scripts/doc-surface.mjs');
   const built = buildDocSurface({ docPath: path });
   const surface = loadSurface(built.surfacePath);
-  const opened = await command(surface, { op: 'open' });
+  const opened = await command(surface, { route: 'open' });
   assert.equal(opened.ok, true, JSON.stringify(opened));
   const target = opened.blocks.find((block) => block.type === 'paragraph' && block.editable
     && !String(block.raw).includes('\n'));
   assert.ok(target, '样例里应有一块单行可编辑段落');
 
   const split = await command(surface, {
-    op: 'split',
-    anchor: target.anchor,
-    before: '侧栏前半。',
-    after: '侧栏后半。',
-    base_sha256: opened.sha256,
+    route: 'split',
+    body: {
+      anchor: target.anchor,
+      before: '侧栏前半。',
+      after: '侧栏后半。',
+      base_sha256: opened.sha256,
+    },
   });
   assert.equal(split.ok, true, JSON.stringify(split));
   assert.notEqual(split.new_block.anchor, target.anchor, '新块拿新锚点');
@@ -151,15 +155,17 @@ test('侧栏命令通道也能回车分块与删空合并，锚点随内容走',
   assert.ok(saved.includes(`侧栏后半。<!-- ${split.new_block.anchor} -->`), '新锚点贴在后半');
 
   const merged = await command(surface, {
-    op: 'merge',
-    anchor: split.new_block.anchor,
-    previous: target.anchor,
-    content: '',
-    base_sha256: split.sha256,
+    route: 'merge',
+    body: {
+      anchor: split.new_block.anchor,
+      previous: target.anchor,
+      content: '',
+      base_sha256: split.sha256,
+    },
   });
   assert.equal(merged.ok, true, JSON.stringify(merged));
   assert.equal(merged.block.anchor, target.anchor, '合并后留下前一块的锚点');
-  const after = await command(surface, { op: 'open' });
+  const after = await command(surface, { route: 'open' });
   assert.equal(after.blocks.some((block) => block.anchor === split.new_block.anchor), false, '后一块的锚点被删除');
   assert.equal(blockOf(after, target.anchor).raw, '侧栏前半。', '前一块内容逐字不动');
 });
@@ -188,9 +194,9 @@ test('派发在两通道同形：本地宿主落收件箱，侧栏命令回唤�
   const localSurface = loadSurface(localBuilt.surfacePath, { host: 'local' });
   const sidebarSurface = loadSurface(sidebarBuilt.surfacePath);
 
-  const opened = await command(localSurface, { op: 'open' });
+  const opened = await command(localSurface, { route: 'open' });
   const anchors = opened.blocks.filter((block) => block.type === 'paragraph').slice(0, 2).map((block) => block.anchor);
-  const payload = { op: 'feedback', scope: 'blocks', anchors, text: '把这两块写紧一点。只改这两块。' };
+  const payload = { route: 'feedback', body: { scope: 'blocks', anchors, text: '把这两块写紧一点。只改这两块。' } };
 
   const inbox = await command(localSurface, payload);
   const wake = await command(sidebarSurface, payload);
@@ -201,11 +207,11 @@ test('派发在两通道同形：本地宿主落收件箱，侧栏命令回唤�
   assert.ok(inbox.dispatch.path, '收件箱回执要说任务落在哪');
   assert.deepEqual(feedbackShape(wake.task), feedbackShape(inbox.task), '两条通道拿到同一条任务形状');
   assert.equal(wake.task.status, 'pending');
-  assert.equal(wake.task.text, payload.text);
+  assert.equal(wake.task.text, payload.body.text);
   assert.deepEqual(wake.task.blocks.map((block) => block.anchor), anchors, '侧栏派发绑定的是同一批块身份');
 
   // 唤醒文案要能让模型真的开工：任务、稿子、块、人的话、下一步命令，一个都不少。
-  for (const piece of [wake.task.id, wake.task.doc.path, anchors[0], payload.text, 'doc-command.mjs']) {
+  for (const piece of [wake.task.id, wake.task.doc.path, anchors[0], payload.body.text, 'doc-command.mjs']) {
     assert.ok(wake.dispatch.text.includes(piece), `唤醒文案缺少 ${piece}：${wake.dispatch.text}`);
   }
   assert.ok(wake.dispatch.next.includes('doc-command.mjs') && wake.dispatch.next.includes(sidebarBuilt.surfacePath));
@@ -220,11 +226,11 @@ test('侧栏锁与待核对可见可裁决：模型 CLI 跨进程 claim / patch�
   const { buildDocSurface } = await import('../scripts/doc-surface.mjs');
   const built = buildDocSurface({ docPath: path });
   const surface = loadSurface(built.surfacePath);
-  const opened = await command(surface, { op: 'open' });
+  const opened = await command(surface, { route: 'open' });
   const [first, second] = opened.blocks.filter((block) => block.type === 'paragraph').slice(0, 2);
 
   const submitted = await command(surface, {
-    op: 'feedback', scope: 'blocks', anchors: [first.anchor, second.anchor], text: '两块都收紧。',
+    route: 'feedback', body: { scope: 'blocks', anchors: [first.anchor, second.anchor], text: '两块都收紧。' },
   });
   assert.equal(submitted.ok, true, JSON.stringify(submitted));
   const taskId = submitted.task.id;
@@ -237,13 +243,13 @@ test('侧栏锁与待核对可见可裁决：模型 CLI 跨进程 claim / patch�
   assert.equal(claimed.status, 0, claimed.stderr);
   assert.equal(JSON.parse(claimed.stdout).task.status, 'processing');
 
-  const locked = await command(surface, { op: 'open' });
+  const locked = await command(surface, { route: 'open' });
   assert.equal(blockOf(locked, first.anchor).locked, true, '模型开工后侧栏块显示为锁定');
   assert.equal(blockOf(locked, first.anchor).locked_by, taskId);
 
   // 锁定块不许从浏览器改：锁判定仍然在同一个 session 里，不是界面上的一层灰。
   const blocked = await command(surface, {
-    op: 'block', anchor: first.anchor, content: '想绕过锁。', base_sha256: locked.sha256,
+    route: 'block', body: { anchor: first.anchor, content: '想绕过锁。', base_sha256: locked.sha256 },
   });
   assert.equal(blocked.ok, false);
   assert.equal(blocked.code, 'block_locked');
@@ -271,37 +277,34 @@ test('侧栏锁与待核对可见可裁决：模型 CLI 跨进程 claim / patch�
   assert.deepEqual(patchReceipt.applied, [second.anchor], '基线没变的块照常写回');
   assert.deepEqual(patchReceipt.deferred_blocks.map((block) => block.anchor), [first.anchor]);
 
-  const after = await command(surface, { op: 'open' });
+  const after = await command(surface, { route: 'open' });
   assert.equal(blockOf(after, first.anchor).raw, human, '冲突块保持人的版本');
   assert.equal(blockOf(after, first.anchor).locked, true, '待核对期间该块保持锁定');
   assert.ok(blockOf(after, first.anchor).deferred, '侧栏块视图要标出待核对');
 
-  const conflicts = await command(surface, { op: 'conflicts' });
+  const conflicts = await command(surface, { route: 'conflicts' });
   assert.equal(conflicts.ok, true);
   const conflict = conflicts.conflicts.find((item) => item.anchor === first.anchor);
   assert.equal(conflict.disk_raw, human, '裁决要能看到人的版本');
   assert.equal(conflict.model_content, modelFirst, '裁决要能看到模型版');
 
-  const decided = await command(surface, { op: 'decide', anchor: first.anchor, decision: 'model' });
+  const decided = await command(surface, { route: 'decide', body: { anchor: first.anchor, decision: 'model' } });
   assert.equal(decided.ok, true, JSON.stringify(decided));
   assert.equal(decided.written, true);
 
   const final = readFileSync(path, 'utf8');
   assert.ok(final.includes(`${modelFirst}<!-- ${first.anchor} -->`), '裁决「用模型版」后磁盘写下模型版');
   assert.ok(!final.includes(human), '人的那一版被裁决替换');
-  const settled = await command(surface, { op: 'open' });
+  const settled = await command(surface, { route: 'open' });
   assert.equal(blockOf(settled, first.anchor).locked, false, '裁决后解锁');
   assert.equal(blockOf(settled, first.anchor).raw, modelFirst);
 
-  // 模型侧动作不能从浏览器借道：claim / patch 不在浏览器的操作白名单里。
-  for (const payload of [
-    { op: 'claim', task_id: taskId },
-    { op: 'patch', task_id: taskId, patches: [] },
-    { op: 'complete', task_id: taskId },
-  ]) {
-    const refused = await command(surface, payload);
-    assert.equal(refused.ok, false, `${payload.op} 不该允许浏览器调用`);
+  // 模型侧身份不能从浏览器借道：claim / patch / complete 只能走模型 CLI。
+  for (const route of ['claim', 'patch', 'complete']) {
+    const refused = await command(surface, { route, body: { task_id: taskId, patches: [] } });
+    assert.equal(refused.ok, false, `${route} 不该允许浏览器调用`);
     assert.equal(refused.code, 'command_operation');
+    assert.match(refused.error, /模型/, `${route} 的拒绝理由要可读`);
   }
 });
 
@@ -383,10 +386,10 @@ test('没有插件时生成的 surface 也能直接打开：页面带桥、命�
   assert.ok(!page.includes('{{REVIEW_BRIDGE}}'), '注入点必须被替换掉，不能留在页面上');
   assert.deepEqual((await (await fetch(`${origin}/__review/capabilities`)).json()).capabilities, ['command']);
 
-  const opened = await post({ op: 'open' });
+  const opened = await post({ route: 'open' });
   assert.equal(opened.ok, true, JSON.stringify(opened));
   assert.ok(opened.blocks.length > 0);
-  const feedback = await post({ op: 'feedback', scope: 'doc', text: '整份收紧。' });
+  const feedback = await post({ route: 'feedback', body: { scope: 'doc', text: '整份收紧。' } });
   assert.equal(feedback.ok, true, JSON.stringify(feedback));
   assert.equal(feedback.dispatch.channel, 'inbox', '没有插件：同一份页面走收件箱，不假装唤醒');
   assert.ok(existsSync(feedback.dispatch.path), '任务必须真的落盘');
@@ -402,7 +405,7 @@ test('没有插件时生成的 surface 也能直接打开：页面带桥、命�
 });
 
 // ── 页面在侧栏里真的把保存 / 派发交给桥，而不是自己拼第二套写盘 ─────────────
-test('侧栏 transport 把页面动作映射成 bridge 的 command 与 wake', async () => {
+test('侧栏 transport 只转发 {route, body}：保存/重排/派发共用同一套动作名', async () => {
   const source = readFileSync(join(WORKBENCH_ASSETS, 'doc-transport.js'), 'utf8');
   const calls = [];
   const wakes = [];
@@ -410,14 +413,14 @@ test('侧栏 transport 把页面动作映射成 bridge 的 command 与 wake', as
     capabilities: ['command'],
     command: async (payload) => {
       calls.push(payload);
-      if (payload.op === 'feedback') {
+      if (payload.route === 'feedback') {
         return {
           ok: true,
           task: { id: 't:abcdefabcdef', blocks: [{ anchor: 'b:aaaaaa' }], doc: { path: '/tmp/a.md' }, text: '收紧。' },
           dispatch: { channel: 'wake', text: '派发文案：只改这一块。', next: 'node doc-command.mjs /tmp/s.json tasks' },
         };
       }
-      return { ok: true, echo: payload.op };
+      return { ok: true, echo: payload.route };
     },
     wake: async (payload) => { wakes.push(payload); return { ok: true, woke: true }; },
     asset: async (path, extra) => `blob:${path}?${extra?.v ?? ''}`,
@@ -431,9 +434,18 @@ test('侧栏 transport 把页面动作映射成 bridge 的 command 与 wake', as
   const api = await Transport.connect();
   assert.equal(api.mode, 'sidebar', '帧内且桥可用时走侧栏通道');
   await api.saveBlock({ anchor: 'b:aaaaaa', content: 'x' });
-  assert.equal(calls[0].op, 'block', '保存映射到 command({op:"block"})');
+  assert.deepEqual(calls[0], { route: 'block', body: { anchor: 'b:aaaaaa', content: 'x' } }, '保存只发 route 与原始 body');
+  // 拖块与 Alt+↑↓ 都走这一个 route；move-block / move-page 只活在 body 里，不是桥的动作名。
+  const moveBlock = { op: 'move-block', base_sha256: 'a'.repeat(64), anchor: 'b:aaaaaa', to: { chapter: 1, index: 1, before: null } };
+  await api.reorder(moveBlock);
+  assert.deepEqual(calls[1], { route: 'reorder', body: moveBlock }, '拖块经 route=reorder 转发，body 原样');
+  assert.equal(Object.hasOwn(calls[1], 'op'), false, '动作名只在 route 上，不在信封顶层');
+  const movePage = { op: 'move-page', base_sha256: 'a'.repeat(64), page: { chapter: 1, index: 1 }, to: { chapter: 2, index: 1, position: 'before' } };
+  await api.reorder(movePage);
+  assert.deepEqual(calls[2], { route: 'reorder', body: movePage }, '整页拖动也走同一个 route');
   const receipt = await api.feedback({ scope: 'blocks', anchors: ['b:aaaaaa'], text: '收紧。' });
-  assert.equal(calls[1].op, 'feedback');
+  assert.equal(calls[3].route, 'feedback');
+  assert.deepEqual(calls[3].body, { scope: 'blocks', anchors: ['b:aaaaaa'], text: '收紧。' });
   assert.deepEqual(wakes, [{ unit: 't:abcdefabcdef', text: '派发文案：只改这一块。' }], '唤醒由页面带着整句文案发出');
   assert.equal(receipt.dispatch.woke, true);
   assert.equal(await api.imageUrl('assets/a.png', 'v1'), 'blob:assets/a.png?v1', '侧栏里的图走桥取字节');
@@ -452,40 +464,41 @@ test('侧栏命令通道也能列出与恢复历史：恢复是一次新编辑�
   const built = buildDocSurface({ docPath: path });
   const surface = loadSurface(built.surfacePath);
 
-  const opened = await command(surface, { op: 'open' });
+  const opened = await command(surface, { route: 'open' });
   assert.equal(opened.ok, true, JSON.stringify(opened));
   const target = opened.blocks.find((block) => block.type === 'paragraph' && block.editable);
   assert.ok(target, '样例里应有一块可编辑段落');
   const saved = await command(surface, {
-    op: 'block',
-    anchor: target.anchor,
-    content: '侧栏改过的这一段。',
-    base_sha256: opened.sha256,
-    base_block_sha256: target.sha256,
+    route: 'block',
+    body: {
+      anchor: target.anchor,
+      content: '侧栏改过的这一段。',
+      base_sha256: opened.sha256,
+      base_block_sha256: target.sha256,
+    },
   });
   assert.equal(saved.ok, true, JSON.stringify(saved));
 
-  const listed = await command(surface, { op: 'history' });
+  const listed = await command(surface, { route: 'history' });
   assert.equal(listed.ok, true, JSON.stringify(listed));
   assert.equal(listed.contract, 'planners-doc-history/1');
   assert.equal(listed.versions.length, 1, '保存前的原稿已经存档');
   assert.equal(listed.versions[0].sha256, sha256(original));
 
   const restored = await command(surface, {
-    op: 'restore',
-    id: listed.versions[0].id,
-    base_sha256: saved.sha256,
+    route: 'restore',
+    body: { id: listed.versions[0].id, base_sha256: saved.sha256 },
   });
   assert.equal(restored.ok, true, JSON.stringify(restored));
   assert.equal(restored.changed, true, '恢复也要真的落盘');
   assert.equal(readFileSync(path, 'utf8'), original, '侧栏恢复把稿子带回原稿');
 
-  const after = await command(surface, { op: 'history' });
+  const after = await command(surface, { route: 'history' });
   assert.equal(after.versions.length, 2, '恢复本身又存了一档');
   assert.equal(after.versions[0].operation, 'restore');
   assert.ok(after.versions.some((version) => version.id === listed.versions[0].id), '旧档不删');
 
-  const modelOnly = await command(surface, { op: 'claim', task_id: 't:abcdefabcdef' });
+  const modelOnly = await command(surface, { route: 'claim', body: { task_id: 't:abcdefabcdef' } });
   assert.equal(modelOnly.ok, false);
   assert.equal(modelOnly.code, 'command_operation', '模型侧动作仍然不能从浏览器进来');
 });

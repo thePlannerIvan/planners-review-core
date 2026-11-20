@@ -1034,24 +1034,41 @@ test('历史恢复是一次新编辑：旧档不删，过期基线与锁定期�
 });
 
 // ── 一处事实一个来源（references/design-and-porting-rules.md 规则一） ─────────
-test('浏览器操作白名单只有 doc-command 一份，传输层与文档引用同一组', async () => {
-  const { DOC_BROWSER_OPERATIONS } = await import('../scripts/doc-command.mjs');
+test('通道只有一套动作名：路由表在 doc-command 定义一次，白名单只拦模型侧身份', async () => {
+  const { DOC_ROUTES, DOC_IDENTITY_ROUTES } = await import('../scripts/doc-command.mjs');
   const reviewCommand = readFileSync(join(core, 'scripts', 'lib', 'review-command.mjs'), 'utf8');
-  assert.doesNotMatch(reviewCommand, /DOC_OPERATIONS/, '传输层不许再留第二份文字工作台白名单');
-  assert.match(reviewCommand, /DOC_BROWSER_OPERATIONS/, '传输层直接引用命令后端导出的那一份');
+  const transport = readFileSync(join(core, 'assets', 'workbench', 'doc-transport.js'), 'utf8');
+
+  assert.doesNotMatch(reviewCommand, /DOC_BROWSER_OPERATIONS/, '传输层不许再留第二份浏览器动作白名单');
+  assert.doesNotMatch(reviewCommand, /DOC_MODEL_OPERATIONS/, '模型侧也不许变成另一份动作名单');
+  assert.match(reviewCommand, /DOC_IDENTITY_ROUTES/, '传输层只引用命令后端导出的身份集');
 
   const expected = [
     'open', 'block', 'split', 'merge', 'reorder', 'asset_replace', 'feedback', 'tasks', 'conflicts', 'decide',
     'history', 'restore',
   ];
-  assert.deepEqual([...DOC_BROWSER_OPERATIONS].sort(), expected.sort(), '浏览器操作只有这十二项');
-  for (const op of ['claim', 'complete', 'patch']) {
-    assert.equal(DOC_BROWSER_OPERATIONS.has(op), false, `${op} 只能从模型侧 CLI 进来`);
+  for (const route of expected) {
+    assert.equal(DOC_ROUTES.has(route), true, `${route} 必须在那唯一的路由表里`);
+    assert.equal(DOC_IDENTITY_ROUTES.has(route), false, `${route} 是页面动作，不是模型侧身份`);
   }
-  for (const doc of ['references/command-transport.md', 'references/architecture.md']) {
-    const text = readFileSync(join(core, doc), 'utf8');
-    for (const op of expected) assert.ok(text.includes(`\`${op}\``), `${doc} 应列出 ${op}`);
-  }
+  assert.deepEqual([...DOC_IDENTITY_ROUTES].sort(), ['claim', 'complete', 'patch'], '模型侧身份只有这三个');
+
+  // 页面发 `{route, body}`；桥只转发，不许把 op 再当动作名。
+  assert.match(transport, /review\.command\(\{\s*route/, '侧栏桥只转发 route');
+  assert.doesNotMatch(transport, /review\.command\(\{\s*op/, '侧栏桥不再把 op 当动作名');
+  assert.doesNotMatch(
+    transport,
+    /\bop:\s*'(open|block|split|merge|reorder|asset_replace|feedback|tasks|conflicts|decide|history|restore)'/,
+    'transport 不许再出现第二套动作名',
+  );
+
+  // 浏览器文件不能 import Node 模块，所以本地路由表只能是同名的一份；这条把「同名」变成断言，
+  // 两份表一旦漂移，拖块又会在一条路上失败而另一条路上全绿。
+  const table = transport.match(/const ROUTES = \{([\s\S]*?)\n {2}\};/);
+  assert.ok(table, 'transport 里应有唯一的本地路由表');
+  const localRoutes = [...table[1].matchAll(/^\s{4}([a-z_]+):/gm)].map((match) => match[1]);
+  assert.deepEqual(localRoutes.sort(), expected.slice().sort(), '本地路由表就是页面动作名，一个不多一个不少');
+  for (const route of localRoutes) assert.ok(DOC_ROUTES.has(route), `${route} 必须也在后端的路由表里`);
 });
 
 test('sha256 与原子写只有一份实现：资产模块复用内核的内容哈希与写盘原语', () => {
