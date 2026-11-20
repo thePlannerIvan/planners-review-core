@@ -27,6 +27,15 @@
     { "anchor": "b:7b057d", "sha256": "9f2c…" },
     { "anchor": "b:81c4d0", "sha256": "41aa…" }
   ],
+  "diff": {
+    "contract": "planners-doc-diff/1",
+    "batch": "b:9f21c4",
+    "baseline_sha256": "9f2c…",
+    "chapters": [],
+    "pages": [],
+    "blocks": [],
+    "orphan_notes": []
+  },
   "status": "pending",
   "created_at": "2026-11-19T12:00:00.000Z",
   "started_at": null,
@@ -43,9 +52,13 @@
 | `text` | 人的意见原文，非空；是「要模型改什么」，不是批准或保存 |
 | `doc` | 任务对应的文档：绝对路径 + 文档头三元组。模型据此读文件 |
 | `blocks` | 任务绑定的块，**只有锚点与 `sha256(block.raw)`**。顺序即提交顺序/文档顺序 |
+| `diff` | 批注批次附带的 `planners-doc-diff/1`：章节 / 页 / 块相对「模型上次取稿时看到的版本」的结构变化。块级反馈（`/api/feedback`）没有批次，为 `null` |
 | `status` | `pending` → `processing` → `review`（有待核对块）→ `done` |
 | `locked_blocks` | 这条任务此刻还占着哪些块。`processing` 时是 `task.blocks` 的全部；写回后只剩待核对的块；`done` 为空 |
 | `created_at` / `started_at` / `finished_at` | ISO 时间；后两个在 claim / complete 时写入 |
+
+`diff` 的形状、动作与基准见 `contracts/planners-doc-diff.md`：它只说结构哪里动了，不带正文；
+模型读 `tasks` 时一并读到，不必去猜人动过什么。目标块已被删的批注进 `diff.orphan_notes`，不静默消失。
 
 `sha256(block.raw)` 是**提交那一刻**的块内容指纹，不是当前磁盘指纹。模型写回时由服务端拿它和当前磁盘指纹逐块比对：一致才应用，不一致进待核对，不静默覆盖（第 4 节）。
 
@@ -71,7 +84,8 @@
 | `task_missing` / `task_state` | 任务不存在、或状态不允许这一步（409） |
 | `task_stale` | claim 时任务绑定的块已不在文档里（409，重新提交反馈） |
 | `patch_request` / `patch_blocks` / `patch_anchor` | 写回请求不是对象、patch 为空 / 不是文本 / 锚点重复、锚点不在这条任务里或文档里已不存在（400 / 409） |
-| `block_conflict` | 人保存时整份基线与这一块的基线都过期（409，这一块在别处被改过；请刷新后再核对） |
+| `block_conflict` | 人保存 / 分块 / 合并时**同一块**在别处也被改过（409，停下来让两边核对；错误里点名锚点，`details` 带回 `disk_raw` 与 `your_content` 两版，磁盘不动） |
+| `stale_document` | 整份基线过期且没带这一块的 `base_block_sha256`，无法判断是不是同一块（409，刷新后再保存） |
 | `conflict_request` / `conflict_anchor` / `conflict_decision` / `conflict_missing` / `conflict_stale` | 裁决请求形状不对、裁决值非法、没有这条待核对 / 块已不存在（400 / 409） |
 | `locked` | 拿不到写锁（另一个工作台正在写盘，409，稍后重试） |
 
@@ -80,8 +94,13 @@
 ## 3. 锁
 
 - **派发不锁块，模型开始处理才锁**（claim）。`pending` 只是「等人/模型来读」。
-- 锁的粒度为块：同一任务处理的块显示「模型正在改这一段」且不可编辑，其余块照常编辑、照常保存。
-- 保存路径在服务端再拦一次：锁定块返回 `block_locked`，磁盘一个字节都不动。
+- 锁的粒度为块：**只锁 `task.blocks` 里那几块**。它们显示「模型正在改这一段」且不可编辑，
+  其余块照常编辑、照常保存。
+- 保存路径在服务端再拦一次：锁定块返回 `block_locked`，**错误里点名是哪一块**，磁盘一个字节都不动。
+- 文件在别处变了不预先拒绝：保存 / 分块 / 合并 / 重排都自动重读当前全文，把这次改动重放到新版本上
+  （回执 `merged` / `replayed: true`）。只有重放到**同一块**（这一块的 `base_block_sha256` 也对不上）才返回
+  `block_conflict` 停下来让人核对；重排只挪位置、不覆盖块内容，所以块还在就重放，块没了才返回
+  `block_missing`。
 - 分块（`/api/block/split`）与删空合并（`/api/block/merge`）同样先拒锁定块：
   锚点随内容走，块被锁着时改它的身份会和模型手里的基线打架。
 - 模型写回后只解已应用的块；进待核对的块继续锁着（任务状态变 `review`），人裁决后才解锁。
@@ -180,8 +199,8 @@ POST /api/conflict/decide
 ```
 
 - 由任务 id `t:<12 位十六进制>` 派生，文件名把 `:` 换成 `-` 以便跨平台。
-- 文件内容就是第 1 节的任务对象（含 `contract` / `id` / `blocks[].anchor` / `blocks[].sha256` / `text`），
-  不另包一层、不复制块 raw 或全文。
+- 文件内容就是第 1 节的任务对象（含 `contract` / `id` / `blocks[].anchor` / `blocks[].sha256` / `text`，
+  批注批次还含 `diff`），不另包一层、不复制块 raw 或全文。
 - **一条任务一个文件**：重复派发同一条任务只覆盖同一个文件，不产生第二个条目。
 - 收件箱是任务的落盘副本；任务板（含锁与待核对）落在 `.doc-workbench/state/`。模型在工作台运行时参与锁与写回：
   本地页走 `/api/task/claim`、`/api/patch`；侧栏或工作台不在时用 `scripts/doc-command.mjs <surface> claim|patch`，

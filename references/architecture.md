@@ -38,6 +38,7 @@ review-bridge.js ──┘
 | 内核 | `scripts/lib/doc-session.mjs`（解析、块级写、journal、锁、裁决） | **同一个** |
 | 旁路状态 | `scripts/lib/doc-boards.mjs` → `.doc-workbench/state/` | **同一份**（模型 CLI 跨进程可见） |
 | 批注草稿 | `scripts/lib/doc-notes.mjs` → `.doc-workbench/notes.json`（`planners-doc-notes/1`） | **同一份**（攒批、可跨天恢复） |
+| 结构 diff 基准 | `scripts/lib/doc-diff.mjs` → `.doc-workbench/state/baseline.json`（`planners-doc-baseline/1`） | **同一份**（模型取稿时刷新，人提交批次时随任务给回 `planners-doc-diff/1`） |
 
 侧栏不允许页面自己拼第二套写盘，也不允许桥有自己的动作词汇表。通道只发
 `{route, body}`：`route` 是本地宿主那条路的动作名，`body` 是本地服务器本来就会收到的

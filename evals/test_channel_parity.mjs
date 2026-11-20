@@ -150,12 +150,13 @@ test('侧栏桥与本地宿主：同一条拒绝在两条路上同码同句，�
 
   const cases = [
     {
-      name: '过期基线',
+      // 过期基线不再是拒绝理由（票 23：自动重读、重放），所以这里改测「块已被别处删掉」。
+      name: '块不存在',
       body: {
-        op: 'move-block', base_sha256: '0'.repeat(64), anchor: opened.blocks[1].anchor,
+        op: 'move-block', base_sha256: opened.sha256, anchor: 'b:ffffff',
         to: { chapter: 1, index: 1, before: null },
       },
-      code: 'stale_document',
+      code: 'block_missing',
     },
     {
       name: '落点不在目标页',

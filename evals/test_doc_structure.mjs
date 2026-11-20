@@ -209,7 +209,7 @@ test('改名拒绝：过期基线、空标题、找不到章节/页都不落盘�
   assert.equal(readFileSync(path, 'utf8'), original);
 });
 
-// ── 加页：页尾加一页，落在同章同位置，新页有可写的第一块 ────────────────────
+// ── 加页：页尾加一页，落在同章同位置；文件里是真正的空页（没有占位正文） ──────
 test('页尾加页：新页插在这一页之后，仍在同一章；目录与页序立即更新', async (t) => {
   const { path } = scratchDoc();
   const server = await openWorkbench(t, path);
@@ -227,7 +227,7 @@ test('页尾加页：新页插在这一页之后，仍在同一章；目录与�
   assert.equal(added.body.page.chapter, 1, '新页留在同一章');
   assert.equal(added.body.page.index, 2, '新页插在页一之后，成为这一章第 2 页');
   assert.equal(added.body.page.title, '新页');
-  assert.match(added.body.page.anchor, ANCHOR, '新页的第一块有独立锚点');
+  assert.equal(added.body.page.anchor, undefined, '空页没有块身份');
 
   const saved = readFileSync(path, 'utf8');
   const lines = linesOf(saved);
@@ -235,9 +235,11 @@ test('页尾加页：新页插在这一页之后，仍在同一章；目录与�
   assert.ok(newHeading > headingLine(saved, '第二段。<!-- b:bbbbbb -->'), '新页在页一最后一块之后');
   assert.ok(newHeading < headingLine(saved, '## 页二'), '新页在页二之前');
   assert.equal(lines[newHeading + 1], '', '页标题下空一行');
-  assert.match(lines[newHeading + 2], /^在这里写这一页。<!-- b:[0-9a-f]{6,12} -->$/, '新页第一块与锚点在同一行');
-  assert.equal(lines[newHeading + 3], '', '新页与下一页之间空一行');
-  assert.equal(validate(path).code, 0, `加页后仍合规：${validate(path).stdout}`);
+  assert.equal(lines[newHeading + 2], '## 页二', '空页里没有正文：标题之后直接是下一页');
+  assert.doesNotMatch(saved, /在这里写这一页/, '文件里不能留占位正文');
+  const emptyVerdict = validate(path);
+  assert.equal(emptyVerdict.code, 1, '真正的空页由交付校验器报出来');
+  assert.deepEqual(emptyVerdict.out.errors.map((error) => error.code), ['page_empty']);
 
   const after = await getDoc(server.url);
   assert.deepEqual(after.pages.map((page) => `${page.chapterIndex}:${page.index}:${page.title}`), [
@@ -246,10 +248,8 @@ test('页尾加页：新页插在这一页之后，仍在同一章；目录与�
   const newPage = after.pages.find((page) => page.title === '新页');
   assert.equal(newPage.chapter, '第一章');
   assert.equal(newPage.sources, 0, '新页还没有出处区');
-  const pageBlocks = after.blocks.filter((block) => block.page.key === newPage.key);
-  assert.equal(pageBlocks.length, 1, '新页有一个可写的第一块');
-  assert.equal(pageBlocks[0].anchor, added.body.page.anchor);
-  assert.equal(pageBlocks[0].type, 'paragraph');
+  assert.equal(newPage.blocks, 0, '新页是真正的空页');
+  assert.equal(after.blocks.length, before.blocks.length, '加页不凭空多出一块');
   for (const block of before.blocks) {
     const now = blockOf(after, block.anchor);
     assert.ok(now, `块 ${block.anchor} 不应消失`);
@@ -269,8 +269,9 @@ test('页尾加页：新页插在这一页之后，仍在同一章；目录与�
     '1:1:页一', '1:2:新页', '1:3:页二', '1:4:新页', '2:1:页三',
   ], '章末加页不进下一章');
   const appendedText = readFileSync(path, 'utf8');
-  assert.ok(headingLine(appendedText, '## 新页') >= 0);
-  assert.equal(validate(path).code, 0, `章末加页仍合规：${validate(path).stdout}`);
+  assert.equal((appendedText.match(/## 新页/g) ?? []).length, 2, '章末又加了一页空页');
+  assert.doesNotMatch(appendedText, /在这里写这一页/);
+  assert.equal(validate(path).code, 1, '空页仍然由交付校验器报出来');
 });
 
 // ── 加章：章节尾加一章（带第一页），目录立即多一级 ──────────────────────────
@@ -292,7 +293,7 @@ test('章节尾加章：新章带第一页插在这一章之后，章末加章�
   );
   assert.equal(added.body.page.chapter, 2);
   assert.equal(added.body.page.index, 1);
-  assert.match(added.body.page.anchor, ANCHOR);
+  assert.equal(added.body.page.anchor, undefined, '新章的第一页也是真正的空页');
 
   const saved = readFileSync(path, 'utf8');
   const chapterLine = headingLine(saved, '# 新章节');
@@ -300,8 +301,12 @@ test('章节尾加章：新章带第一页插在这一章之后，章末加章�
   assert.ok(chapterLine > headingLine(saved, '## 页二'), '新章在这一章最后一页之后');
   assert.ok(chapterLine < headingLine(saved, '# 第二章'), '新章在下一章之前');
   assert.equal(pageLine, chapterLine + 2, '新章紧跟着自己的第一页（中间空一行）');
-  assert.match(linesOf(saved)[pageLine + 2], /^在这里写这一页。<!-- b:[0-9a-f]{6,12} -->$/, '新章第一页有可写的第一块');
-  assert.equal(validate(path).code, 0, `加章后仍合规：${validate(path).stdout}`);
+  assert.equal(linesOf(saved)[pageLine + 1], '', '页标题下空一行');
+  assert.equal(linesOf(saved)[pageLine + 2], '# 第二章', '空页里没有正文');
+  assert.doesNotMatch(saved, /在这里写这一页/, '文件里不能留占位正文');
+  const emptyVerdict = validate(path);
+  assert.equal(emptyVerdict.code, 1, '真正的空页由交付校验器报出来');
+  assert.deepEqual(emptyVerdict.out.errors.map((error) => error.code), ['page_empty']);
 
   const after = await getDoc(server.url);
   assert.deepEqual(after.chapters.map((chapter) => chapter.title), ['第一章', '新章节', '第二章'], '目录里的章节立即更新');
@@ -311,8 +316,8 @@ test('章节尾加章：新章带第一页插在这一章之后，章末加章�
   assert.equal(after.pages[2].chapter, '新章节');
   assert.deepEqual(
     after.blocks.map((block) => block.anchor).sort(),
-    [...before.blocks.map((block) => block.anchor), added.body.page.anchor].sort(),
-    '加章只新增一块，旧块身份全部保留',
+    before.blocks.map((block) => block.anchor).sort(),
+    '加章不新增块，旧块身份全部保留',
   );
   for (const block of before.blocks) {
     assert.equal(blockOf(after, block.anchor).raw, block.raw, `块 ${block.anchor} 的 raw 必须逐字不变`);
@@ -327,8 +332,8 @@ test('章节尾加章：新章带第一页插在这一章之后，章末加章�
   assert.equal(appended.status, 200, JSON.stringify(appended.body));
   assert.equal(appended.body.chapter.index, 4);
   const appendedText = readFileSync(path, 'utf8');
-  assert.ok(appendedText.trimEnd().endsWith(`<!-- ${appended.body.page.anchor} -->`), '新章落在文件末尾');
+  assert.ok(appendedText.trimEnd().endsWith('## 新页'), '新章落在文件末尾（最后一页是空页）');
   const last = await getDoc(server.url);
   assert.deepEqual(last.chapters.map((chapter) => chapter.title), ['第一章', '新章节', '第二章', '新章节']);
-  assert.equal(validate(path).code, 0, `章末加章仍合规：${validate(path).stdout}`);
+  assert.equal(validate(path).code, 1, '空页仍然由交付校验器报出来');
 });

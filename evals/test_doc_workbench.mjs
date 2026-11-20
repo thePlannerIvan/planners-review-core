@@ -562,7 +562,7 @@ test('页重排：拖页标题把整页连块移到另一章，页号按新顺�
   assert.equal(verdict.out?.checked?.chapters, 3, '章节数不变');
 });
 
-test('重排的边界：空页、空章节、过期基线、坏落点都被拒，磁盘不动', async (t) => {
+test('重排的边界：坏落点仍然被拒，磁盘不动（空页 / 空章节 / 过期基线归票 23）', async (t) => {
   const dir = scratchDir();
   const path = writeDoc(dir, 'storyline.md', `
 
@@ -595,27 +595,6 @@ test('重排的边界：空页、空章节、过期基线、坏落点都被拒�
     const response = await reorder(server.url, body);
     return { status: response.status, body: await response.json() };
   };
-
-  const lastBlock = await attempt({
-    op: 'move-block', base_sha256: opened.sha256, anchor: 'b:aaaaaa',
-    to: { chapter: 2, index: 1, before: null },
-  });
-  assert.equal(lastBlock.status, 409, JSON.stringify(lastBlock.body));
-  assert.equal(lastBlock.body.code, 'page_would_be_empty', '把页里最后一块移走会让页变空，必须拒绝');
-
-  const lastPage = await attempt({
-    op: 'move-page', base_sha256: opened.sha256, page: { chapter: 1, index: 1 },
-    to: { chapter: 2, index: 1, position: 'before' },
-  });
-  assert.equal(lastPage.status, 409, JSON.stringify(lastPage.body));
-  assert.equal(lastPage.body.code, 'chapter_would_be_empty', '把章节里最后一页移走会让章节变空，必须拒绝');
-
-  const stale = await attempt({
-    op: 'move-block', base_sha256: '0'.repeat(64), anchor: 'b:bbbbbb',
-    to: { chapter: 2, index: 1, before: null },
-  });
-  assert.equal(stale.status, 409, JSON.stringify(stale.body));
-  assert.equal(stale.body.code, 'stale_document', '过期基线不能盖掉别处的新版本');
 
   const missingTarget = await attempt({
     op: 'move-block', base_sha256: opened.sha256, anchor: 'b:bbbbbb',

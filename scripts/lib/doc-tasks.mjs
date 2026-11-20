@@ -25,6 +25,8 @@ const clone = (task) => ({
   page: task.page ? { ...task.page } : null,
   doc: { ...task.doc },
   blocks: task.blocks.map((block) => ({ ...block })),
+  // 结构 diff 是普通 JSON，深拷一份：任务板与回执不能共享同一个对象。
+  diff: task.diff ? JSON.parse(JSON.stringify(task.diff)) : null,
 });
 
 /**
@@ -42,6 +44,7 @@ export function createTaskBoard({ now = () => new Date().toISOString(), nextId =
       page: task.page ? { ...task.page } : null,
       doc: { ...task.doc },
       blocks: task.blocks.map((block) => ({ ...block })),
+      diff: task.diff ? JSON.parse(JSON.stringify(task.diff)) : null,
     })),
     locks: [...locks],
   });
@@ -85,8 +88,11 @@ export function createTaskBoard({ now = () => new Date().toISOString(), nextId =
      * `batch` 是批注批次的编号（块级反馈没有批次，为 null）。它同时出现在任务文案里，
      * 模型能把它与 notes.json 的 `batch` 对上；这里结构化存一份，是因为归档要按批次
      * 认出「这批里哪几条被改到」，不能靠解析文案。
+     *
+     * `diff` 是这一批提交时算出的 `planners-doc-diff/1`（块级反馈没有批次，为 null）：
+     * 模型读任务时一并读到人动过的结构，不必猜。它随任务落盘、随任务回执返回。
      */
-    submit({ scope, page = null, text, doc, blocks, batch = null }) {
+    submit({ scope, page = null, text, doc, blocks, batch = null, diff = null }) {
       if (!TASK_SCOPES.includes(scope)) fail('task_scope', `任务范围只能是 ${TASK_SCOPES.join(' / ')}`);
       if (!Array.isArray(blocks) || blocks.length === 0) fail('task_blocks', '任务至少要绑定一块');
       const task = {
@@ -98,6 +104,7 @@ export function createTaskBoard({ now = () => new Date().toISOString(), nextId =
         batch: typeof batch === 'string' && batch ? batch : null,
         doc: { ...doc },
         blocks: blocks.map(({ anchor, sha256 }) => ({ anchor, sha256 })),
+        diff: diff ? JSON.parse(JSON.stringify(diff)) : null,
         status: 'pending',
         created_at: now(),
         started_at: null,

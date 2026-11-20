@@ -33,12 +33,14 @@
   /**
    * 块的落点：页首（第一块之前）、页内每两块之间、页尾（最后一块之后）。
    * items: [{anchor, page, top, bottom}]，按文档顺序。
-   * `before: null` 表示「这一页的末尾」。
+   * `before: null` 表示「这一页的末尾」。页外块（page 为空）不产生页内落点，
+   * 但它们本身仍可拖动、仍可落到下面这些落点上。
    */
   function blockGaps(items) {
     const gaps = [];
     let index = 0;
     while (index < items.length) {
+      if (!items[index].page) { index += 1; continue; }
       const page = items[index].page;
       const first = items[index];
       gaps.push({ y: first.top, page, before: first.anchor });
@@ -50,6 +52,31 @@
         index += 1;
       }
       gaps.push({ y: last.bottom, page, before: null });
+    }
+    return gaps;
+  }
+
+  /**
+   * 页外落点：每一章标题下（本章第一页的页头位置）可以「先搬出页」。
+   * 这是中间态，不是错误：搬出去以后还能再拖回任一页。
+   * pages: [{key, chapterIndex, chapter}]，按文档顺序。
+   */
+  function outsideGaps(pages, topOf) {
+    const gaps = [];
+    const seen = new Set();
+    for (const page of pages) {
+      if (seen.has(page.chapterIndex)) continue;
+      seen.add(page.chapterIndex);
+      const top = topOf(page.key);
+      if (top === null) continue;
+      gaps.push({
+        y: top + 10,
+        page: page.key,
+        before: null,
+        outside: true,
+        chapter: page.chapterIndex,
+        chapterTitle: page.chapter,
+      });
     }
     return gaps;
   }
@@ -76,11 +103,11 @@
   function stepGap(blocks, index, direction) {
     const up = direction === 'up';
     const neighbour = blocks[index + (up ? -1 : 1)];
-    if (!neighbour) return null;
+    if (!neighbour?.page?.key) return null;
     const after = blocks[index + 2];
     return up
       ? { page: neighbour.page.key, before: neighbour.anchor }
-      : { page: neighbour.page.key, before: after && after.page.key === neighbour.page.key ? after.anchor : null };
+      : { page: neighbour.page.key, before: after?.page?.key === neighbour.page.key ? after.anchor : null };
   }
 
   // ── 浏览器 ───────────────────────────────────────────────────────────────
@@ -502,7 +529,19 @@
       const shift = Number(node.dataset.shift || 0);
       return { anchor: node.dataset.anchor, page: node.dataset.pageKey, top: box.top - shift, bottom: box.bottom - shift };
     });
-    if (dragging.kind !== 'page') return { gaps: blockGaps(items), items, nodes, origin };
+    if (dragging.kind !== 'page') {
+      const topOf = (key) => {
+        const divider = root.querySelector(`.page-divider[data-page-key="${key}"]`);
+        return divider ? divider.getBoundingClientRect().top : null;
+      };
+      // 每章多一个「搬到页外」的落点：块先出页（中间态），之后还能再拖回任一页。
+      return {
+        gaps: blockGaps(items).concat(outsideGaps(state.hooks?.snapshot().pages ?? [], topOf)),
+        items,
+        nodes,
+        origin,
+      };
+    }
     const pages = [...root.querySelectorAll('.page-divider[data-page-key]')].map((divider) => {
       const box = divider.getBoundingClientRect();
       const shift = Number(divider.dataset.shift || 0);
@@ -524,6 +563,7 @@
    */
   function gapLabel(gap, dragging, lookup) {
     if (dragging.kind === 'page') return '整页移动';
+    if (gap.outside) return `移到「${gap.chapterTitle ?? ''}」章节下的页外`;
     if (!gap.before) return `移到「${lookup?.page?.(gap.page)?.title ?? ''}」末尾`;
     const text = String(lookup?.blockText?.(gap.before) ?? '').replace(/\s+/g, ' ').slice(0, 12);
     return text ? `插到「${text}」之前` : '插到这里';
@@ -549,7 +589,10 @@
         op: 'move-block',
         base_sha256: snapshot.sha256,
         anchor: dragging.anchor,
-        to: { chapter: landing.chapterIndex, index: landing.index, before: gap.before },
+        // 页外落点：块先搬到章节标题下（不属于任何页），之后还能再拖回页里。
+        to: gap.outside
+          ? { chapter: gap.chapter, outside: true }
+          : { chapter: landing.chapterIndex, index: landing.index, before: gap.before },
       };
     const movedPage = dragging.kind === 'page' ? pageOf(dragging.key) : null;
     hooks.status('重排中');
@@ -671,8 +714,11 @@
     render,
     mount: render,
     refresh,
+    focusAnchor,
+    scrollToPage,
     blockGaps,
     pageGaps,
+    outsideGaps,
     nearestGap,
     stepGap,
     gapLabel,

@@ -47,7 +47,13 @@ export const DOC_IDENTITY_ROUTES = new Set(['claim', 'complete', 'patch']);
  * 页面（本地 HTTP 与侧栏桥）与模型 CLI 共用这一张表，没有第二份动作名。
  */
 const ROUTES = {
-  open: ({ session }) => ({ ok: true, ...session.snapshot() }),
+  // 模型取稿（任务 CLI 只走 tasks / open，browser:false）时刷新结构 diff 的基准：
+  // 它这次看到的版本，就是人下一次提交批次时的比较起点。
+  open: ({ session, model }) => {
+    const snapshot = session.snapshot();
+    if (model) session.takeBaseline();
+    return { ok: true, ...snapshot };
+  },
   block: ({ session, body }) => session.saveBlock(body),
   split: ({ session, body }) => session.splitBlock(body),
   merge: ({ session, body }) => session.mergeBlocks(body),
@@ -59,7 +65,10 @@ const ROUTES = {
     const dispatch = await dispatchFor(surface, receipt.task);
     return { ...receipt, dispatch };
   },
-  tasks: ({ session }) => session.tasks(),
+  tasks: ({ session, model }) => {
+    if (model) session.takeBaseline();
+    return session.tasks();
+  },
   claim: ({ session, body }) => session.claim(body),
   complete: ({ session, body }) => session.complete(body),
   patch: ({ session, body }) => session.patch(body),
@@ -122,10 +131,15 @@ export function wakeTextOf(surface, task) {
     ? `node ${COMMAND_CLI} ${surfaceFile} tasks`
     : `node ${COMMAND_CLI} <surface.json> tasks`;
   const anchors = task.blocks.map((block) => block.anchor).join('、');
+  const diff = task.diff;
+  const diffLine = diff
+    ? `结构 diff：任务的 diff 字段（${diff.contract}）有章节 ${diff.chapters.length} 条、页 ${diff.pages.length} 条、块 ${diff.blocks.length} 条${diff.orphan_notes.length ? `；${diff.orphan_notes.length} 条批注的目标块已被删（orphan_notes），不要静默丢掉` : ''}。先看它再决定改哪块。`
+    : null;
   return [
     `文字工作台派发了一条块级反馈任务 ${task.id}。`,
     `工作稿：${task.doc.path}`,
     `只改这些块：${anchors}（块外一个字都不要动）。`,
+    ...(diffLine ? [diffLine] : []),
     '',
     `人的意见：${task.text}`,
     '',
@@ -185,9 +199,16 @@ export async function runDocCommand(surface, payload, { browser = true } = {}) {
     if (!handler) fail('command_operation', `未知的动作 ${route}；动作名就是本地宿主的路由名`);
     const { docPath } = docBindingOf(surface);
     const session = await sessionFor(docPath);
-    return await handler({ surface, session, body });
+    // `browser` 是身份边界（模型侧动作不能从浏览器口进来），也是「谁在取稿」：
+    // 模型取稿才刷新结构 diff 的基准，页面每 3 秒轮询 tasks 不会把基准冲掉。
+    return await handler({ surface, session, body, model: !browser });
   } catch (error) {
-    return { ok: false, code: error?.code ?? 'doc_command', error: error?.message ?? String(error) };
+    return {
+      ok: false,
+      code: error?.code ?? 'doc_command',
+      error: error?.message ?? String(error),
+      ...(error?.details ? { details: error.details } : {}),
+    };
   }
 }
 
