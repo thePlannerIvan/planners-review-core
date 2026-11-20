@@ -29,7 +29,9 @@ import { atomicWrite } from './doc-io.mjs';
 import { LEGACY_READONLY_MESSAGE, legacySnapshot, readLegacyMaster } from './doc-legacy.mjs';
 import { sha256 } from '../content-review-contract.mjs';
 
-const fail = (code, message) => { throw Object.assign(Error(message), { code }); };
+const fail = (code, message, details = null) => {
+  throw Object.assign(Error(message), { code, ...(details ? { details } : {}) });
+};
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
 export function viewBlock(block, lockOf = () => null, conflictOf = () => null) {
@@ -81,6 +83,8 @@ export function viewPage(page) {
     index: page.index,
     title: page.title,
     anchor: page.blocks[0]?.anchor ?? null,
+    // 块数：0 就是空页。目录与顶部提示都靠它，不另跑一次校验（ADR 0006）。
+    blocks: page.blocks.length,
     // 出处条数：页内最后一个块是引用时，从它向前连续的引用都算出处；0 表示这页没有出处。
     sources: (page.sources ?? []).length,
   };
@@ -168,8 +172,10 @@ function blockAt(document, anchor) {
  * 人保存一块：块级合并。
  *
  * `base_sha256` 是整份基线，`base_block_sha256` 是这一块加载时的指纹。
- * 整份基线已过期、但这一块本身没变时，把这次修改打在磁盘当前的全文上——
- * 另一进程刚改过的别的块因此不会被这次保存覆盖。同一块被改过则拒绝（`block_conflict`）。
+ * 整份基线已过期、但这一块本身没变时，自动重读磁盘、把这次修改重放到当前全文上——
+ * 另一进程刚改过的别的块因此不会被这次保存覆盖（回执 `merged: true`）。
+ * 同一块被改过才停下来问人（`block_conflict`）：这时没有安全的落点，重放会覆盖别人的写入。
+ * 没带这一块的基线指纹时无法判断是不是同一块，按 `stale_document` 让人刷新后再核对。
  */
 function saveBlock(docPath, payload, board, faults) {
   if (!payload || typeof payload !== 'object') fail('block_request', '请求体必须是 JSON 对象');
@@ -179,7 +185,7 @@ function saveBlock(docPath, payload, board, faults) {
   return withWriteLock(docPath, () => {
     // 锁可能来自另一个进程（模型 CLI / 另一个工作台）：以磁盘上的任务板为准再判一次。
     board.refresh();
-    if (board.lockOf(anchor)) fail('block_locked', '模型正在改这一段，等它完成后再编辑');
+    if (board.lockOf(anchor)) fail('block_locked', `模型正在改这一段（${anchor}），等它完成后再编辑`);
     const document = readDocument(docPath);
     const block = blockAt(document, anchor);
     if (!block) fail('block_anchor', `找不到块 ${anchor}；文档可能已被修改，请刷新工作台`);
@@ -187,9 +193,12 @@ function saveBlock(docPath, payload, board, faults) {
     const blockMatches = typeof baseBlockSha === 'string' && baseBlockSha === sha256(block.raw);
     if (!documentMatches && !blockMatches) {
       if (typeof baseBlockSha === 'string') {
-        fail('block_conflict', '这一块在别处也被改过；你的编辑已保留，请刷新工作台后核对');
+        // 停下来问人，但把两版都带回去：磁盘上是哪一版、这个窗口改成了哪一版。
+        fail('block_conflict', `这一块（${anchor}）在别处也被改过；你的编辑已保留，请刷新工作台后核对`, {
+          anchor, disk_raw: block.raw, disk_sha256: sha256(block.raw), base_block_sha256: baseBlockSha, your_content: content,
+        });
       }
-      fail('stale_document', '文档已在别处被修改；请刷新工作台后再保存');
+      fail('stale_document', `文档已在别处被修改，这一块（${anchor}）没带基线指纹、无法安全重放；请刷新工作台后再保存`);
     }
     const repaired = persistRepairs(docPath, document, faults);
     const result = applyBlockContent(repaired.raw, anchor, content);
@@ -211,21 +220,31 @@ function saveBlock(docPath, payload, board, faults) {
 
 /**
  * 回车分块：一次命令同时改前半块、插入后半块（新锚点）。
- * 与保存一块同一把写锁、同一个过期判定；锁定的块先拒，写盘仍走 journal。
+ * 与保存一块同一把写锁；整份基线过期时自动重读，重放到「这一块没变」的新版本上；
+ * 这一块自己也变了才停下问人（`block_conflict`）。
  */
 function splitBlock(docPath, payload, board, conflicts, faults) {
   if (!payload || typeof payload !== 'object') fail('block_request', '请求体必须是 JSON 对象');
-  const { anchor, before, after, keep, base_sha256: baseSha } = payload;
+  const { anchor, before, after, keep, base_sha256: baseSha, base_block_sha256: baseBlockSha } = payload;
   if (typeof anchor !== 'string' || !BLOCK_ANCHOR_RE.test(anchor)) fail('block_anchor', '锚点形状不对');
   if (typeof before !== 'string' || typeof after !== 'string') fail('block_content', '拆分的前后两半都必须是文本');
   return withWriteLock(docPath, () => {
     board.refresh();
     conflicts.refresh();
-    if (board.lockOf(anchor)) fail('block_locked', '模型正在改这一段，等它完成后再编辑');
-    if (conflicts.get(anchor)) fail('block_locked', '这一块正在待核对，先裁决再编辑');
+    if (board.lockOf(anchor)) fail('block_locked', `模型正在改这一段（${anchor}），等它完成后再拆分`);
+    if (conflicts.get(anchor)) fail('block_locked', `这一块（${anchor}）正在待核对，先裁决再编辑`);
     const document = readDocument(docPath);
-    if (typeof baseSha !== 'string' || baseSha !== document.hash) {
-      fail('stale_document', '文档已在别处被修改；请刷新工作台后再拆分');
+    const block = blockAt(document, anchor);
+    if (!block) fail('block_anchor', `找不到块 ${anchor}；文档可能已被修改，请刷新工作台`);
+    const documentMatches = typeof baseSha === 'string' && baseSha === document.hash;
+    const blockMatches = typeof baseBlockSha === 'string' && baseBlockSha === sha256(block.raw);
+    if (!documentMatches && !blockMatches) {
+      if (typeof baseBlockSha === 'string') {
+        fail('block_conflict', `这一块（${anchor}）在别处也被改过；你的拆分没有覆盖它，请刷新后核对`, {
+          anchor, disk_raw: block.raw, disk_sha256: sha256(block.raw), base_block_sha256: baseBlockSha, your_content: [before, after].join(''),
+        });
+      }
+      fail('stale_document', `文档已在别处被修改，这一块（${anchor}）没带基线指纹、无法安全重放；请刷新工作台后再拆分`);
     }
     const repaired = persistRepairs(docPath, document, faults);
     const result = splitBlockContent(repaired.raw, { anchor, before, after, keep });
@@ -239,6 +258,7 @@ function splitBlock(docPath, payload, board, conflicts, faults) {
     return {
       ok: true,
       sha256: receipt.sha256,
+      replayed: !documentMatches,
       block: viewBlock(result.block, (value) => board.lockOf(value)),
       new_block: viewBlock(result.newBlock, (value) => board.lockOf(value)),
       ...snapshotFrom(readDocument(docPath), docPath, board, conflicts),
@@ -249,19 +269,34 @@ function splitBlock(docPath, payload, board, conflicts, faults) {
 /**
  * 删空合并：后一块（已清空）并进紧挨着的前一块。锚点随内容走——前一块的锚点保留，
  * 后一块的锚点删除；旧任务不迁移，claim 时会明确报 stale。
+ * 整份基线过期时自动重读并重放；被删的那一块自己也变了才停下来问人。
  */
 function mergeBlocks(docPath, payload, board, conflicts, faults) {
   if (!payload || typeof payload !== 'object') fail('block_request', '请求体必须是 JSON 对象');
-  const { anchor, previous, content, base_sha256: baseSha } = payload;
+  const {
+    anchor, previous, content, base_sha256: baseSha, base_block_sha256: baseBlockSha,
+  } = payload;
   if (typeof anchor !== 'string' || !BLOCK_ANCHOR_RE.test(anchor)) fail('block_anchor', '锚点形状不对');
   return withWriteLock(docPath, () => {
     board.refresh();
     conflicts.refresh();
-    if (board.lockOf(anchor)) fail('block_locked', '模型正在改这一段，等它完成后再编辑');
-    if (conflicts.get(anchor)) fail('block_locked', '这一块正在待核对，先裁决再编辑');
+    if (board.lockOf(anchor)) fail('block_locked', `模型正在改这一段（${anchor}），等它完成后再合并`);
+    if (conflicts.get(anchor)) fail('block_locked', `这一块（${anchor}）正在待核对，先裁决再编辑`);
     const document = readDocument(docPath);
-    if (typeof baseSha !== 'string' || baseSha !== document.hash) {
-      fail('stale_document', '文档已在别处被修改；请刷新工作台后再合并');
+    const block = blockAt(document, anchor);
+    if (!block) fail('block_anchor', `找不到块 ${anchor}；文档可能已被修改，请刷新工作台`);
+    if (typeof previous === 'string' && board.lockOf(previous)) {
+      fail('block_locked', `模型正在改前一块（${previous}），等它完成后再合并`);
+    }
+    const documentMatches = typeof baseSha === 'string' && baseSha === document.hash;
+    const blockMatches = typeof baseBlockSha === 'string' && baseBlockSha === sha256(block.raw);
+    if (!documentMatches && !blockMatches) {
+      if (typeof baseBlockSha === 'string') {
+        fail('block_conflict', `这一块（${anchor}）在别处也被改过；你的合并没有覆盖它，请刷新后核对`, {
+          anchor, disk_raw: block.raw, disk_sha256: sha256(block.raw), base_block_sha256: baseBlockSha,
+        });
+      }
+      fail('stale_document', `文档已在别处被修改，这一块（${anchor}）没带基线指纹、无法安全重放；请刷新工作台后再合并`);
     }
     const repaired = persistRepairs(docPath, document, faults);
     const result = mergeBlockContent(repaired.raw, { anchor, previous, content });
@@ -275,6 +310,7 @@ function mergeBlocks(docPath, payload, board, conflicts, faults) {
     return {
       ok: true,
       sha256: receipt.sha256,
+      replayed: !documentMatches,
       block: viewBlock(result.block, (value) => board.lockOf(value)),
       removed: result.removed,
       ...snapshotFrom(readDocument(docPath), docPath, board, conflicts),
@@ -531,8 +567,11 @@ function decideConflict(docPath, payload, board, conflicts, faults) {
 
 /**
  * 保存一次重排：只接受显式的 move-block / move-page，一次一个动作。
- * 与改内容一样按 base_sha256 拒绝过期写入，并走同一把写锁与 journal；
- * 成功后回整份快照，页面据此重画目录与正文。
+ * 与改内容一样走同一把写锁与 journal；成功后回整份快照，页面据此重画目录与正文。
+ *
+ * 文件在别处变了不拒绝：自动重读当前全文，把这次移动重放上去。移动只改变块的位置，
+ * 不覆盖任何块的 raw（重放前先确认块身份与文本都没变）；块被别处删掉、目标页没了
+ * 才停下来说明是哪一块（`block_missing` / `reorder_target` / `page_missing`）。
  */
 function reorderDocument(docPath, payload, board, conflicts, faults) {
   if (!payload || typeof payload !== 'object') fail('reorder_request', '请求体必须是 JSON 对象');
@@ -552,13 +591,11 @@ function reorderDocument(docPath, payload, board, conflicts, faults) {
         && (board.lockOf(block.anchor) || conflicts.get(block.anchor)))
       : (board.lockOf(payload.anchor) || conflicts.get(payload.anchor) ? [payload.anchor] : []);
     if (held.length) {
-      const anchors = held.map((block) => block.anchor ?? block).join('、');
-      fail('block_locked', `这些块正被模型处理或待核对，先处理完再拖动：${anchors}`);
+      const anchors = held.map((block) => (typeof block === 'string' ? block : block.anchor)).join('、');
+      fail('block_locked', `这些块正被模型处理或待核对（${anchors}），先处理完再拖动`);
     }
-    if (typeof baseSha !== 'string' || baseSha !== sha256(document.raw)) {
-      fail('stale_document', '文档已在别处被修改；请刷新工作台后再拖动');
-    }
-    const repaired = persistRepairs(docPath, document, faults); // 基线对得上才把这次打开补的锚点落盘
+    const replayed = typeof baseSha === 'string' && baseSha !== sha256(document.raw);
+    const repaired = persistRepairs(docPath, document, faults);
     const result = op === 'move-page'
       ? movePage(repaired.raw, { page: payload.page, to: payload.to })
       : moveBlock(repaired.raw, { anchor: payload.anchor, to: payload.to });
@@ -568,6 +605,7 @@ function reorderDocument(docPath, payload, board, conflicts, faults) {
     return {
       ok: true,
       changed: result.changed,
+      replayed,
       ...snapshotFrom(readDocument(docPath), docPath, board, conflicts),
     };
   });
@@ -577,12 +615,15 @@ function reorderDocument(docPath, payload, board, conflicts, faults) {
  * 换掉一个图块引用的文件。
  *
  * 请求里只有块身份与图字节，**没有路径**：用哪张图由正文的 Markdown 引用决定，
- * 所以换文件在结构上就不可能改掉正文引用。锁定的块先拒，再按 base_sha256 拒过期写入。
+ * 所以换文件在结构上就不可能改掉正文引用。锁定的块先拒；文件在别处变了不拒绝——
+ * 重读当前全文，把这次替换重放到「这一块仍然是那个图块」的新版本上。
  * 清单跟着新指纹同步（`replaced_from_sha256` 记下上一版），正文一个字节都不写。
  */
 function replaceImageAsset(docPath, payload, board, conflicts) {
   if (!payload || typeof payload !== 'object') fail('asset_request', '请求体必须是 JSON 对象');
-  const { anchor, content_base64: encoded, base_sha256: baseSha } = payload;
+  const {
+    anchor, content_base64: encoded, base_sha256: baseSha, base_block_sha256: baseBlockSha,
+  } = payload;
   if (typeof anchor !== 'string' || !BLOCK_ANCHOR_RE.test(anchor)) fail('asset_request', '锚点形状不对');
   if (typeof encoded !== 'string' || !encoded.trim()) fail('asset_request', '需要 content_base64（图文件字节）');
   const compact = encoded.replace(/\s+/g, '');
@@ -595,15 +636,20 @@ function replaceImageAsset(docPath, payload, board, conflicts) {
   board.refresh();
   conflicts.refresh();
   const owner = board.lockOf(anchor);
-  if (owner) fail('block_locked', '模型正在改这一块，等它完成后再换图');
+  if (owner) fail('block_locked', `模型正在改这一块（${anchor}），等它完成后再换图`);
   // 待核对也是锁着：人和模型都改过这一块，先裁决再换图，别把两个版本的问题叠到文件上。
-  if (conflicts.get(anchor)) fail('block_locked', '这一块正在待核对，先裁决再换图');
+  if (conflicts.get(anchor)) fail('block_locked', `这一块（${anchor}）正在待核对，先裁决再换图`);
   const document = readDocument(docPath);
-  if (typeof baseSha !== 'string' || baseSha !== sha256(document.raw)) {
-    fail('stale_document', '文档已在别处被修改；请刷新工作台后再换图');
-  }
   const block = document.parsed.blocks.find((item) => item.anchor === anchor);
   if (!block) fail('asset_anchor', `找不到图块 ${anchor}；文档可能已被修改`);
+  const documentMatches = typeof baseSha === 'string' && baseSha === sha256(document.raw);
+  const blockMatches = typeof baseBlockSha === 'string' && baseBlockSha === sha256(block.raw);
+  if (!documentMatches && typeof baseBlockSha === 'string' && !blockMatches) {
+    fail('block_conflict', `这一块（${anchor}）在别处也被改过；你的换图没有覆盖它，请刷新后核对`, {
+      anchor, disk_raw: block.raw, disk_sha256: sha256(block.raw), base_block_sha256: baseBlockSha,
+    });
+  }
+  const replayed = !documentMatches;
   if (block.type !== 'image') fail('asset_anchor', '只有图块可以换文件；文字块请用块编辑');
   const image = imageReference(block.raw);
   if (!image) fail('asset_reference', '这一块的 Markdown 图片引用解析不出来');
@@ -624,6 +670,7 @@ function replaceImageAsset(docPath, payload, board, conflicts) {
   }
   return {
     ok: true,
+    replayed,
     asset: manifest.assets.find((asset) => asset.path === image.path) ?? null,
     doc_sha256: sha256(document.raw),
     assets_manifest: basename(manifestPath),

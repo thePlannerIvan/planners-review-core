@@ -268,7 +268,13 @@ export async function startDocWorkbench({
       json(response, 404, { ok: false, code: 'not_found', error: '没有这个入口' });
     } catch (error) {
       const status = BAD_REQUEST_CODES.has(error?.code) ? 400 : 409;
-      json(response, status, { ok: false, code: error?.code ?? 'workbench', error: error?.message ?? String(error) });
+      json(response, status, {
+        ok: false,
+        code: error?.code ?? 'workbench',
+        error: error?.message ?? String(error),
+        // 冲突时把两版一起带回去（不弹错，但不能让人没有可比的东西）。
+        ...(error?.details ? { details: error.details } : {}),
+      });
     }
   });
 

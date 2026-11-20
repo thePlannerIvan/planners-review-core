@@ -177,7 +177,12 @@ export async function runDocCommand(surface, payload, { browser = true } = {}) {
     const session = await sessionFor(docPath);
     return await handler({ surface, session, body });
   } catch (error) {
-    return { ok: false, code: error?.code ?? 'doc_command', error: error?.message ?? String(error) };
+    return {
+      ok: false,
+      code: error?.code ?? 'doc_command',
+      error: error?.message ?? String(error),
+      ...(error?.details ? { details: error.details } : {}),
+    };
   }
 }
 

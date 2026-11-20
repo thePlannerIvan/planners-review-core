@@ -825,26 +825,9 @@ function formatBlockContent(type, prefix, content) {
   return content;
 }
 
-const countErrorCodes = (document) => {
-  const counts = new Map();
-  for (const error of document.errors) counts.set(error.code, (counts.get(error.code) ?? 0) + 1);
-  return counts;
-};
-
-/** 重解析后不该多出任何结构错误（空页、锚点重复、块越层……）。 */
-function assertNoNewErrors(beforeDocument, afterDocument, label) {
-  const afterCounts = countErrorCodes(afterDocument);
-  for (const [code, count] of countErrorCodes(beforeDocument)) {
-    if ((afterCounts.get(code) ?? 0) > count) {
-      reorderFail('block_structure', `${label}引出了结构错误 ${code}`);
-    }
-  }
-  for (const [code, count] of afterCounts) {
-    if (count > 0 && !countErrorCodes(beforeDocument).has(code)) {
-      reorderFail('block_structure', `${label}引出了结构错误 ${code}`);
-    }
-  }
-}
+// 编辑时不再跑校验器（ADR 0006）：拆开、合并、拖动都可能把文档暂时留在不合法结构里
+// （页空、章节空、块落在页外），它们照样落盘。结构问题由快照带回、由交付口的
+// `validate-doc` 与 CI 判定；这里只验证「这次操作本身做对了」（块身份、数量、顺序）。
 
 /**
  * 在光标处把一块拆成两块：前半留在原锚点，后半拿一个新锚点，紧跟在原块之后。
@@ -907,7 +890,6 @@ export function splitBlockContent(raw, { anchor, before, after, keep = 'before' 
     const check = assessBlock(piece);
     if (!check.editable) reorderFail('block_degraded', `拆分出的${TYPE_NAMES[piece.type] ?? piece.type}超出可编辑子集：${check.reason}`);
   }
-  assertNoNewErrors(parsed, afterDocument, '拆分');
   // 回执里 block 永远是「守住原锚点的那一块」，newBlock 是这次新生成的块：
   // 块首回车时新块在前、原块在后，但身份跟着内容走，不能按前后位置命名。
   const kept = keep === 'after' ? secondBlock : firstBlock;
@@ -948,9 +930,7 @@ export function mergeBlockContent(raw, { anchor, previous, content } = {}, optio
   }
   const pageOf = (item) => `${item.page?.chapter?.index ?? 0}-${item.page?.index ?? 0}`;
   if (pageOf(target) !== pageOf(block)) reorderFail('merge_target', '只能并入同一页的前一块');
-  if (block.page && block.page.blocks.length === 1) {
-    reorderFail('page_would_be_empty', `页「${block.page.title}」只有这一块；删掉会让页变空`);
-  }
+  // 合并会把后一块删掉，页可能因此变空——那是编辑的中间态，不拦（ADR 0006）。
 
   const lines = source.split(/\r?\n/);
   const previousEndIndex = blockEndLine(target) - 1;
@@ -970,7 +950,6 @@ export function mergeBlockContent(raw, { anchor, previous, content } = {}, optio
     reorderFail('block_structure', '合并后的块序列与预期不一致，已拒绝');
   }
   if (pageOf(kept) !== pageOf(target)) reorderFail('block_structure', '合并把前一块挪出了原来那一页，已拒绝');
-  assertNoNewErrors(parsed, afterDocument, '合并');
   return { raw: next, block: kept, removed: anchor };
 }
 
@@ -1047,8 +1026,8 @@ function joinDocument(raw, lines) {
 const pageSignature = (page) => page.blocks[0]?.anchor ?? `#${page.title}`;
 
 /**
- * 重排之后必须仍然是一份「同样的文档，只是顺序变了」：块的身份与 raw 一个不少，
- * 页不再有空页，锚点不再重复。任何一条不成立就整体拒绝，不留半截写入。
+ * 重排之后必须仍然是一份「同样的文档，只是顺序变了」：块的身份与 raw 一个不少。
+ * 页面是否变空、块是否落到页外不在这里判——那是交付校验器的职责（ADR 0006）。
  */
 function verifyReorder(beforeParsed, raw, label) {
   const after = parseDocument(raw, { checkImages: false });
@@ -1062,52 +1041,78 @@ function verifyReorder(beforeParsed, raw, label) {
     if (!other) reorderFail('reorder_verify', `重排后块 ${anchor} 不见了`);
     if (other.raw !== block.raw) reorderFail('reorder_verify', `未参与重排的块 ${anchor} 的 raw 变了`);
   }
-  for (const code of ['anchor_duplicate', 'anchor_orphan', 'page_empty', 'block_outside_page', 'block_nested']) {
-    const count = (document) => document.errors.filter((error) => error.code === code).length;
-    if (count(after) > count(beforeParsed)) reorderFail('reorder_verify', `重排引出了结构错误 ${code}`);
-  }
   return after;
 }
 
+/** 章节的末尾（0 基插入位置）：下一章标题之前；最后一章到文件末尾。 */
+function chapterEnd(parsed, chapter) {
+  const next = parsed.chapters[chapter.index];
+  return next ? next.line - 1 : parsed.lines.length;
+}
+
 /**
- * 移动一个块：剪下它的行，插到目标页的「某块之前」（`before: null` 表示该页末尾）。
+ * 移动一个块：剪下它的行，插到目标页的「某块之前」（`before: null` 表示该页末尾），
+ * 或者插到某一章标题下的「页外」（`to.outside: true`）。
+ *
+ * 块可以搬到页外，也可以从页外搬回页里；搬走一页的最后一块不拦（页变空是中间态）。
+ * 页外块也允许再次移动：它没有页身份，但仍有块身份。
  *
  * @param {string} raw 原文
- * @param {{anchor:string, to:{chapter:number,index:number,before:string|null}}} move
- * @returns {{raw:string, changed:boolean, moved:string, page:string}}
+ * @param {{anchor:string, to:{chapter:number,index?:number,before?:string|null,outside?:boolean}}} move
+ * @returns {{raw:string, changed:boolean, moved:string, page:string|null, outside?:boolean, chapter?:number}}
  */
 export function moveBlock(raw, { anchor, to } = {}) {
   if (typeof anchor !== 'string' || !anchor) reorderFail('reorder_anchor', '缺少要移动的块锚点');
   const parsed = parseDocument(raw, { checkImages: false });
   const block = parsed.blocks.find((item) => item.anchor === anchor);
   if (!block) reorderFail('block_missing', `找不到锚点 ${anchor}；文档可能已被外部修改`);
-  if (!block.page) reorderFail('block_outside_page', '这一块不在任何页里，不能重排');
-  const target = locatePage(parsed, to);
+  const outside = to?.outside === true;
+  let target = null;
+  let chapter = null;
   let gap;
-  if (to.before === null || to.before === undefined) {
-    gap = pageLineRange(target).end;
+  if (outside) {
+    chapter = parsed.chapters[Number(to.chapter) - 1] ?? null;
+    if (!chapter) reorderFail('chapter_missing', `找不到第 ${to.chapter} 章`);
+    // 页外落点 = 章节标题正下方：本章第一页之前；本章没有页就到章末。
+    gap = chapter.pages.length ? chapter.pages[0].line - 1 : chapterEnd(parsed, chapter);
   } else {
-    const before = target.blocks.find((item) => item.anchor === to.before);
-    if (!before) reorderFail('reorder_target', `目标页里没有块 ${to.before}`);
-    gap = before.startLine - 1;
-  }
-  if (target === block.page) {
-    const self = target.blocks.indexOf(block);
-    const beforeIndex = to.before == null
-      ? target.blocks.length
-      : target.blocks.findIndex((item) => item.anchor === to.before);
-    // 落回原位（插在自己前面 / 自己后面）不是错误，也不是一次修改。
-    if (beforeIndex === self || beforeIndex === self + 1) {
-      return { raw: String(raw), changed: false, moved: anchor, page: `${target.chapter.index}-${target.index}` };
+    target = locatePage(parsed, to);
+    if (to.before === null || to.before === undefined) {
+      gap = pageLineRange(target).end;
+    } else {
+      const before = target.blocks.find((item) => item.anchor === to.before);
+      if (!before) reorderFail('reorder_target', `目标页里没有块 ${to.before}`);
+      gap = before.startLine - 1;
+    }
+    if (target === block.page) {
+      const self = target.blocks.indexOf(block);
+      const beforeIndex = to.before == null
+        ? target.blocks.length
+        : target.blocks.findIndex((item) => item.anchor === to.before);
+      // 落回原位（插在自己前面 / 自己后面）不是错误，也不是一次修改。
+      if (beforeIndex === self || beforeIndex === self + 1) {
+        return { raw: String(raw), changed: false, moved: anchor, page: `${target.chapter.index}-${target.index}` };
+      }
     }
   }
-  if (block.page.blocks.length === 1) {
-    reorderFail('page_would_be_empty', `页「${block.page.title}」只有这一块；移走会让页变空`);
+  const cut = blockLineRange(block);
+  // 落在自己原来的位置不是一次修改：不要因为补空行把文件写一遍。
+  if (gap === cut.start) {
+    return {
+      raw: String(raw),
+      changed: false,
+      moved: anchor,
+      page: block.page ? `${block.page.chapter?.index ?? 0}-${block.page.index}` : null,
+    };
   }
-  const lines = spliceLines(String(raw).replace(/^\uFEFF/, '').split(/\r?\n/), blockLineRange(block).start, blockLineRange(block).end, gap);
+  const lines = spliceLines(String(raw).replace(/^\uFEFF/, '').split(/\r?\n/), cut.start, cut.end, gap);
   const next = joinDocument(raw, lines);
   const after = verifyReorder(parsed, next, '移动块');
   const moved = after.blocks.find((item) => item.anchor === anchor);
+  if (outside) {
+    if (moved?.page) reorderFail('reorder_verify', '移动后的块仍然落在某一页里');
+    return { raw: next, changed: true, moved: anchor, page: null, outside: true, chapter: chapter.index };
+  }
   // 块移动不改页序，所以「目标页」的章节号 / 页号在重排前后是同一个位置。
   if (!moved?.page || moved.page.chapter?.index !== target.chapter.index || moved.page.index !== target.index) {
     reorderFail('reorder_verify', '移动后的块没有落在目标页里');
@@ -1135,9 +1140,7 @@ export function movePage(raw, { page, to } = {}) {
     reorderFail('reorder_position', '页的落点只接受 before / after');
   }
   if (!sourcePage.chapter) reorderFail('page_without_chapter', '这一页不在任何章节里，不能整页移动');
-  if (sourcePage.chapter !== targetPage.chapter && sourcePage.chapter.pages.length === 1) {
-    reorderFail('chapter_would_be_empty', `章节「${sourcePage.chapter.title}」只有这一页；移走会让章节变空`);
-  }
+  // 章节可能因此变空——那是编辑的中间态，不拦（ADR 0006）。
   const from = parsed.pages.indexOf(sourcePage);
   const targetIndex = parsed.pages.indexOf(targetPage) + (to.position === 'after' ? 1 : 0);
   const insertAt = targetIndex > from ? targetIndex - 1 : targetIndex;
