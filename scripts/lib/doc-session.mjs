@@ -27,8 +27,8 @@ import { createFileBoardStores } from './doc-boards.mjs';
 import { applyStructure } from './doc-structure.mjs';
 import { HISTORY_CONTRACT, listVersions, readVersion } from './doc-history.mjs';
 import {
-  MAX_NOTE_TEXT, NOTES_CONTRACT, commitDrafts as markDraftsCommitted, createNoteStore, draftNote, draftsOf,
-  newBatchId, removeNote as dropNote, reopenNote as reopenNoteEntry, settleModelChange,
+  MAX_NOTE_TEXT, NOTE_SCOPES, NOTES_CONTRACT, commitDrafts as markDraftsCommitted, createNoteStore, draftNote,
+  draftsOf, newBatchId, noteTargetOf, removeNote as dropNote, reopenNote as reopenNoteEntry, settleModelChange,
 } from './doc-notes.mjs';
 import { atomicWrite } from './doc-io.mjs';
 import { buildDiff, readBaseline, structureOf, writeBaseline } from './doc-diff.mjs';
@@ -87,7 +87,10 @@ export function viewBlock(block, lockOf = () => null, conflictOf = () => null) {
   };
 }
 
-/** 目录用的页视图：页没有锚点，身份是「章节号 + 页号」，编号由顺序决定。 */
+/**
+ * 目录用的页视图：页的身份是可选的隐藏页锚点（票 38），没有时仍按「章节号 + 页号」定位。
+ * `anchor` 是页自己的锚点（可批注）；`firstBlockAnchor` 保留旧用途（页内第一块的锚点）。
+ */
 export function viewPage(page) {
   return {
     key: pageKeyOf(page),
@@ -95,7 +98,8 @@ export function viewPage(page) {
     chapterIndex: page.chapter?.index ?? null,
     index: page.index,
     title: page.title,
-    anchor: page.blocks[0]?.anchor ?? null,
+    anchor: page.anchor ?? null,
+    firstBlockAnchor: page.blocks[0]?.anchor ?? null,
     // 块数：0 就是空页。目录与顶部提示都靠它，不另跑一次校验（ADR 0006）。
     blocks: page.blocks.length,
     // 出处条数：页内最后一个块是引用时，从它向前连续的引用都算出处；0 表示这页没有出处。
@@ -371,8 +375,10 @@ function splitBlock(docPath, payload, board, conflicts, faults) {
       sha256: receipt.sha256,
       replayed,
       block: result.block ? viewBlock(result.block, (value) => board.lockOf(value)) : null,
-      // 后半是 `# ` / `## ` 时这一半得到结构，没有新块：页面按快照重画即可。
+      // 后一半是 `# ` / `## ` 时这一半得到结构，没有新块：页面按快照重画即可。
+      // 造章补了占位页时，`retype.auto_page` 让页面把新页标题切到可编辑（票 36）。
       new_block: result.newBlock ? viewBlock(result.newBlock, (value) => board.lockOf(value)) : null,
+      ...(result.retype ? { retype: result.retype } : {}),
       ...snapshotFrom(readDocument(docPath), docPath, board, conflicts),
     };
   });
@@ -520,7 +526,11 @@ function claimTask(docPath, payload, board, conflicts) {
     const task = board.get(id);
     if (!task) fail('task_missing', `找不到任务 ${id}；可能已被清理`);
     const document = readDocument(docPath);
-    const present = new Set(document.parsed.blocks.map((block) => block.anchor).filter(Boolean));
+    // 批注可以挂在块上，也可以挂在页标题的锚点上（票 38）：任务里的目标两种都算「还在」。
+    const present = new Set([
+      ...document.parsed.blocks.map((block) => block.anchor),
+      ...document.parsed.pages.map((page) => page.anchor),
+    ].filter(Boolean));
     const missing = task.blocks.filter(({ anchor }) => !present.has(anchor));
     if (missing.length) {
       fail('task_stale', `任务里的块已不存在：${missing.map(({ anchor }) => anchor).join('、')}；请重新提交反馈`);
@@ -569,7 +579,9 @@ function patchTask(docPath, payload, board, conflicts, faults) {
     for (const patch of patches) {
       if (!patch || typeof patch !== 'object') fail('patch_blocks', '每块 patch 必须是对象');
       if (typeof patch.anchor !== 'string' || !BLOCK_ANCHOR_RE.test(patch.anchor)) fail('patch_anchor', '锚点形状不对');
-      if (!task.blocks.some((block) => block.anchor === patch.anchor)) {
+      // 整份批注的任务不绑块：它说的是整篇，模型可以改文档里任意一块。
+      // 其余任务仍只认自己绑定的块，不能顺手改任务范围外的块。
+      if (task.scope !== 'doc' && !task.blocks.some((block) => block.anchor === patch.anchor)) {
         fail('patch_anchor', `${patch.anchor} 不在这条任务里；模型只能改任务绑定的块`);
       }
       if (typeof patch.content !== 'string') fail('patch_blocks', '块内容必须是文本');
@@ -586,10 +598,16 @@ function patchTask(docPath, payload, board, conflicts, faults) {
     for (const patch of patches) {
       const block = blockAt(document, patch.anchor);
       if (!block) fail('patch_anchor', `找不到块 ${patch.anchor}；文档可能已被修改`);
-      const baseline = task.blocks.find((item) => item.anchor === patch.anchor).sha256;
+      const bound = task.blocks.find((item) => item.anchor === patch.anchor) ?? null;
       const diskSha = sha256(block.raw);
       const owner = board.lockOf(patch.anchor);
-      if (diskSha !== baseline || (owner && owner !== task.id)) {
+      // 整份任务没给这一块钉基线（它没有锚点，绑块就是伪造）：基线取当前磁盘版本，
+      // 但别的任务正占着 / 正在待核对的块不碰 —— 那会盖掉还没裁决的那一版。
+      if (!bound && (owner || conflicts.get(patch.anchor))) {
+        fail('block_locked', `${patch.anchor} 正由别的任务处理或待核对，先处理完再写回`);
+      }
+      const baseline = bound ? bound.sha256 : diskSha;
+      if ((bound && diskSha !== baseline) || (owner && owner !== task.id)) {
         deferred.push({
           anchor: patch.anchor,
           reason: diskSha !== baseline ? 'block_changed' : 'block_locked',
@@ -622,8 +640,10 @@ function patchTask(docPath, payload, board, conflicts, faults) {
 
     for (const item of deferred) conflicts.defer({ task_id: id, ...item });
     const updated = board.release(id, applied);
+    // 整份批注的快照是整份文档的改前 / 改后：模型这次确实动过稿子，这批的整份意见就归档。
+    const docSnapshot = applied.length ? { before: document.raw, after: raw } : null;
     // 归档以回执的 applied 为准：改到的块上这批批注自动 resolved，没改到的标「模型没动这条」。
-    const notes = settleBatchNotes(docPath, { batch: updated.batch, snapshots, markUntouched: true });
+    const notes = settleBatchNotes(docPath, { batch: updated.batch, snapshots, docSnapshot, markUntouched: true });
     return {
       ok: true,
       contract: TASK_CONTRACT,
@@ -765,10 +785,11 @@ function reorderDocument(docPath, payload, board, conflicts, faults) {
 }
 
 /**
- * 改结构：改章节名 / 页名，或在页尾加页、章节尾加章。
+ * 改结构：改章节名 / 页名，在页尾加页、章节尾加章，或把块 / 页 / 章删掉（删空即消失）。
  *
  * 结构不是块（`#` / `##` 不能带锚点），所以这里不经过块级写：按行补丁整份落盘，
- * 与重排共用一把写锁、一份基线判据与同一个 journal。改完回整份快照，
+ * 与重排共用一把写锁、一份基线判据与同一个 journal。删除先看一次范围里有没有被
+ * 占住（锁定 / 待核对）的块 —— 删页删章会挪动它们，与移页同一判据。改完回整份快照，
  * 页面据此重画正文与目录 —— 目录不是另一份状态。
  */
 function structureDocument(docPath, payload, board, conflicts, faults) {
@@ -777,8 +798,14 @@ function structureDocument(docPath, payload, board, conflicts, faults) {
     board.refresh();
     conflicts.refresh();
     const document = readDocument(docPath);
-    // 基线过期不拒人：重读当前全文，把这个结构动作重放上去。结构动作按「章节 / 页」
-    // 定位，不覆盖任何块的 raw，所以别处刚改的正文与标题都保留（与块级保存同一语义）。
+    // 删除也是编辑：锁定（模型正在改）与待核对的块不可动。块、页、章的删除都会挪动
+    // 或带走块身份，所以按删除范围里有没有被占住的块先拒再谈落点（与重排同一判据）。
+    const held = heldForDelete(document, payload, board, conflicts);
+    if (held.length) {
+      fail('block_locked', `这些块正被模型处理或待核对（${held.join('、')}），先处理完再删`);
+    }
+    // 基线过期不拒人：重读当前全文，把这个结构动作重放上去。结构动作按「章节 / 页 /
+    // 块身份」定位，不覆盖任何块的 raw，所以别处刚改的正文与标题都保留（与块级保存同一语义）。
     const replayed = typeof payload.base_sha256 === 'string' && payload.base_sha256 !== document.hash;
     const repaired = persistRepairs(docPath, document, faults);
     const result = applyStructure(repaired.raw, payload);
@@ -799,9 +826,30 @@ function structureDocument(docPath, payload, board, conflicts, faults) {
       ...(result.chapter ? { chapter: result.chapter } : {}),
       ...(result.page ? { page: result.page } : {}),
       ...(result.source ? { source: result.source } : {}),
+      ...(result.deleted ? { deleted: result.deleted } : {}),
       ...snapshotFrom(readDocument(docPath), docPath, board, conflicts),
     };
   });
+}
+
+/**
+ * 一次删除会带走 / 挪动哪些块：块删除是它自己，页删除是页里的块，章删除是章里所有页的块。
+ * 只挑被占住（锁定或待核对）的那些，用来在落盘前先拒。别的动作不查这个。
+ */
+function heldForDelete(document, payload, board, conflicts) {
+  const op = payload?.op;
+  if (op !== 'delete-block' && op !== 'delete-page' && op !== 'delete-chapter') return [];
+  const occupied = (block) => block.anchor && (board.lockOf(block.anchor) || conflicts.get(block.anchor));
+  let scope = document.parsed.blocks;
+  if (op === 'delete-block') {
+    scope = scope.filter((block) => block.anchor === payload.anchor);
+  } else if (op === 'delete-page') {
+    scope = scope.filter((block) => block.page
+      && block.page.chapter?.index === Number(payload.chapter) && block.page.index === Number(payload.index));
+  } else {
+    scope = scope.filter((block) => block.chapter?.index === Number(payload.chapter));
+  }
+  return scope.filter(occupied).map((block) => block.anchor);
 }
 
 /**
@@ -941,14 +989,14 @@ function listNotes(docPath) {
 }
 
 /**
- * 模型回执落定一批批注：`snapshots` 的锚点归档，其余按 `markUntouched` 标注。
- * 返回回执里给人看的两个 id 列表；没有这批批注时返回 null，不改盘。
+ * 模型回执落定一批批注：`snapshots` 的锚点归档，整份批注看 `docSnapshot`，其余按
+ * `markUntouched` 标注。返回回执里给人看的两个 id 列表；没有这批批注时返回 null，不改盘。
  */
-function settleBatchNotes(docPath, { batch, snapshots = new Map(), markUntouched = false }) {
+function settleBatchNotes(docPath, { batch, snapshots = new Map(), docSnapshot = null, markUntouched = false }) {
   if (!batch) return null;
   const store = createNoteStore(docPath);
   const state = store.load();
-  const settled = settleModelChange(state.notes, { batch, snapshots, markUntouched });
+  const settled = settleModelChange(state.notes, { batch, snapshots, docSnapshot, markUntouched });
   if (!settled.resolved.length && !settled.untouched.length) return null;
   store.save(state);
   return {
@@ -957,28 +1005,78 @@ function settleBatchNotes(docPath, { batch, snapshots = new Map(), markUntouched
   };
 }
 
-/** 一次加一条或几条：同一段话落到多个块上时，每块各得一条，各自可删。 */
+/**
+ * 批注目标：块或页。页锚点（票 38）与块锚点共用同一个身份空间，所以解析时一起找。
+ * 返回 `anchor → {kind, anchor, raw, page, title?}`：`raw` 是提交任务时的基线指纹来源。
+ */
+function noteTargetsOf(parsed) {
+  const targets = new Map();
+  for (const block of parsed.blocks) {
+    if (!block.anchor) continue;
+    targets.set(block.anchor, {
+      kind: 'block',
+      anchor: block.anchor,
+      raw: block.raw,
+      page: { chapter: block.page?.chapter?.index ?? 0, index: block.page?.index ?? 0 },
+    });
+  }
+  for (const page of parsed.pages) {
+    if (!page.anchor) continue;
+    targets.set(page.anchor, {
+      kind: 'page',
+      anchor: page.anchor,
+      raw: parsed.lines[page.line - 1] ?? `## ${page.title}`,
+      title: page.title,
+      page: { chapter: page.chapter?.index ?? 0, index: page.index },
+    });
+  }
+  return targets;
+}
+
+/**
+ * 一次加一条或几条：同一段话落到多个块 / 页上时，每处各得一条，各自可删。
+ *
+ * `scope: "doc"` 是整份意见（抽屉底部的「整篇反馈」）：它没有锚点，也不属于任何一页，
+ * 所以不接受 `anchor` / `anchors` —— 给它硬挂一块，就是让它进任务时冒充块级批注。
+ */
 function addNotes(docPath, payload) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) fail('note_request', '请求体必须是 JSON 对象');
   const text = typeof payload.text === 'string' ? payload.text.trim() : '';
   if (!text) fail('note_text', '批注不能为空');
   if (text.length > MAX_NOTE_TEXT) fail('note_text', `一条批注不要超过 ${MAX_NOTE_TEXT} 字`);
+  const scope = payload.scope ?? 'blocks';
+  if (!NOTE_SCOPES.includes(scope)) fail('note_scope', `批注范围只能是 ${NOTE_SCOPES.join(' / ')}`);
+  if (scope === 'doc') {
+    const anchored = (Array.isArray(payload.anchors) && payload.anchors.length)
+      || (payload.anchor !== undefined && payload.anchor !== null);
+    if (anchored) fail('note_scope', '整份批注针对整份文档，不带锚点');
+    return withWriteLock(docPath, () => {
+      const store = createNoteStore(docPath);
+      const state = store.load();
+      const added = draftNote({ scope: 'doc', text });
+      state.notes.push(added);
+      store.save(state);
+      return { ok: true, contract: NOTES_CONTRACT, note: added, added: [added], notes: mergeArchived(store, state.notes) };
+    });
+  }
   const anchors = Array.isArray(payload.anchors) ? payload.anchors : [payload.anchor];
   if (!anchors.length || anchors.some((anchor) => typeof anchor !== 'string' || !BLOCK_ANCHOR_RE.test(anchor))) {
-    fail('note_anchor', '批注要落在一块上，锚点形状不对');
+    fail('note_anchor', '批注要落在一块或一页标题的锚点上，锚点形状不对');
   }
-  if (new Set(anchors).size !== anchors.length) fail('note_anchor', '同一块在一次批注里出现了两次');
+  if (new Set(anchors).size !== anchors.length) fail('note_anchor', '同一个目标在一次批注里出现了两次');
   return withWriteLock(docPath, () => {
     const document = readDocument(docPath);
-    const byAnchor = new Map(document.parsed.blocks.map((block) => [block.anchor, block]));
+    const byAnchor = noteTargetsOf(document.parsed);
     // 先把每条都核对一遍再写：一半成功一半失败会让人以为批注丢了。
     const targets = anchors.map((anchor) => byAnchor.get(anchor)
-      ?? fail('note_anchor', `找不到块 ${anchor}；文档可能已被修改，请刷新工作台`));
+      ?? fail('note_anchor', `找不到块或页 ${anchor}；文档可能已被修改，请刷新工作台`));
     const store = createNoteStore(docPath);
     const state = store.load();
-    const added = targets.map((block) => draftNote({
-      anchor: block.anchor,
-      page: { chapter: block.page?.chapter?.index ?? 0, index: block.page?.index ?? 0 },
+    const added = targets.map((target) => draftNote({
+      scope: 'blocks',
+      anchor: target.anchor,
+      page: target.page,
+      target: target.kind,
       text,
     }));
     state.notes.push(...added);
@@ -1025,17 +1123,29 @@ function reopenNote(docPath, payload) {
   });
 }
 
-/** 批次文案：模型要在一条任务里看全，所以按文档顺序把每条落到它的块锚点上。 */
+/**
+ * 批次文案：模型要在一条任务里看全，所以按文档顺序把每条落到它的目标上。
+ * 目标是页时标出「页」与页标题：页锚点和块锚点同形，不给一句话模型分不出来；
+ * 整份批注的目标写成「整份」—— 不拿 null 或随便一个锚点凑数（`noteTargetOf`）。
+ */
 function batchTextOf(entries, batch) {
-  const lines = [`【批注批次 ${batch}】共 ${entries.length} 条，按块处理；块外一个字都不要动。`];
-  for (const { note } of entries) lines.push(`- ${note.anchor}：${note.text}`);
+  const whole = entries.some(({ note }) => note.scope === 'doc');
+  const lines = [whole
+    ? `【批注批次 ${batch}】共 ${entries.length} 条，含整份批注：块 / 页批注按锚点处理，「整份」那条针对整篇文档。`
+    : `【批注批次 ${batch}】共 ${entries.length} 条，按块 / 页处理；目标之外一个字都不要动。`];
+  for (const { note, target } of entries) {
+    const where = target?.kind === 'page' ? `（页「${target.title}」）` : '';
+    lines.push(`- ${noteTargetOf(note)}${where}：${note.text}`);
+  }
   return lines.join('\n');
 }
 
 /**
  * 一次提交整批：所有草稿进同一批、同一份任务。
  *
- * 目标块已被删掉的草稿不静默消失：留在草稿里，并在回执 `orphaned` 里说明原因。
+ * 目标块 / 目标页已被删掉的**块级**草稿不静默消失：留在草稿里，并在回执 `orphaned` 里说明原因。
+ * 整份批注没有目标块，永远随批次走；有它这一批的任务范围就是整份（scope: "doc"），
+ * 块只绑被点名的块 —— 整份意见没有锚点，硬绑一整份文档的块就是伪造锚点。
  * 还是老规矩，派发不是保存、也不是批准 —— 这一层只建任务，唤醒由入口决定。
  */
 function submitNotes(docPath, payload, board) {
@@ -1049,20 +1159,36 @@ function submitNotes(docPath, payload, board) {
     const drafts = draftsOf(state.notes);
     if (!drafts.length) fail('notes_empty', '还没有批注草稿；先在正文里选一段写下要改什么');
     const document = readDocument(docPath);
-    const byAnchor = new Map(document.parsed.blocks.map((block) => [block.anchor, block]));
+    const byAnchor = noteTargetsOf(document.parsed);
     const entries = [];
     const orphaned = [];
     for (const note of drafts) {
-      const block = byAnchor.get(note.anchor);
-      if (block) entries.push({ note, block });
-      else orphaned.push({ note: note.id, text: note.text, anchor: note.anchor, reason: 'target_block_removed' });
+      if (note.scope === 'doc') {
+        entries.push({ note, target: null });
+        continue;
+      }
+      const target = byAnchor.get(note.anchor);
+      if (target) {
+        entries.push({ note, target });
+      } else {
+        // 老草稿没有 target 字段：按块读（页批注是票 38 才有的）。
+        const reason = note.target === 'page' ? 'target_page_removed' : 'target_block_removed';
+        orphaned.push({ note: note.id, text: note.text, anchor: note.anchor, reason });
+      }
     }
     if (!entries.length) {
-      fail('notes_orphaned', '这批批注的块都已被删掉；刷新工作台后重新选块再提交');
+      fail('notes_orphaned', '这批批注的目标都已被删掉；刷新工作台后重新选块或页再提交');
     }
-    const held = entries.filter(({ block }) => board.lockOf(block.anchor));
+    // 整份批注不伪造锚点，也不把整份文档绑成一串假块：任务范围写整份，块只绑被点名的块。
+    // 整份批次允许一个块都没有（见 planners-doc-task/1）；块级批次仍至少绑一块，
+    // 同一目标多条只绑一次（任务锁的是块或页，不是批注条数）。
+    const whole = entries.some(({ note }) => note.scope === 'doc');
+    const targets = [...new Map(
+      entries.filter(({ target }) => target).map(({ target }) => [target.anchor, target]),
+    ).values()];
+    const held = targets.filter((target) => board.lockOf(target.anchor));
     if (held.length) {
-      fail('block_locked', `这些块正由模型处理，等它完成再提交：${held.map(({ block }) => block.anchor).join('、')}`);
+      fail('block_locked', `这些目标正由模型处理，等它完成再提交：${held.map((target) => target.anchor).join('、')}`);
     }
     const repaired = persistRepairs(docPath, document);
     // 批次号先定下来再建任务：任务文案里的批次号是模型把回执与 notes.json 对上的锚。
@@ -1075,7 +1201,7 @@ function submitNotes(docPath, payload, board) {
       orphanNotes: orphaned.map(({ note, text, reason }) => ({ note, text, reason })),
     });
     const task = board.submit({
-      scope: 'blocks',
+      scope: whole ? 'doc' : 'blocks',
       page: null,
       text: batchTextOf(entries, batch),
       doc: {
@@ -1084,9 +1210,8 @@ function submitNotes(docPath, payload, board) {
         doc: repaired.parsed.front.doc ?? null,
         project: repaired.parsed.front.project ?? null,
       },
-      // 同一块上的多条批注只绑一块：任务锁的是块，不是批注条数。
-      blocks: [...new Map(entries.map(({ block }) => [block.anchor, block])).values()]
-        .map((block) => ({ anchor: block.anchor, sha256: sha256(block.raw) })),
+      // 同一目标上的多条批注只绑一次：任务锁的是块 / 页，不是批注条数。
+      blocks: targets.map((target) => ({ anchor: target.anchor, sha256: sha256(target.raw) })),
       // 批次号也结构化存进任务：归档按它认出「这批里哪几条被改到」，不解析文案。
       batch,
       // 结构 diff 随任务一起给模型：它醒来读 tasks 就能看到人动过什么，不必猜。

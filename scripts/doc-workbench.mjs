@@ -15,7 +15,7 @@
  *   POST /api/block/merge        人把空块并进前一块：{anchor, previous, content, base_sha256}
  *   POST /api/asset/replace      换掉图块引用的文件：{anchor, content_base64, base_sha256}
  *   POST /api/reorder            重排（一次一个动作），返回重排后的整份快照
- *   POST /api/structure          改结构（rename-chapter / rename-page / add-page / add-chapter）
+ *   POST /api/structure          改结构（rename-chapter / rename-page / add-page / add-chapter / add-source / add-page-anchor / delete-block / delete-page / delete-chapter）
  *   POST /api/feedback           派发块级反馈任务；回执带 dispatch.channel（wake / inbox）
  *   GET  /api/tasks              模型读任务
  *   POST /api/task/claim         模型开始处理（锁块）
@@ -26,7 +26,7 @@
  *   GET  /api/history            列出历史版本（每次写盘前存上一版，新的在前）
  *   POST /api/history/restore    恢复一版：{id, base_sha256}（恢复也是一次新编辑）
  *   GET  /api/notes              列出批注（主文件 + 归档，含块快照）
- *   POST /api/note               加一条草稿：{anchor|anchors, text}
+ *   POST /api/note               加一条草稿：{anchor|anchors, text} 或 {scope: "doc", text}（整份）
  *   POST /api/note/delete        删一条草稿：{id}
  *   POST /api/note/reopen        重新打开：{id}（已提交 / 已归档 → 草稿）
  *   POST /api/note/submit        整批提交：草稿 → 已提交，建一条任务
@@ -67,10 +67,10 @@ const BAD_REQUEST_CODES = new Set([
   'block_request', 'feedback_request', 'feedback_text', 'feedback_scope',
   'task_request', 'task_id', 'task_scope', 'task_blocks',
   'patch_request', 'patch_blocks', 'conflict_request', 'conflict_decision', 'conflict_anchor',
-  'reorder_request', 'reorder_op', 'structure_request', 'structure_op', 'structure_title',
+  'reorder_request', 'reorder_op', 'structure_request', 'structure_op', 'structure_title', 'structure_delete',
   'asset_request', 'asset_type', 'asset_content',
   'history_request', 'history_id',
-  'note_request', 'note_text', 'note_anchor', 'note_id', 'note_missing', 'notes_empty', 'notes_orphaned',
+  'note_request', 'note_text', 'note_scope', 'note_anchor', 'note_id', 'note_missing', 'notes_empty', 'notes_orphaned',
 ]);
 
 /** 只接受工作台页面自己的同源 JSON 写入：别的网页不能借浏览器改本地文档或派发任务。 */

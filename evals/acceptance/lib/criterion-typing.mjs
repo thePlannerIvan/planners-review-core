@@ -102,6 +102,15 @@ export async function runTyping(corpus) {
       && /[\u4e00-\u9fff]/.test(block.raw)
       && !/[\\*_`\[\]<>&~|]/.test(block.raw));
     if (!target) throw Error('语料里找不到适合输入的纯文本中文段落');
+    // 输入法那条用例用另一块普通段落：票 39 之后「标题删空」会删掉整块，不再有
+    // 「退回段落」这条手势把基准块变回正文，所以它得从一块没被前面用例改过的段落开始。
+    const imeTarget = opened.body.blocks.find((block) => block.type === 'paragraph'
+      && block.anchor
+      && block.anchor !== target.anchor
+      && !String(block.raw).includes('\n')
+      && /[\u4e00-\u9fff]/.test(block.raw)
+      && !/[\\*_`\[\]<>&~|]/.test(block.raw)) ?? target;
+    const imeSelector = `.doc-block[data-anchor="${imeTarget.anchor}"] .block-text`;
     const originalRaw = target.raw;
     const beforeTyping = readDoc(path);
     details.target = { anchor: target.anchor, original_raw: originalRaw, doc: entry.id };
@@ -481,45 +490,8 @@ export async function runTyping(corpus) {
       },
     });
 
-    // 标题删空：退回段落，前缀重新出现在正文里。
-    await page.locator(selector).click();
-    await page.evaluate((selectorForBlock) => {
-      const node = document.querySelector(selectorForBlock);
-      node.focus();
-      const range = document.createRange();
-      range.selectNodeContents(node);
-      const selection = window.getSelection();
-      selection.removeAllRanges();
-      selection.addRange(range);
-    }, selector);
-    const revertResponsePromise = page.waitForResponse((response) => response.url().endsWith('/api/block'), { timeout: 10000 }).catch(() => null);
-    await page.keyboard.press('Backspace');
-    const revertResponse = await revertResponsePromise;
-    await sleep(600);
-    const revertReceipt = revertResponse ? await revertResponse.json().catch(() => null) : null;
-    const revertDom = {
-      type: await page.locator(`.doc-block[data-anchor="${target.anchor}"]`).getAttribute('data-type'),
-      text: await page.locator(selector).innerText(),
-      prefixSpans: await page.locator(`.doc-block[data-anchor="${target.anchor}"] .block-prefix`).count(),
-    };
-    details.phases.prefix.prefix_revert = { response_status: revertResponse?.status() ?? null, receipt: revertReceipt, dom: revertDom };
-    cases.push({
-      id: 'typing/prefix-revert',
-      ok: revertResponse?.status() === 200
-        && revertReceipt?.block?.type === 'paragraph'
-        && revertDom.type === 'paragraph'
-        && revertDom.text.includes('###')
-        && revertDom.prefixSpans === 0,
-      name: '标题里把字删空：退回段落、前缀重新出现，保存不返回 409',
-      evidence: {
-        response_status: revertResponse?.status() ?? null,
-        block_type: revertReceipt?.block?.type ?? null,
-        dom: revertDom,
-      },
-    });
-
     // 输入法组字期间不转换：组字中不排保存，提交后才按前缀得到标题块。
-    await page.locator(selector).click();
+    await page.locator(imeSelector).click();
     await page.evaluate((selectorForBlock) => {
       const node = document.querySelector(selectorForBlock);
       node.focus();
@@ -528,7 +500,7 @@ export async function runTyping(corpus) {
       const selection = window.getSelection();
       selection.removeAllRanges();
       selection.addRange(range);
-    }, selector);
+    }, imeSelector);
     const imeBefore = readDoc(path).raw;
     await cdp.send('Input.imeSetComposition', { text: '#### 组字中', selectionStart: 5, selectionEnd: 5 });
     await sleep(1200);
@@ -559,6 +531,48 @@ export async function runTyping(corpus) {
         block_raw: imeReceipt?.block?.raw ?? null,
         file_has_heading: imeAfter.raw.includes('#### 输入法标题'),
         escaped_prefix: imeAfter.raw.includes('\\####'),
+      },
+    });
+
+    // 标题删空、失焦：这一块从文件里消失（票 39 的「删空即消失」）。
+    // 删的块用别的工具已经验过；这里看页面这个手势真的把删除送到 structure 通道。
+    await page.locator(imeSelector).click();
+    await page.evaluate((selectorForBlock) => {
+      const node = document.querySelector(selectorForBlock);
+      node.focus();
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }, imeSelector);
+    const emptiedResponsePromise = page.waitForResponse((response) => response.url().endsWith('/api/structure'), { timeout: 10000 }).catch(() => null);
+    await page.keyboard.press('Backspace');
+    await page.evaluate(() => document.activeElement?.blur());
+    const emptiedResponse = await emptiedResponsePromise;
+    await sleep(600);
+    const emptiedReceipt = emptiedResponse ? await emptiedResponse.json().catch(() => null) : null;
+    const afterEmpty = readDoc(path);
+    details.phases.prefix.emptied = {
+      response_status: emptiedResponse?.status() ?? null,
+      receipt: emptiedReceipt,
+      anchor_in_file: afterEmpty.raw.includes(imeTarget.anchor),
+      block_count: afterEmpty.parsed.blocks.length,
+    };
+    cases.push({
+      id: 'typing/delete-emptied',
+      ok: emptiedResponse?.status() === 200
+        && emptiedReceipt?.deleted?.kind === 'block'
+        && emptiedReceipt?.deleted?.anchor === imeTarget.anchor
+        && !afterEmpty.raw.includes(imeTarget.anchor)
+        && !afterEmpty.parsed.blocks.some((block) => block.anchor === imeTarget.anchor)
+        && afterEmpty.parsed.errors.filter((error) => error.code === 'block_outside_page').length === 0,
+      name: '标题里把字删空、失焦：这一块从文件里消失（走 structure 的 delete-block）',
+      evidence: {
+        response_status: emptiedResponse?.status() ?? null,
+        deleted: emptiedReceipt?.deleted ?? null,
+        anchor_in_file: afterEmpty.raw.includes(imeTarget.anchor),
+        block_count: afterEmpty.parsed.blocks.length,
       },
     });
 

@@ -614,8 +614,10 @@
     if (dragging.kind === 'block') {
       focusAnchor(dragging.anchor);
     } else if (movedPage) {
-      const now = receipt.pages.find((page) => (movedPage.anchor && page.anchor === movedPage.anchor)
-        || (!movedPage.anchor && page.title === movedPage.title));
+      // 页锚点跟着页走（票 38）：优先按它定位；旧页没有页锚点时退回页内第一块 / 标题。
+      const anchor = movedPage.anchor ?? movedPage.firstBlockAnchor;
+      const now = receipt.pages.find((page) => (anchor && (page.anchor === anchor || page.firstBlockAnchor === anchor))
+        || (!anchor && page.title === movedPage.title));
       if (now) scrollToPage(now.key);
     }
   }

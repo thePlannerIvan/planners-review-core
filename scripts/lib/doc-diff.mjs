@@ -34,6 +34,8 @@ export function structureOf(parsed) {
       chapter: page.chapter?.index ?? 0,
       index: page.index,
       title: page.title,
+      // 页锚点（票 38）是页自己的身份；`anchors` 仍是页内块锚点，用于块层面的匹配。
+      anchor: page.anchor ?? null,
       anchors: page.blocks.map((block) => block.anchor).filter(Boolean),
     })),
     blocks: parsed.blocks.filter((block) => block.anchor).map((block) => ({
@@ -81,11 +83,12 @@ export function writeBaseline(docPath, { sha256, parsed, now = () => new Date().
   return snapshot;
 }
 
-/* ── 匹配：页没有锚点，块有 ───────────────────────────────────────────────────
+/* ── 匹配：页锚点优先，其次才是页里的块 ────────────────────────────────────
  *
- * 页的身份是「章节 + 顺序 + 标题」，可这三样都会变：改个标题、插一页，身份就漂了。
- * 所以匹配靠**页里有哪些块**（块锚点随内容走、不因移动而变）：同一批锚点还在，
- * 就是同一页。这一条同时把「改名」「移动」「合并」「拆分」区分开：
+ * 页可以带一个隐藏的页锚点（票 38）：有锚点就先按锚点配，改名、移动、甚至同时改
+ * 标题和内容都不会把同一页认丢。没有页锚点的旧页仍按「章节 + 顺序 + 标题」与
+ * **页里有哪些块**来配（块锚点随内容走、不因移动而变）：同一批锚点还在，就是同一页。
+ * 这一条同时把「改名」「移动」「合并」「拆分」区分开：
  *
  *   · 一页对一页，锚点集合没散 → 标题变了叫改名，位置变了叫移动；
  *   · 两页的锚点落进同一页      → 合并；
@@ -133,19 +136,43 @@ function matchPages(beforePages, afterPages) {
   const afterAnchors = afterPages.map((page) => new Set(page.anchors ?? []));
   const covers = (source, target) => source.size > 0 && [...source].every((anchor) => target.has(anchor));
 
+  // 0. 页锚点相同 = 同一页：这是页身份本身，比标题、位置、块集合都可靠。
+  const pageAnchorBefore = new Map();
+  beforePages.forEach((page, ordinal) => {
+    if (page.anchor) pageAnchorBefore.set(page.anchor, ordinal);
+  });
+  const pairedBefore = new Map(); // after ordinal → before ordinal（页锚点 / 标题配上的）
+  afterPages.forEach((page, afterOrdinal) => {
+    if (!page.anchor) return;
+    const beforeOrdinal = pageAnchorBefore.get(page.anchor);
+    if (beforeOrdinal === undefined || usedBefore.has(beforeOrdinal) || usedAfter.has(afterOrdinal)) return;
+    usedBefore.add(beforeOrdinal);
+    usedAfter.add(afterOrdinal);
+    pairedBefore.set(afterOrdinal, beforeOrdinal);
+    origin.get(afterOrdinal).add(beforeOrdinal);
+  });
+
   // 1. 标题相同 = 同一页：只剩位置可能变。
   const titleOfBefore = new Map();
   beforePages.forEach((page, ordinal) => {
     if (!titleOfBefore.has(page.title)) titleOfBefore.set(page.title, ordinal);
   });
-  const pairedBefore = new Map(); // after ordinal → before ordinal（标题配上的）
   afterPages.forEach((page, afterOrdinal) => {
     const beforeOrdinal = titleOfBefore.get(page.title);
-    if (beforeOrdinal === undefined || usedBefore.has(beforeOrdinal)) return;
+    if (beforeOrdinal === undefined || usedBefore.has(beforeOrdinal) || usedAfter.has(afterOrdinal)) return;
     usedBefore.add(beforeOrdinal);
     usedAfter.add(afterOrdinal);
     pairedBefore.set(afterOrdinal, beforeOrdinal);
     origin.get(afterOrdinal).add(beforeOrdinal);
+  });
+
+  // 1b. 锚点对上了、标题却变了：就是改名。位置变化留到第 5 步单独报。
+  afterPages.forEach((page, afterOrdinal) => {
+    const beforeOrdinal = pairedBefore.get(afterOrdinal);
+    if (beforeOrdinal === undefined) return;
+    const source = beforePages[beforeOrdinal];
+    if (source.title === page.title) return;
+    entries.push({ action: 'renamed', from: [pageRef(source)], to: pageRef(page) });
   });
 
   // 2. 标题没了的页：整页锚点落进同一页才算「并进去」，只挪走几块不算。
