@@ -678,6 +678,17 @@ export function parseDocument(raw, options = {}) {
   };
 }
 
+/**
+ * 页外块的数量（票 34）：任何「造结构」的写回只允许让页外块减少，不许增加。
+ *
+ * 新增章节 / 页的落点如果在页中间，同一页后面的块就全失去页身份 —— 校验器报
+ * `block_outside_page`，人写下的正文与整组出处被推出页外。所以插入点永远取结构边界，
+ * 写回后再用这个计数兜底确认一次。
+ */
+export function outsidePageCount(parsed) {
+  return (parsed.blocks ?? []).filter((block) => !block.page).length;
+}
+
 /** 生成一个 6 位小写十六进制锚点，避开 already 里已有的身份。 */
 export function generateAnchor(already = new Set()) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -984,6 +995,12 @@ function verifyTypedWrite(parsed, after, block, plan, anchor, fail) {
     || remaining.some((item, index) => item.raw !== others[index].raw || item.type !== others[index].type)) {
     fail('block_structure', '结构变化动到了别的块，已拒绝');
   }
+  // 页外块只许减少，不许增加（票 34）：`# ` 落在页中间时，同一页后面剩下的块会全被
+  // 推到页外。这种「造出来的章节」不干净 —— 退回字面段落（保存不失败，文字还在），
+  // 由人显式地把章节加在章节边界上。`## ` 是页边界本身，落在页中间不产生页外块。
+  if (outsidePageCount(after) > outsidePageCount(parsed)) {
+    fail('block_structure', '这次结构变化会把同一页后面的块推出页外，已拒绝');
+  }
 
   // 新结构必须就在被替换的那一行上：`## 标题` / `# 标题` 真的成了页 / 章节。
   const line = block.startLine;
@@ -1192,6 +1209,10 @@ export function splitBlockContent(raw, { anchor, before, after, keep = 'before' 
     reorderFail('block_structure', '拆分把块挪出了原来那一页，已拒绝');
   }
   if (secondPlan.structural) {
+    // 拆分出来的 `# ` 同样不能落在页中间：后半之后的块会掉到页外（票 34）。
+    if (outsidePageCount(afterDocument) > outsidePageCount(parsed)) {
+      reorderFail('block_structure', '拆分出来的章节会把同一页后面的块推出页外，已拒绝');
+    }
     const scope = secondPlan.type === 'page' ? afterDocument.pages : afterDocument.chapters;
     const prior = secondPlan.type === 'page' ? parsed.pages : parsed.chapters;
     if (scope.length !== prior.length + 1 || !scope.some((item) => item.title === secondPlan.title)) {
@@ -1301,6 +1322,9 @@ export function createBlockInPage(raw, { chapter, index, content } = {}, options
     || after.pages.length !== expectedPages
     || after.blocks.length !== parsed.blocks.length + (plan.structural && !plan.rest ? 0 : 1)) {
     reorderFail('block_structure', '第一块没有干净地落在这一页里，已拒绝');
+  }
+  if (outsidePageCount(after) > outsidePageCount(parsed)) {
+    reorderFail('block_structure', '第一块造出的结构会把页里的块推出页外，已拒绝');
   }
   if (plan.structural) {
     const scope = plan.type === 'page' ? after.pages : after.chapters;
