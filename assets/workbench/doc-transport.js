@@ -37,6 +37,7 @@
     notes: '/api/notes',
     note_add: '/api/note',
     note_delete: '/api/note/delete',
+    note_reopen: '/api/note/reopen',
     note_submit: '/api/note/submit',
   };
 
@@ -86,6 +87,7 @@
       notes: () => send('notes'),
       addNote: (body) => send('note_add', body),
       deleteNote: (body) => send('note_delete', body),
+      reopenNote: (body) => send('note_reopen', body),
       submitNotes: (body) => send('note_submit', body),
       // 同源，浏览器直接取；版本参数让换过文件的图不吃旧缓存。
       imageUrl: (path, version) => {
@@ -126,6 +128,7 @@
       notes: () => send('notes'),
       addNote: (body) => send('note_add', body),
       deleteNote: (body) => send('note_delete', body),
+      reopenNote: (body) => send('note_reopen', body),
       submitNotes: (body) => send('note_submit', body),
       async feedback(payload) {
         const receipt = await send('feedback', payload);

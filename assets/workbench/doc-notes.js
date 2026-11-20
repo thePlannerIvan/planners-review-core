@@ -69,5 +69,26 @@
     return result;
   }
 
-  return { drawer, STATES };
+  /**
+   * 历史批注：只给人看「当初那句话 + 时间 + 所在页」。
+   * 快照（改前 / 改后块 raw）故意不出现在这里 —— 它是给模型回查的，不进列表。
+   */
+  function history(notes, { pages = [] } = {}) {
+    const list = Array.isArray(notes) ? notes : [];
+    return list
+      .filter((note) => note.state === 'resolved')
+      .sort((left, right) => (
+        String(right.resolved_at ?? '').localeCompare(String(left.resolved_at ?? ''))
+        || String(right.created_at ?? '').localeCompare(String(left.created_at ?? ''))
+      ))
+      .map((note) => ({
+        id: note.id,
+        text: note.text,
+        created_at: note.created_at,
+        resolved_at: note.resolved_at ?? null,
+        page: pageInfo(note, pages),
+      }));
+  }
+
+  return { drawer, history, STATES };
 });

@@ -69,6 +69,7 @@ const ROUTES = {
   notes: ({ session }) => session.notes(),
   note_add: ({ session, body }) => session.addNote(body),
   note_delete: ({ session, body }) => session.deleteNote(body),
+  note_reopen: ({ session, body }) => session.reopenNote(body),
   async note_submit({ surface, session }) {
     const receipt = session.submitNotes();
     const dispatch = await dispatchFor(surface, receipt.task);
