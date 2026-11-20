@@ -306,29 +306,68 @@ body.is-readonly .page-handle { display: none; }
 .page-divider { position: relative; }
 .page-title { cursor: grab; }
 
-.doc-block.is-dragging, .page-divider.is-dragging { opacity: .45; }
+/* 拖动：纸片浮起来，原位退后，其余块平移让位——过程里不铺灰底，不整行变色。 */
+.doc-block, .page-divider { transition: transform 180ms cubic-bezier(.2,.8,.2,1); }
+.doc-block.is-dragging, .page-divider.is-dragging { opacity: .28; }
 body.is-reordering { cursor: grabbing; user-select: none; }
+body.is-reordering .doc-block:hover { background: transparent; }
 
-/* 落点提示：一条线 + 一句「插到哪两块之间」。 */
+/* 幽灵：原生快照被一张透空图顶掉，跟手的是这一张纸。 */
+.drag-shot {
+  position: fixed; top: -1000px; left: -1000px;
+  width: 1px; height: 1px; opacity: 0; pointer-events: none;
+}
+.drag-ghost {
+  position: fixed; left: 0; top: 0; z-index: 70;
+  pointer-events: none;
+  will-change: transform;
+}
+.drag-ghost-card {
+  margin: 10px 0 0 14px;
+  padding: 10px 14px; border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 18px 40px -12px rgb(16 18 22 / 22%);
+  transform: scale(1.012) rotate(.2deg);
+  transform-origin: top left;
+  color: var(--ink); font-size: 15px; line-height: 1.6;
+}
+.drag-ghost-meta {
+  display: block; margin-bottom: 2px;
+  font-size: 11px; letter-spacing: .08em; color: var(--muted);
+}
+.drag-ghost-text { overflow: hidden; max-height: 4.6em; }
+
+/* 落点：10px 高的软槽。两端渐隐的淡绿 + 内侧一条 1.5px 细线，块与整页共用同一条。 */
 .drop-line {
-  position: absolute; z-index: 60; height: 2px;
-  background: var(--accent); pointer-events: none;
-  transform: translateY(-1px);
+  position: absolute; z-index: 60;
+  display: flex; align-items: center;
+  height: 10px; border-radius: 999px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgb(47 111 79 / 12%) 14%, rgb(47 111 79 / 12%) 86%, transparent);
+  transform: translateY(-5px);
+  animation: drop-slot-grow 120ms cubic-bezier(.2,.8,.2,1) both;
 }
 .drop-line[hidden] { display: none; }
+@keyframes drop-slot-grow {
+  from { height: 2px; opacity: .5; }
+  to { height: 10px; opacity: 1; }
+}
 .drop-line::before {
-  content: ''; position: absolute; left: -3px; top: -2px;
-  width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
+  content: ''; display: block;
+  width: calc(100% - 24px); height: 1.5px; margin: 0 auto;
+  border-radius: 1px;
+  background: linear-gradient(90deg, transparent, rgb(47 111 79 / 62%) 12%, rgb(47 111 79 / 62%) 88%, transparent);
 }
-.drop-line.is-page { height: 3px; background: #b45309; }
-.drop-line.is-page::before { background: #b45309; }
 .drop-line .drop-label {
-  position: absolute; left: 0; top: -24px;
-  padding: 2px 8px; border-radius: 5px;
-  background: var(--accent); color: #fff;
-  font-size: 11px; line-height: 1.5; white-space: nowrap;
+  position: absolute; left: 0; top: -26px;
+  padding: 3px 10px; border-radius: 999px;
+  background: rgb(255 255 255 / 72%);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 1px 2px rgb(16 18 22 / 8%), inset 0 0 0 1px rgb(47 111 79 / 14%);
+  color: var(--accent);
+  font-size: 11px; line-height: 1.4; white-space: nowrap;
 }
-.drop-line.is-page .drop-label { background: #b45309; }
 
 @media (max-width: 900px) {
   .toc-panel { width: 190px; }

@@ -782,6 +782,234 @@ test('工作台源码：六点句柄、页标题可拖、两级目录随滚动�
   assert.match(css, /\.toc/, '目录要有左侧栏样式');
 });
 
+// ── 拖动的手感：藏原生快照、自绘幽灵、软槽落点、平滑让位（SPEC「拖动」） ──────
+// 最小 DOM 形状：只够让拖动视图接线，不模拟浏览器排版与动画。
+function dragNode(tag = 'div') {
+  const node = {
+    tagName: tag.toUpperCase(), className: '', textContent: '', hidden: false,
+    style: {}, dataset: {}, attrs: {}, children: [],
+    append(...kids) { node.children.push(...kids); for (const kid of kids) kid.parent = node; },
+    remove() {
+      node.removed = true;
+      if (node.parent) node.parent.children = node.parent.children.filter((child) => child !== node);
+    },
+    setAttribute(name, value) { node.attrs[name] = String(value); },
+    getAttribute(name) { return node.attrs[name] ?? null; },
+  };
+  // classList 与 className 是同一份东西：真浏览器里改一个另一个会跟着变。
+  const names = () => String(node.className ?? '').split(/\s+/).filter(Boolean);
+  node.classList = {
+    add: (...added) => { node.className = [...new Set([...names(), ...added])].join(' '); },
+    remove: (...removed) => { node.className = names().filter((name) => !removed.includes(name)).join(' '); },
+    contains: (name) => names().includes(name),
+    toggle: (name, force) => {
+      const on = force === undefined ? !names().includes(name) : Boolean(force);
+      if (on) node.classList.add(name); else node.classList.remove(name);
+      return on;
+    },
+  };
+  return node;
+}
+
+function dragDocument() {
+  const body = dragNode('body');
+  return { body, createElement: (tag) => dragNode(tag), getElementById: () => null };
+}
+
+/** 幽灵是几层嵌起来的：把整棵子树的文字读出来，断言看到的是被拖的内容。 */
+function dragText(node) {
+  return [node.textContent ?? '', ...(node.children ?? []).map(dragText)].join('');
+}
+
+function dragFrames() {
+  const queue = [];
+  const frame = (callback) => { queue.push(callback); return queue.length; };
+  return { frame, queue, flush() { while (queue.length) queue.shift()(); } };
+}
+
+test('拖动的手感：原生快照换成 1×1 透明图，自己画一个浮起的幽灵', async () => {
+  const { createDragView, TRANSPARENT_PIXEL } = await dragModule();
+  const doc = dragDocument();
+  const frames = dragFrames();
+  const view = createDragView({ document: doc, frame: frames.frame });
+  const block = dragNode('div');
+  block.dataset.anchor = 'b:aaaaaa';
+  block.getBoundingClientRect = () => ({ left: 120, top: 200, width: 640, height: 40 });
+  block.querySelector = (selector) => (selector === '.block-text' ? { textContent: '这一块要搬走。' } : null);
+  const shots = [];
+  const dataTransfer = { setDragImage(image, x, y) { shots.push({ image, x, y }); } };
+
+  view.begin({
+    dragging: { kind: 'block', anchor: 'b:aaaaaa', node: block },
+    point: { x: 130, y: 210 },
+    dataTransfer,
+  });
+
+  assert.equal(shots.length, 1, 'dragstart 要亲手换掉浏览器的截屏，不能留着默认快照');
+  assert.equal(shots[0].image.src, TRANSPARENT_PIXEL, '拖动图是一张透空的 1×1，看不见');
+  assert.equal(shots[0].image.width, 1);
+  assert.equal(shots[0].image.height, 1);
+  assert.ok(block.classList.contains('is-dragging'), '原位块退到后面（CSS 里是 .28）');
+  assert.ok(doc.body.children.includes(view.ghost), '幽灵节点要真的挂到页面上，不是只有一行样式');
+  assert.ok(view.ghost.classList.contains('drag-ghost'));
+  assert.equal(view.ghost.children[0].style.width, '640px', '幽灵按被拖的块取宽');
+  assert.match(dragText(view.ghost), /这一块要搬走。/, '幽灵里是被拖的那段字');
+  assert.ok(doc.body.classList.contains('is-reordering'), '整页进入拖动态');
+});
+
+test('幽灵跟手滞后一帧：一帧里连动三次，第一帧只画第一次的位置', async () => {
+  const { createDragView } = await dragModule();
+  const doc = dragDocument();
+  const frames = dragFrames();
+  const view = createDragView({ document: doc, frame: frames.frame, scroll: () => ({ x: 0, y: 0 }) });
+  const block = dragNode('div');
+  block.dataset.anchor = 'b:aaaaaa';
+  block.getBoundingClientRect = () => ({ width: 640, height: 40 });
+  block.querySelector = () => ({ textContent: '块一。' });
+  view.begin({ dragging: { kind: 'block', anchor: 'b:aaaaaa', node: block }, point: { x: 100, y: 100 } });
+  const transform = () => String(view.ghost.style.transform ?? '');
+
+  view.move({ x: 210, y: 220 });
+  assert.equal(transform(), 'translate3d(100px, 100px, 0)', '还没到下一帧，幽灵留在起点');
+  view.move({ x: 310, y: 320 });
+  view.move({ x: 410, y: 420 });
+  assert.equal(frames.queue.length, 1, '一帧里连动多次也只画一次，不追着每个事件重排');
+  frames.queue.shift()();
+  assert.equal(transform(), 'translate3d(210px, 220px, 0)', '这一帧画的是排帧时的位置，比回调时的鼠标早一帧');
+  frames.flush();
+  assert.equal(transform(), 'translate3d(410px, 420px, 0)', '下一帧才追上鼠标');
+});
+
+test('落点是一条软槽：块与整页共用同一条，整页只换标签文字', async () => {
+  const { createDragView, gapLabel } = await dragModule();
+  const doc = dragDocument();
+  const frames = dragFrames();
+  const view = createDragView({ document: doc, frame: frames.frame, scroll: () => ({ x: 0, y: 0 }) });
+  const nodes = ['b:aaaaaa', 'b:bbbbbb', 'b:cccccc'].map((anchor) => {
+    const node = dragNode('div');
+    node.dataset.anchor = anchor;
+    node.getBoundingClientRect = () => ({ width: 640, height: 40 });
+    node.querySelector = () => ({ textContent: '块一。' });
+    return node;
+  });
+  const items = [
+    { anchor: 'b:aaaaaa', page: '1-1', top: 100, bottom: 140 },
+    { anchor: 'b:bbbbbb', page: '1-1', top: 160, bottom: 200 },
+    { anchor: 'b:cccccc', page: '1-1', top: 220, bottom: 260 },
+  ];
+  const lookup = {
+    page: () => ({ title: '页一', chapter: '甲' }),
+    blockText: (anchor) => (anchor === 'b:bbbbbb' ? '第二块' : ''),
+  };
+  const origin = { left: 120, width: 640 };
+  const blockDrag = { kind: 'block', anchor: 'b:aaaaaa', node: nodes[0] };
+  const gap = { y: 300, page: '1-1', before: 'b:bbbbbb' };
+
+  view.hover({ gap, dragging: blockDrag, label: gapLabel(gap, blockDrag, lookup), items, nodes, origin });
+
+  assert.equal(view.line.hidden, false, '落点要真的显出来');
+  assert.equal(view.line.style.left, '120px', '软槽与纸同宽同左');
+  assert.equal(view.line.style.width, '640px');
+  assert.equal(view.line.style.top, '300px');
+  assert.ok(view.line.classList.contains('drop-line'));
+  assert.ok(view.line.classList.contains('is-slot'), '落点用软槽样式，不是一条实心深绿线');
+  assert.equal(view.line.classList.contains('is-page'), false, '整页不该另起一套样式');
+  assert.equal(view.label.textContent, '插到「第二块」之前', '块落点说清插到哪一块之前');
+  const blockClasses = view.line.className;
+
+  view.hover({
+    gap: { y: 520, page: '2-1', position: 'before' },
+    dragging: { kind: 'page', key: '1-1', node: nodes[0] },
+    label: gapLabel({ y: 520, page: '2-1', position: 'before' }, { kind: 'page' }, lookup),
+    items,
+    nodes,
+    origin,
+  });
+  assert.equal(view.line.className, blockClasses, '整页拖动都是同一条槽、同一套颜色');
+  assert.equal(view.label.textContent, '整页移动', '整页只换标签文字');
+  assert.equal(view.line.style.top, '520px', '整页的落点照样跟着走');
+
+  // 拖动结束（落没落成都算）要把让位与软槽一起收回去，不留半截状态。
+  view.hover({ gap: { y: 100, page: '1-1', before: 'b:aaaaaa' }, dragging: { kind: 'page', node: nodes[0] }, label: '整页移动', items, nodes, origin });
+  assert.equal(nodes[1].style.transform, 'translateY(10px)', '落点以下的块已经让开');
+  view.end();
+  assert.equal(nodes[1].style.transform, '', '拖动结束，让位收回');
+  assert.equal(view.line.hidden, true, '拖动结束，软槽收起');
+});
+
+test('让位只走 transform：落点以下的块平移一条槽，位置没变就不重启动画', async () => {
+  const { shiftPlan, applyShifts, SLOT_HEIGHT } = await dragModule();
+  const items = [
+    { anchor: 'b:aaaaaa', top: 100, bottom: 140 },
+    { anchor: 'b:bbbbbb', top: 160, bottom: 200 },
+    { anchor: 'b:cccccc', top: 220, bottom: 260 },
+  ];
+  assert.equal(SLOT_HEIGHT, 10, '让位的距离就是软槽的高度');
+  assert.deepEqual(shiftPlan(items, 210), [{ anchor: 'b:cccccc', dy: 10 }], '落点以下的块才让位');
+
+  const nodes = ['b:aaaaaa', 'b:bbbbbb', 'b:cccccc'].map((anchor) => {
+    const node = dragNode('div');
+    node.dataset.anchor = anchor;
+    return node;
+  });
+  applyShifts(nodes, shiftPlan(items, 50), nodes[0]);
+  assert.deepEqual(nodes.map((node) => node.style.transform ?? ''), ['', 'translateY(10px)', 'translateY(10px)'],
+    '被拖的那块留在原位，其余块用 transform 平移');
+  assert.ok(nodes.every((node) => node.style.background === undefined), '让位不靠铺底色，也不整行变色');
+  assert.equal(nodes[1].dataset.shift, '10', '位移记在节点上，下次量落点要减掉它');
+
+  nodes[1].style.transform = 'sentinel';
+  applyShifts(nodes, shiftPlan(items, 50), nodes[0]);
+  assert.equal(nodes[1].style.transform, 'sentinel', '同一个落点重复算，不重启动画');
+
+  applyShifts(nodes, shiftPlan(items, 300), nodes[0]);
+  assert.equal(nodes[1].style.transform, '', '落点换到所有块之下，让位收回');
+  assert.equal(nodes[1].dataset.shift, '');
+});
+
+test('拖动的样式：纸色幽灵、28% 原位、10px 软槽、180ms 平移让位', () => {
+  const css = readFileSync(join(core, 'assets', 'workbench', 'doc-workbench.css'), 'utf8');
+  const drag = readFileSync(join(core, 'assets', 'workbench', 'doc-drag.js'), 'utf8');
+  const rule = (selector) => {
+    const index = css.indexOf(selector);
+    assert.notEqual(index, -1, `CSS 里要有 ${selector}`);
+    const start = css.indexOf('{', index);
+    return css.slice(start + 1, css.indexOf('}', start));
+  };
+
+  const ghost = rule('.drag-ghost-card');
+  assert.match(ghost, /86%/, '幽灵是纸色 86% 透明');
+  assert.match(ghost, /backdrop-filter:\s*blur\(12px\)/, '幽灵后面透出模糊的正文');
+  assert.match(ghost, /0 18px 40px -12px rgb\(16 18 22 \/ 22%\)/, '阴影就是这一个，不另调');
+  assert.match(ghost, /border-radius:\s*10px/);
+  assert.match(ghost, /scale\(1\.012\)\s+rotate\(\.2deg\)/, '幽灵稍微抬起一点，不是平贴的');
+
+  assert.match(rule('.doc-block.is-dragging'), /opacity:\s*\.28/, '原位块退到 28%');
+
+  const slot = rule('.drop-line {');
+  assert.match(slot, /height:\s*10px/, '落点是 10px 高的软槽');
+  assert.match(slot, /linear-gradient\([\s\S]*transparent/, '两端渐隐的淡绿，不是一条通到底的实心线');
+  assert.match(rule('.drop-line::before'), /height:\s*1\.5px/, '软槽内侧一条 1.5px 细线');
+  assert.match(css, /@keyframes drop-slot-grow \{[\s\S]*?height:\s*2px[\s\S]*?height:\s*10px/,
+    '软槽从 2px 长到 10px');
+  assert.match(css, /animation:\s*drop-slot-grow 120ms/, '长出来用 120ms');
+
+  const label = rule('.drop-line .drop-label');
+  assert.match(label, /border-radius:\s*999px/, '标签是小胶囊');
+  assert.match(label, /backdrop-filter:\s*blur/, '标签是毛玻璃，不是实心块');
+  assert.doesNotMatch(label, /background:\s*var\(--accent\)/, '标签不再是实心深绿');
+  assert.doesNotMatch(css, /\.drop-line\.is-page/, '整页拖动不换第二套重色，还是同一条槽');
+  assert.doesNotMatch(slot + rule('.drop-line::before') + label, /b45309/, '落点不另调一套琥珀色');
+
+  assert.match(css, /\.doc-block,\s*\.page-divider \{[^}]*transition:\s*transform 180ms cubic-bezier\(\.2,\s*\.8,\s*\.2,\s*1\)/,
+    '其余块用 transform 平移让位，180ms 一条缓动');
+  assert.match(rule('body.is-reordering .doc-block:hover'), /background:\s*transparent/,
+    '拖动时经过的块不铺灰底，不整行变色');
+
+  assert.doesNotMatch(drag, /setDragImage\(dragging\.node/, '原生快照不能再是被拖的那块');
+  assert.match(drag, /setDragImage\(image,\s*0,\s*0\)/, '换成一张透空图');
+});
+
 // ── 锁定与待核对：不可编辑的块也不可拖动（SPEC 第 5 节） ─────────────────────
 const postJson = (url, path, body) => fetch(`${url}${path}`, {
   method: 'POST',
