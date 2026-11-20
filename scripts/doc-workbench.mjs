@@ -309,7 +309,8 @@ export async function startDocWorkbench({
       }
       if (url.pathname === '/doc-transport.js' || url.pathname === '/doc-workbench.js' || url.pathname === '/doc-inline.js'
         || url.pathname === '/doc-drag.js' || url.pathname === '/doc-feedback.js'
-        || url.pathname === '/doc-images.js' || url.pathname === '/doc-notes.js'
+        || url.pathname === '/doc-images.js' || url.pathname === '/doc-sources.js'
+        || url.pathname === '/doc-notes.js'
         || url.pathname === '/doc-workbench.css') {
         return serveFile(response, join(ASSETS, url.pathname.slice(1)));
       }

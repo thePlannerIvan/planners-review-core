@@ -637,6 +637,7 @@ function structureDocument(docPath, payload, board, conflicts, faults) {
       changed: result.changed,
       ...(result.chapter ? { chapter: result.chapter } : {}),
       ...(result.page ? { page: result.page } : {}),
+      ...(result.source ? { source: result.source } : {}),
       ...snapshotFrom(readDocument(docPath), docPath, board, conflicts),
     };
   });
