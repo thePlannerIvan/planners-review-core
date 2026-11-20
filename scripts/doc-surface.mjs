@@ -47,6 +47,7 @@ const SCRIPTS = [
   ['/doc-feedback.js', join(ASSETS, 'doc-feedback.js')],
   ['/doc-images.js', join(ASSETS, 'doc-images.js')],
   ['/doc-notes.js', join(ASSETS, 'doc-notes.js')],
+  ['/doc-layout.js', join(ASSETS, 'doc-layout.js')],
   ['/doc-workbench.js', join(ASSETS, 'doc-workbench.js')],
 ];
 
