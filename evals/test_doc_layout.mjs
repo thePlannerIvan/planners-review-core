@@ -164,7 +164,7 @@ test('滚动后顶栏毛玻璃：滚动之前不挂 is-scrolled，滚起来才�
 });
 
 // ── 顶栏严格五项：logo + 文档名/类型、保存态、折叠左、折叠右、历史批注 ─────────
-test('顶栏结构：五项都在，且不多出第六项（整体反馈不在顶栏）', () => {
+test('顶栏结构：五项都在；保存态旁只有一颗结构问题圆点，没有第六个按钮', () => {
   const html = read('doc-workbench.html');
   const header = html.match(/<header class="topbar"[\s\S]*?<\/header>/);
   assert.ok(header, '页面要有一层顶栏');
@@ -183,16 +183,19 @@ test('顶栏结构：五项都在，且不多出第六项（整体反馈不在�
   assert.match(bar, /id="notesCollapse"[^>]*data-collapse="notes"/, '折叠右');
   assert.match(bar, /id="historyOpen"/, '历史批注入口');
 
-  // 不多于五项：保存态之外，顶栏的按钮只有折叠左 / 折叠右 / 历史这三个。
-  const topActions = bar.match(/<div class="top-actions"[^>]*>([\s\S]*?)<\/div>/);
+  // 保存态之外，顶栏的按钮只有折叠左 / 折叠右 / 历史，另加保存态旁那颗结构圆点。
+  const topActions = bar.match(/<div class="top-actions"[\s\S]*?<\/header>/);
   assert.ok(topActions, '控件区要在顶栏里');
-  const buttons = [...topActions[1].matchAll(/<button\b[^>]*\bid="([^"]+)"/g)].map((match) => match[1]);
-  assert.deepEqual(buttons, ['tocCollapse', 'notesCollapse', 'historyOpen'],
-    '顶栏按钮只有三个：折叠左、折叠右、历史批注；多一个都不行');
+  const buttons = [...topActions[0].matchAll(/<button\b[^>]*\bid="([^"]+)"/g)].map((match) => match[1]);
+  assert.deepEqual(buttons, ['structureDot', 'tocCollapse', 'notesCollapse', 'historyOpen'],
+    '结构圆点只占保存态旁的位置；顶栏没有第六个按钮');
+  const dot = bar.match(/<button[^>]*id="structureDot"[^>]*>([\s\S]*?)<\/button>/);
+  assert.ok(dot, '结构圆点要在顶栏');
+  assert.doesNotMatch(dot[1].replace(/<[^>]+>/g, ''), /[^\s]/, '圆点没有文字');
   assert.doesNotMatch(bar, /overall|整体反馈|反馈这一页|反馈整份/, '整体反馈不占顶栏的第六项');
 
   // 顺序就是顶栏的读法：logo → 文档名 → 保存态 → 折叠左 → 折叠右 → 历史。
-  const order = ['class="brand"', 'id="projectName"', 'id="saveState"', 'id="tocCollapse"', 'id="notesCollapse"', 'id="historyOpen"']
+  const order = ['class="brand"', 'id="projectName"', 'id="saveState"', 'id="structureDot"', 'id="tocCollapse"', 'id="notesCollapse"', 'id="historyOpen"']
     .map((needle) => bar.indexOf(needle));
   assert.ok(order.every((index) => index >= 0), '顶栏五项都要齐');
   assert.deepEqual([...order].sort((a, b) => a - b), order, '顶栏顺序：logo 在左上，保存态在折叠键前');
@@ -263,7 +266,8 @@ test('三层底色与暗色令牌：底 / 纸 / 凹槽各一个变量，尺度�
   const paper = ruleOf(css, '.doc {');
   assert.match(paper, /background:\s*var\(--paper\)/, '纸色只属于纸');
   assert.match(paper, /border-radius:\s*var\(--paper-radius\)/);
-  assert.match(paper, /font-size:\s*17\.5px/);
+  assert.match(paper, /font-size:\s*var\(--doc-fs\)/);
+  assert.match(light, /--doc-fs:\s*16\.5px/, '默认字号 16.5，只写在令牌里');
   assert.match(paper, /line-height:\s*1\.75/);
 });
 
@@ -276,7 +280,7 @@ test('纸靠明度差 + 极浅内描边界定，纸本身不投外影；投影�
 
   // 扫一遍所有 box-shadow：不只是纸，任何常驻表面都不许投外影。
   const transient = new Set([
-    '.inline-toolbar', '.history-panel', '.feedback-composer',
+    '.inline-toolbar', '.history-panel', '.structure-panel',
     '.drag-ghost-card', '.drop-line .drop-label', '.image-viewer-image',
     '.note-bubble:hover, .note-bubble:focus-visible', '.notes-panel.is-overlay',
     'body[data-ds-dark-theme] .notes-panel.is-overlay',
