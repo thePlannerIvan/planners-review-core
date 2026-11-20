@@ -304,10 +304,10 @@ test('工作台页面按块就地编辑，带四种行内格式按钮，没有 M
   const html = readFileSync(join(core, 'assets', 'workbench', 'doc-workbench.html'), 'utf8');
   assert.match(page, /data-anchor/, '块要带锚点身份');
   assert.match(page, /contentEditable\s*=\s*'true'/, '块内容用 contenteditable 就地编辑');
-  assert.doesNotMatch(page, /createElement\(['"]textarea['"]\)/, '块编辑不能退回 Markdown 文本框');
-  // 页面上唯一的文本框是块级反馈的意见框；块本身仍是就地排版，不是 Markdown 编辑器。
-  assert.equal((html.match(/<textarea\b/gi) ?? []).length, 1, '只留一个反馈意见框');
-  assert.match(html, /<textarea[^>]*id="feedbackText"/, '反馈意见框不算块编辑器');
+  // 块本身仍是就地排版，不是 Markdown 编辑器；页面上唯一的文本框是抽屉里的反馈输入。
+  assert.equal((html.match(/<textarea\b/gi) ?? []).length, 1, '只留一个反馈输入框');
+  assert.match(html, /<textarea[^>]*id="notesComposeText"/, '反馈输入在批注抽屉里，不是正文浮层');
+  assert.match(page, /createElement\('textarea'\)[\s\S]{0,200}note-draft-text/, '另一处文本框是抽屉里的批注草稿');
   assert.match(page, /DocInline\.serialize/, '保存时把行内 DOM 序列化成块 raw');
   for (const command of ['bold', 'italic', 'code', 'link']) {
     assert.match(page, new RegExp(`data-inline="${command}"`), `缺少行内格式按钮 ${command}`);
@@ -771,7 +771,7 @@ test('工作台源码：六点句柄、页标题可拖、两级目录随滚动�
 });
 
 // ── 结构可编辑：章节名与页名点进去改、页尾加页、章节尾加章，目录跟着重画 ─────
-test('工作台源码：章节名与页名点进去能改，页尾加页、章节尾加章，目录随结构重画', async () => {
+test('工作台源码：章节名与页名点进去能改；加页加章按钮删掉，目录随结构重画', async () => {
   const page = readFileSync(join(core, 'assets', 'workbench', 'doc-workbench.js'), 'utf8');
   const html = readFileSync(join(core, 'assets', 'workbench', 'doc-workbench.html'), 'utf8');
   const css = readFileSync(join(core, 'assets', 'workbench', 'doc-workbench.css'), 'utf8');
@@ -796,13 +796,9 @@ test('工作台源码：章节名与页名点进去能改，页尾加页、章�
   assert.ok(chapterHeading, 'chapterHeading 要能读出来');
   assert.doesNotMatch(chapterHeading[0], /dataset\.pageKey/, '章节不是页：目录高亮只认页身份，不能被章节抢占');
 
-  // 页尾加页、章节尾加章节。
-  assert.match(page, /'＋ 新页'/, '页尾按钮文案');
-  assert.match(page, /'＋ 新章节'/, '章节尾按钮文案');
-  assert.match(page, /'add-page'/, '加页动作名');
-  assert.match(page, /'add-chapter'/, '加章动作名');
-  assert.match(page, /function pageAddButton/, '每一页末尾都有加页入口');
-  assert.match(page, /function chapterAddButton/, '每一章末尾都有加章入口');
+  // 加页 / 加章按钮已删：结构由行首 `## ` / `# ` 产生（票 33）。
+  assert.doesNotMatch(page, /＋ 新页|＋ 新章节/);
+  assert.doesNotMatch(page, /pageAddButton|chapterAddButton|addStructure/);
 
   // 改完结构立即重画：回执带着整份快照回来，正文与目录都从同一份快照重画。
   assert.match(page, /applySnapshot\(receipt\)/, '结构回执直接重画，不等轮询');
@@ -812,8 +808,7 @@ test('工作台源码：章节名与页名点进去能改，页尾加页、章�
   // 目录点击滚动到页、滚动高亮当前页保留：页身份仍在 page-divider 上。
   assert.match(page, /dataset\.pageKey = page\.key/, '页标题仍带页身份，目录才能跳转');
   assert.match(css, /\.chapter-divider/, '章节要有一层正文样式');
-  assert.match(css, /\.page-add/, '加页入口要有样式');
-  assert.match(css, /\.chapter-add/, '加章入口要有样式');
+  assert.doesNotMatch(css, /\.page-add|\.chapter-add/, '加页加章的样式也删掉');
 });
 
 // ── 拖动的手感：藏原生快照、自绘幽灵、软槽落点、平滑让位（SPEC「拖动」） ──────

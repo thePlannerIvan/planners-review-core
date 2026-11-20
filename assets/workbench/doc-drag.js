@@ -284,8 +284,7 @@
   function ghostCopy(dragging) {
     if (dragging.kind === 'page') {
       const title = dragging.node.querySelector?.('.page-title')?.textContent?.trim() ?? '';
-      const chapter = dragging.node.querySelector?.('.page-chapter')?.textContent?.trim() ?? '';
-      return { meta: '整页', text: [chapter, title].filter(Boolean).join(' · ') || '这一页' };
+      return { meta: '整页', text: title || '这一页' };
     }
     const type = dragging.node.dataset?.type;
     return {

@@ -276,12 +276,11 @@ export async function runTyping(corpus) {
       .map((node) => node.dataset.anchor));
     const buttonVisible = await page.locator('#selectionFeedback').isVisible();
     await page.locator('#selectionFeedback').click();
-    const composerVisible = await page.locator('#feedbackComposer').isVisible();
-    const note = await page.locator('#feedbackTargetNote').innerText();
+    const composerVisible = await page.locator('#notesCompose').isVisible();
     const shaBeforeFeedback = (await getJson(`${server.url}/api/doc`)).body.sha256;
     const feedbackPromise = page.waitForResponse((response) => response.url().endsWith('/api/feedback'), { timeout: 10000 });
-    await page.locator('#feedbackText').fill('这三块一起改：把结论提前。');
-    await page.locator('#feedbackSubmit').click();
+    await page.locator('#notesComposeText').fill('这三块一起改：把结论提前。');
+    await page.locator('#notesComposeSubmit').click();
     const feedbackResponse = await feedbackPromise;
     const feedbackReceipt = await feedbackResponse.json().catch(() => null);
     const shaAfterFeedback = (await getJson(`${server.url}/api/doc`)).body.sha256;
@@ -290,7 +289,6 @@ export async function runTyping(corpus) {
       highlighted: targetAnchors,
       button_visible: buttonVisible,
       composer_visible: composerVisible,
-      note,
       feedback_status: feedbackResponse.status(),
       feedback_receipt: feedbackReceipt,
       doc_sha_unchanged: shaBeforeFeedback === shaAfterFeedback,
@@ -303,14 +301,13 @@ export async function runTyping(corpus) {
     });
     cases.push({
       id: 'typing/selection-feedback',
-      ok: composerVisible && note.includes('3')
+      ok: composerVisible && targetAnchors.length === 3
         && feedbackResponse.status() === 200
         && feedbackReceipt?.ok === true
         && feedbackReceipt?.task?.blocks?.length === 3
         && shaBeforeFeedback === shaAfterFeedback,
       name: '跨块选区派发：回执绑定三块，原文未改',
       evidence: {
-        note,
         feedback_status: feedbackResponse.status(),
         task_blocks: feedbackReceipt?.task?.blocks?.length ?? null,
         dispatch_channel: feedbackReceipt?.dispatch?.channel ?? null,
