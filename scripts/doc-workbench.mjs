@@ -24,6 +24,11 @@
  *   POST /api/conflict/decide    裁决一块：{anchor, decision: mine|model|discard}
  *   GET  /api/history            列出历史版本（每次写盘前存上一版，新的在前）
  *   POST /api/history/restore    恢复一版：{id, base_sha256}（恢复也是一次新编辑）
+ *   GET  /api/notes              列出批注（主文件 + 归档，含块快照）
+ *   POST /api/note               加一条草稿：{anchor|anchors, text}
+ *   POST /api/note/delete        删一条草稿：{id}
+ *   POST /api/note/reopen        重新打开：{id}（已提交 / 已归档 → 草稿）
+ *   POST /api/note/submit        整批提交：草稿 → 已提交，建一条任务
  *
  * 没有侧栏插件时，派发把同一条任务落进文档同目录的 `.doc-workbench/inbox/`，
  * 模型用 `scripts/doc-inbox.mjs list|take` 读；有插件（onTask）时同一条任务交给它唤醒。
@@ -63,6 +68,7 @@ const BAD_REQUEST_CODES = new Set([
   'reorder_request', 'reorder_op',
   'asset_request', 'asset_type', 'asset_content',
   'history_request', 'history_id',
+  'note_request', 'note_text', 'note_anchor', 'note_id', 'note_missing', 'notes_empty', 'notes_orphaned',
 ]);
 
 /** 只接受工作台页面自己的同源 JSON 写入：别的网页不能借浏览器改本地文档或派发任务。 */
@@ -207,6 +213,48 @@ export async function startDocWorkbench({
         }
         return json(response, 200, { ...receipt, dispatch: delivery });
       }
+      if (url.pathname === '/api/notes') {
+        if (request.method !== 'GET') return json(response, 405, { ok: false, code: 'method', error: '用 GET 读取批注' });
+        return json(response, 200, session.notes());
+      }
+      if (url.pathname === '/api/note') {
+        if (request.method !== 'POST') return json(response, 405, { ok: false, code: 'method', error: '用 POST 加一条批注' });
+        if (!allowWrite(request, response, server, host, 'note')) return;
+        const payload = JSON.parse((await readBody(request)) || '{}');
+        return json(response, 200, session.addNote(payload));
+      }
+      if (url.pathname === '/api/note/delete') {
+        if (request.method !== 'POST') return json(response, 405, { ok: false, code: 'method', error: '用 POST 删除批注' });
+        if (!allowWrite(request, response, server, host, 'note')) return;
+        const payload = JSON.parse((await readBody(request)) || '{}');
+        return json(response, 200, session.deleteNote(payload));
+      }
+      if (url.pathname === '/api/note/submit') {
+        if (request.method !== 'POST') return json(response, 405, { ok: false, code: 'method', error: '用 POST 提交整批批注' });
+        if (!allowWrite(request, response, server, host, 'note')) return;
+        const payload = JSON.parse((await readBody(request)) || '{}');
+        const receipt = session.submitNotes(payload);
+        // 派发出口与块级反馈同一个：先建任务，再按宿主唤醒或写收件箱。
+        let delivery;
+        try {
+          delivery = await dispatch(receipt.task);
+        } catch (error) {
+          delivery = {
+            channel: typeof onTask === 'function' ? 'wake' : 'inbox',
+            task_id: receipt.task.id,
+            status: receipt.task.status,
+            error: error?.message ?? String(error),
+          };
+          console.error(`派发失败：${error?.message ?? error}`);
+        }
+        return json(response, 200, { ...receipt, dispatch: delivery });
+      }
+      if (url.pathname === '/api/note/reopen') {
+        if (request.method !== 'POST') return json(response, 405, { ok: false, code: 'method', error: '用 POST 重新打开批注' });
+        if (!allowWrite(request, response, server, host, 'note')) return;
+        const payload = JSON.parse((await readBody(request)) || '{}');
+        return json(response, 200, session.reopenNote(payload));
+      }
       if (url.pathname === '/api/tasks') {
         if (request.method !== 'GET') return json(response, 405, { ok: false, code: 'method', error: '用 GET 读取任务' });
         return json(response, 200, session.tasks());
@@ -254,7 +302,8 @@ export async function startDocWorkbench({
       }
       if (url.pathname === '/doc-transport.js' || url.pathname === '/doc-workbench.js' || url.pathname === '/doc-inline.js'
         || url.pathname === '/doc-drag.js' || url.pathname === '/doc-feedback.js'
-        || url.pathname === '/doc-images.js' || url.pathname === '/doc-workbench.css') {
+        || url.pathname === '/doc-images.js' || url.pathname === '/doc-notes.js'
+        || url.pathname === '/doc-workbench.css') {
         return serveFile(response, join(ASSETS, url.pathname.slice(1)));
       }
       if (url.pathname === '/vendor/marked.js') {

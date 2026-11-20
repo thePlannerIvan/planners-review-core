@@ -606,6 +606,8 @@ function openComposer(anchors, { scope = 'blocks', page = null, label = '' } = {
   setFeedbackTargets(anchors);
   const composer = $('#feedbackComposer');
   composer.hidden = false;
+  // 批注落在块上：整页 / 整份那种「一片都改」走直接派发，不拆成逐块批注。
+  $('#feedbackNote').hidden = scope !== 'blocks';
   const note = $('#feedbackTargetNote');
   note.textContent = label || `将改 ${feedbackTargets.length} 块`;
   const error = $('#feedbackError');
@@ -783,6 +785,278 @@ function wireOverallFeedback() {
   });
 }
 
+// ── 批注：草稿攒在右侧抽屉里，底部一次提交整批 ────────────────────────────────
+//
+// 批注与「直接派发」是两条路：写进抽屉的草稿不唤醒任何人，可以跨页跨天接着提；
+// 底部「提交给模型修改」把整批装成一条任务。分组规则在 doc-notes.js 里（Node 侧
+// 直接测同一份），这里只负责把分组画出来、把动作接到同一条 route 词汇上。
+let notesState = [];
+let notesLoaded = false;
+let notesError = null;
+const expandedBubbles = new Set();
+// 模型看了任务却没动这一块：留在右侧并如实标出来（不是人的错觉）。
+const NOTE_UNTOUCHED_LABEL = '模型没动这条';
+
+const blockOrder = () => new Map((snapshot?.blocks ?? []).map((block, index) => [block.anchor, index]));
+
+function blockPreview(anchor) {
+  const raw = snapshot?.blocks?.find((block) => block.anchor === anchor)?.inline ?? '';
+  const text = String(raw).replace(/\s+/g, ' ').trim();
+  if (!text) return anchor;
+  return text.length > 26 ? `${text.slice(0, 26)}…` : text;
+}
+
+const noteTime = (value) => (value ? new Date(value).toLocaleString() : '');
+
+function noteRow(note, { deletable }) {
+  const item = document.createElement('li');
+  item.className = 'note-row';
+  const text = document.createElement('p');
+  text.className = 'note-text';
+  text.textContent = note.text;
+  const meta = document.createElement('div');
+  meta.className = 'note-meta';
+  const time = document.createElement('time');
+  time.className = 'note-time';
+  time.textContent = noteTime(note.created_at);
+  meta.append(time);
+  if (note.state === 'committed') {
+    const badge = document.createElement('span');
+    badge.className = 'note-badge';
+    badge.textContent = note.note === NOTE_UNTOUCHED_LABEL ? NOTE_UNTOUCHED_LABEL : '已提交';
+    if (note.note === NOTE_UNTOUCHED_LABEL) badge.classList.add('is-untouched');
+    meta.append(badge);
+  }
+  if (note.state !== 'draft') {
+    const reopen = document.createElement('button');
+    reopen.type = 'button';
+    reopen.className = 'note-reopen';
+    reopen.textContent = '重新打开';
+    reopen.addEventListener('click', () => { void reopenNote(note.id, reopen); });
+    meta.append(reopen);
+  }
+  if (deletable) {
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'note-delete';
+    remove.textContent = '删除';
+    remove.dataset.noteId = note.id;
+    remove.addEventListener('click', () => { void deleteNote(note.id, remove); });
+    meta.append(remove);
+  }
+  item.append(text, meta);
+  return item;
+}
+
+/** 同一块的多条批注只占一个位置：一个圆角计数气泡，点开才展开这一块的全部。 */
+function noteBlock(block, { deletable, state }) {
+  const group = document.createElement('div');
+  group.className = 'note-block';
+  const head = document.createElement('div');
+  head.className = 'note-block-head';
+  const preview = document.createElement('span');
+  preview.className = 'note-block-preview';
+  preview.textContent = blockPreview(block.anchor);
+  preview.title = block.anchor;
+  head.append(preview);
+  const bubbleKey = `${state}:${block.anchor}`;
+  const expanded = expandedBubbles.has(bubbleKey);
+  if (block.count > 1) {
+    const bubble = document.createElement('button');
+    bubble.type = 'button';
+    bubble.className = 'note-bubble';
+    bubble.textContent = String(block.count);
+    bubble.title = `这一块有 ${block.count} 条批注`;
+    bubble.setAttribute('aria-expanded', String(expanded));
+    bubble.setAttribute('aria-label', `这一块有 ${block.count} 条批注，${expanded ? '收起' : '展开'}`);
+    bubble.addEventListener('click', () => {
+      if (expanded) expandedBubbles.delete(bubbleKey);
+      else expandedBubbles.add(bubbleKey);
+      renderNotes();
+    });
+    head.append(bubble);
+  }
+  group.append(head);
+  if (block.count === 1 || expanded) {
+    const list = document.createElement('ul');
+    list.className = 'note-list';
+    for (const note of block.notes) list.append(noteRow(note, { deletable }));
+    group.append(list);
+  }
+  return group;
+}
+
+function noteStateSection(label, group, { deletable, state }) {
+  const section = document.createElement('section');
+  section.className = 'note-state';
+  const heading = document.createElement('h3');
+  heading.className = 'note-state-title';
+  heading.textContent = `${label} · ${group.count}`;
+  section.append(heading);
+  for (const page of group.pages) {
+    const pageNode = document.createElement('section');
+    pageNode.className = 'note-page';
+    const chapter = document.createElement('p');
+    chapter.className = 'note-page-chapter';
+    chapter.textContent = page.chapterTitle;
+    const title = document.createElement('p');
+    title.className = 'note-page-title';
+    title.textContent = `第 ${page.index} 页 · ${page.title}`;
+    pageNode.append(chapter, title);
+    for (const block of page.blocks) pageNode.append(noteBlock(block, { deletable, state }));
+    section.append(pageNode);
+  }
+  return section;
+}
+
+function renderNotes() {
+  const list = $('#notesList');
+  if (!list) return;
+  const summary = $('#notesSummary');
+  const hint = $('#notesHint');
+  const notesSubmit = $('#notesSubmit');
+  const drawer = DocNotes.drawer(notesState, { pages: snapshot?.pages ?? [], order: blockOrder() });
+  list.replaceChildren();
+  if (notesError) {
+    const failed = document.createElement('p');
+    failed.className = 'notes-empty is-error';
+    failed.textContent = `读不到批注 · ${notesError}`;
+    list.append(failed);
+  } else if (!notesLoaded) {
+    const loading = document.createElement('p');
+    loading.className = 'notes-empty';
+    loading.textContent = '正在读取批注…';
+    list.append(loading);
+  } else if (!drawer.draft.count && !drawer.committed.count) {
+    const empty = document.createElement('p');
+    empty.className = 'notes-empty';
+    empty.textContent = '还没有批注。选中正文里的一段，点「加入批注」。';
+    list.append(empty);
+  } else {
+    if (drawer.draft.count) list.append(noteStateSection('草稿', drawer.draft, { deletable: true, state: 'draft' }));
+    if (drawer.committed.count) list.append(noteStateSection('已提交', drawer.committed, { deletable: false, state: 'committed' }));
+  }
+
+  const readonly = Boolean(snapshot?.readonly);
+  const drafts = drawer.draft.count;
+  summary.textContent = drafts ? `${drafts} 条草稿` : '没有草稿';
+  notesSubmit.disabled = readonly || Boolean(notesError) || drafts === 0;
+  notesSubmit.textContent = drafts ? `提交给模型修改 · ${drafts}` : '提交给模型修改';
+  hint.textContent = readonly
+    ? '只读 · 旧 JSON 主稿不能提批注'
+    : notesError
+      ? '批注文件读不出来：先修好 .doc-workbench/notes.json，别让它被空草稿覆盖'
+      : drafts
+        ? '草稿保存在 .doc-workbench/notes.json；提交只建任务，原文未改'
+        : '草稿会留在工作目录里，关掉浏览器回来还在';
+  renderHistoryNotes();
+}
+
+async function loadNotes() {
+  try {
+    const receipt = await transport.notes();
+    if (receipt.ok) {
+      notesState = receipt.notes ?? [];
+      notesError = null;
+    } else {
+      // 坏文件不能显示成「还没有批注」：那会让人以为草稿丢了，还会用空草稿覆盖它。
+      notesError = receipt.error ?? `读不到批注（${receipt.status ?? '未知错误'}）`;
+    }
+  } catch (error) {
+    notesError = error.message;
+  }
+  notesLoaded = true;
+  renderNotes();
+}
+
+async function addNoteFromComposer() {
+  const text = $('#feedbackText').value.trim();
+  if (snapshot?.readonly) { showFeedbackError(snapshot.readonly.message); return; }
+  if (!text) { showFeedbackError('先写下要改什么。'); return; }
+  if (!feedbackTargets.length) { showFeedbackError('没有选中的块；重新选一段再加批注。'); return; }
+  if (feedbackScope !== 'blocks') { showFeedbackError('批注只落在块上：整页 / 整份请用「提交反馈」。'); return; }
+  await saveQueue; // 先把正在保存的块落盘：批注目标要指向人看到的版本
+  const button = $('#feedbackNote');
+  button.disabled = true;
+  try {
+    const receipt = await transport.addNote({ anchors: [...feedbackTargets], text });
+    if (!receipt.ok) {
+      showFeedbackError(receipt.error ?? `加入失败 · ${receipt.status ?? '未知错误'}`);
+      return;
+    }
+    notesState = receipt.notes ?? notesState;
+    notesLoaded = true;
+    closeComposer();
+    renderNotes();
+    status(`已加入批注 · ${(receipt.added ?? []).length || 1} 条 · 还没提交给模型`);
+  } catch (error) {
+    showFeedbackError(error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function deleteNote(id, button) {
+  if (button) button.disabled = true;
+  try {
+    const receipt = await transport.deleteNote({ id });
+    if (!receipt.ok) {
+      status(`删除失败 · ${receipt.error ?? receipt.status ?? '未知错误'}`, true);
+      if (button) button.disabled = false;
+      return;
+    }
+    notesState = receipt.notes ?? [];
+    renderNotes();
+    status('已删除这条批注');
+  } catch (error) {
+    status(`删除失败 · ${error.message}`, true);
+    if (button) button.disabled = false;
+  }
+}
+
+/** 底部一次提交整批：所有草稿进同一批、同一份任务。 */
+async function submitNotes() {
+  const drawer = DocNotes.drawer(notesState, { pages: snapshot?.pages ?? [], order: blockOrder() });
+  if (snapshot?.readonly) { status('只读 · 旧 JSON 主稿不能提批注', true); return; }
+  if (!drawer.draft.count) { status('没有草稿可提交', true); return; }
+  await flushSaves();
+  const button = $('#notesSubmit');
+  button.disabled = true;
+  try {
+    const receipt = await transport.submitNotes({});
+    if (!receipt.ok) {
+      status(`提交失败 · ${receipt.error ?? receipt.status ?? '未知错误'}`, true);
+      return;
+    }
+    notesState = receipt.notes ?? [];
+    const count = (receipt.committed ?? []).length;
+    const dispatch = receipt.dispatch ?? {};
+    if (dispatch.error) status(`已提交 ${count} 条批注 · 派发失败（${dispatch.error}）· 原文未改`, true);
+    else if (dispatch.channel === 'inbox') status(`已提交 ${count} 条批注 · 已写入收件箱 · 原文未改，不算批准`);
+    else if (dispatch.channel === 'wake') status(`已提交 ${count} 条批注 · 已唤醒模型 · 原文未改，不算批准`);
+    else status(`已提交 ${count} 条批注 · 原文未改，不算批准`);
+    if ((receipt.orphaned ?? []).length) {
+      status(`已提交 ${count} 条 · ${receipt.orphaned.length} 条的目标块已被删，留在草稿里`, true);
+    }
+  } catch (error) {
+    status(`提交失败 · ${error.message}`, true);
+  } finally {
+    renderNotes();
+  }
+}
+
+function wireNotes() {
+  $('#notesSubmit').addEventListener('click', () => { void submitNotes(); });
+  $('#notesCollapse').addEventListener('click', (event) => {
+    const body = $('#notesList');
+    const collapsed = body.hidden;
+    body.hidden = !collapsed;
+    event.currentTarget.setAttribute('aria-expanded', String(collapsed));
+    event.currentTarget.textContent = collapsed ? '收起' : '展开';
+  });
+  $('#feedbackNote').addEventListener('click', () => { void addNoteFromComposer(); });
+}
+
 // ── 历史：每次写盘前存上一版；恢复当一次新编辑保存，旧记录不删 ────────────────
 const OPERATION_LABELS = {
   block: '人改块',
@@ -795,6 +1069,87 @@ const OPERATION_LABELS = {
   restore: '恢复旧版',
   recover: '崩溃恢复',
 };
+
+// ── 历史批注：模型改到的自动归档；与版本历史同一个面板的两个页签，默认停在批注 ──
+function historyPageLabel(page) {
+  const chapter = page.chapterTitle || '未归章';
+  return `${chapter} · 第 ${page.index} 页 · ${page.title}`;
+}
+
+/** 历史条目只有人当初那句话、写下时间、所在页；快照是给模型回查的，不在列表展开。 */
+function historyNoteRow(note) {
+  const item = document.createElement('li');
+  item.className = 'history-note-item';
+  const text = document.createElement('p');
+  text.className = 'history-note-text';
+  text.textContent = note.text;
+  const meta = document.createElement('div');
+  meta.className = 'history-note-meta';
+  const time = document.createElement('time');
+  time.className = 'history-note-time';
+  time.dateTime = note.created_at ?? '';
+  time.textContent = noteTime(note.created_at);
+  const page = document.createElement('span');
+  page.className = 'history-note-page';
+  page.textContent = historyPageLabel(note.page);
+  meta.append(time, page);
+  const reopen = document.createElement('button');
+  reopen.type = 'button';
+  reopen.className = 'history-reopen';
+  reopen.textContent = '重新打开';
+  reopen.addEventListener('click', () => { void reopenNote(note.id, reopen); });
+  item.append(text, meta, reopen);
+  return item;
+}
+
+function renderHistoryNotes() {
+  const list = $('#historyNotesList');
+  if (!list) return;
+  const note = $('#historyNotesNote');
+  list.replaceChildren();
+  const items = DocNotes.history(notesState, { pages: snapshot?.pages ?? [] });
+  if (note) {
+    note.textContent = items.length
+      ? `共 ${items.length} 条 · 新的在前；快照留给模型回查，不在列表展开。`
+      : '还没有历史批注：模型改到的批注会自动归档到这里。';
+  }
+  for (const item of items) list.append(historyNoteRow(item));
+}
+
+/** 重新打开：归档错了或模型没动，这条退回草稿，回到右侧继续提。 */
+async function reopenNote(id, button) {
+  if (button) button.disabled = true;
+  try {
+    const receipt = await transport.reopenNote({ id });
+    if (!receipt.ok) {
+      status(`重新打开失败 · ${receipt.error ?? receipt.status ?? '未知错误'}`, true);
+      if (button) button.disabled = false;
+      return;
+    }
+    notesState = receipt.notes ?? notesState;
+    notesLoaded = true;
+    renderNotes();
+    renderHistoryNotes();
+    status('已重新打开 · 这条回到草稿，可再提交给模型');
+  } catch (error) {
+    status(`重新打开失败 · ${error.message}`, true);
+    if (button) button.disabled = false;
+  }
+}
+
+/** 打开面板默认停在批注页签，版本历史还在旁边，不丢入口。 */
+function setHistoryTab(tab) {
+  const notesPanel = $('#historyNotesPanel');
+  const versionsPanel = $('#historyVersionsPanel');
+  const showNotes = tab !== 'versions';
+  for (const button of $$('#historyTabs [data-history-tab]')) {
+    const active = button.dataset.historyTab === (showNotes ? 'notes' : 'versions');
+    button.setAttribute('aria-selected', String(active));
+    button.classList.toggle('is-active', active);
+  }
+  if (notesPanel) notesPanel.hidden = !showNotes;
+  if (versionsPanel) versionsPanel.hidden = showNotes;
+}
 
 function historyItem(version) {
   const item = document.createElement('li');
@@ -849,6 +1204,9 @@ async function loadHistory() {
 async function openHistory() {
   if (snapshot?.readonly) { status('只读 · 旧 JSON 主稿没有历史可恢复', true); return; }
   $('#historyPanel').hidden = false;
+  setHistoryTab('notes');
+  if (notesLoaded) renderHistoryNotes();
+  else await loadNotes();
   await loadHistory();
 }
 
@@ -874,6 +1232,9 @@ async function restoreHistory(id, button) {
 function wireHistory() {
   $('#historyOpen').addEventListener('click', () => { void openHistory(); });
   $('#historyClose').addEventListener('click', () => { $('#historyPanel').hidden = true; });
+  for (const button of $$('#historyTabs [data-history-tab]')) {
+    button.addEventListener('click', () => setHistoryTab(button.dataset.historyTab));
+  }
 }
 
 // ── 锁与待核对：处理中的块不可编辑；待核对块继续锁着，等人裁决 ────────────────
@@ -1370,6 +1731,8 @@ function renderAll() {
   }
   // 重画会换掉节点，锁的样式跟着丢；有块在模型手里时重新拉一次任务面补回来。
   if (lockedAnchors.size) void syncTasks();
+  // 抽屉里的页标题、块预览都来自快照：正文重画后跟着刷新。
+  renderNotes();
 }
 
 async function boot() {
@@ -1379,12 +1742,14 @@ async function boot() {
   wireSelectionFeedback();
   wireOverallFeedback();
   wireStructureNotice();
+  wireNotes();
   try {
     transport = await DocTransport.connect();
     const doc = await transport.open();
     if (!doc.ok) throw Error(doc.error ?? `打开失败 · ${doc.status ?? '未知错误'}`);
     snapshot = doc;
     renderAll();
+    await loadNotes();
     if (snapshot.readonly) {
       // 只读挂载不轮询任务、不接编辑：它只是一份能看的旧主稿。
       status('只读 · 旧 JSON 主稿（保存会被拒绝）');

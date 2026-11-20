@@ -13,7 +13,7 @@
       <span id="docKind"></span>
     </div>
     <div class="top-actions">
-      <button type="button" class="history-open" id="historyOpen" aria-haspopup="dialog" aria-controls="historyPanel">历史</button>
+      <button type="button" class="history-open" id="historyOpen" aria-haspopup="dialog" aria-controls="historyPanel">历史批注</button>
       <button type="button" class="overall-feedback" id="overallFeedback" aria-haspopup="menu" aria-expanded="false">整体反馈</button>
       <div class="overall-menu" id="overallMenu" role="menu" hidden>
         <button type="button" role="menuitem" data-overall="page">反馈这一页</button>
@@ -22,13 +22,23 @@
       <span class="save-state" id="saveState" role="status" aria-live="polite">正在打开…</span>
     </div>
   </header>
-  <div class="history-panel" id="historyPanel" role="dialog" aria-label="历史版本" hidden>
+  <div class="history-panel" id="historyPanel" role="dialog" aria-label="历史批注与版本历史" hidden>
     <div class="history-head">
-      <strong>历史版本</strong>
+      <strong>历史</strong>
       <button type="button" class="history-close" id="historyClose">关闭</button>
     </div>
-    <p class="history-note" id="historyNote"></p>
-    <ul class="history-list" id="historyList"></ul>
+    <div class="history-tabs" id="historyTabs" role="tablist" aria-label="历史">
+      <button type="button" class="history-tab is-active" id="historyTabNotes" data-history-tab="notes" role="tab" aria-selected="true" aria-controls="historyNotesPanel">历史批注</button>
+      <button type="button" class="history-tab" id="historyTabVersions" data-history-tab="versions" role="tab" aria-selected="false" aria-controls="historyVersionsPanel">版本历史</button>
+    </div>
+    <section class="history-tabpanel" id="historyNotesPanel" role="tabpanel" aria-labelledby="historyTabNotes">
+      <p class="history-note" id="historyNotesNote"></p>
+      <ul class="history-list" id="historyNotesList"></ul>
+    </section>
+    <section class="history-tabpanel" id="historyVersionsPanel" role="tabpanel" aria-labelledby="historyTabVersions" hidden>
+      <p class="history-note" id="historyNote"></p>
+      <ul class="history-list" id="historyList"></ul>
+    </section>
   </div>
   <p class="structure-notice" id="structureNotice" hidden></p>
   <p class="readonly-notice" id="readonlyNotice" role="status" hidden></p>
@@ -37,6 +47,18 @@
       <nav class="toc" id="toc"></nav>
     </aside>
     <main class="doc" id="blocks" aria-label="文档正文"></main>
+    <aside class="notes-panel" id="notesPanel" aria-label="批注">
+      <header class="notes-head">
+        <strong class="notes-title">批注</strong>
+        <span class="notes-summary" id="notesSummary" role="status">0 条草稿</span>
+        <button type="button" class="notes-collapse" id="notesCollapse" aria-expanded="true" aria-controls="notesList">收起</button>
+      </header>
+      <div class="notes-body" id="notesList"></div>
+      <footer class="notes-foot">
+        <p class="notes-hint" id="notesHint"></p>
+        <button type="button" class="notes-submit" id="notesSubmit" disabled>提交给模型修改</button>
+      </footer>
+    </aside>
   </div>
   <div class="inline-toolbar" id="inlineToolbar" role="toolbar" aria-label="行内格式" hidden></div>
   <button type="button" class="selection-feedback" id="selectionFeedback" data-feedback-selection hidden>反馈</button>
@@ -45,6 +67,7 @@
     <textarea id="feedbackText" rows="3" placeholder="要模型改什么？只改高亮的这几块。"></textarea>
     <p class="feedback-error" id="feedbackError" hidden></p>
     <div class="feedback-actions">
+      <button type="button" class="feedback-note" id="feedbackNote">加入批注</button>
       <button type="button" class="feedback-cancel" id="feedbackCancel">取消</button>
       <button type="button" class="feedback-submit" id="feedbackSubmit">提交反馈</button>
     </div>
@@ -55,6 +78,7 @@
   <script src="/doc-drag.js"></script>
   <script src="/doc-feedback.js"></script>
   <script src="/doc-images.js"></script>
+  <script src="/doc-notes.js"></script>
   <script src="/doc-workbench.js"></script>
 </body>
 </html>

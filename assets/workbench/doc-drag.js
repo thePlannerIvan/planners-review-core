@@ -2,8 +2,11 @@
  * 拖动与目录：六点句柄拖块、拖页标题搬整页、左侧两级目录、`Alt+↑↓`。
  *
  * 落点计算（`blockGaps` / `pageGaps` / `nearestGap`）是纯函数：给定几何，算出
- * 「插到哪两块之间」。浏览器里只负责量 DOM 的矩形、画提示线，然后把落点交给
- * 页面的 transport（`route: 'reorder'`）；这个文件不解析 Markdown，也不自己拼文档。
+ * 「插到哪两块之间」。浏览器里量 DOM 的矩形、收起原生快照、画一张跟手的幽灵和一条
+ * 10px 软槽，再让落点以下的块用 transform 平移让位；落点交给页面的 transport
+ * （`route: 'reorder'`）。这个文件不解析 Markdown，也不自己拼文档。
+ * 视觉那一层做成 `createDragView`，几何由外面喂进来，所以「滞后一帧」「同一套槽」
+ * 「只走 transform」都是能测的行为，不是只能靠眼睛看的样式。
  *
  * 与服务端的契约：一次一个动作，`move-block` 或 `move-page`，带 `base_sha256`。
  * 服务端回整份快照，页面据此重画正文、目录与页号。走哪条传输由页面的 transport 决定
@@ -17,7 +20,7 @@
 
   // ── 落点：纯几何 ─────────────────────────────────────────────────────────
 
-  /** 最近的一条落点提示线。 */
+  /** 最近的一个落点（软槽落下去的位置）。 */
   function nearestGap(gaps, y) {
     if (!gaps.length) return null;
     let best = gaps[0];
@@ -118,7 +121,7 @@
     hooks: null,
     root: null,
     toc: null,
-    line: null,
+    view: null,
     dragging: null,
     gap: null,
     bound: false,
@@ -133,28 +136,10 @@
     state.hooks = hooks;
     state.toc = hooks.toc ?? document.getElementById('toc');
     const snapshot = hooks.snapshot();
-    ensureDropLine();
     decorate(root, snapshot);
     renderToc(snapshot);
     updateActive();
     bindOnce();
-  }
-
-  function ensureDropLine() {
-    if (state.line?.isConnected) return state.line;
-    let line = document.getElementById('dropLine');
-    if (!line) {
-      line = document.createElement('div');
-      line.id = 'dropLine';
-      line.className = 'drop-line';
-      line.hidden = true;
-      const label = document.createElement('span');
-      label.className = 'drop-label';
-      line.append(label);
-      document.body.append(line);
-    }
-    state.line = line;
-    return line;
   }
 
   /** 锁定（模型正在改）与待核对（等裁决）的块都不是可编辑块：不给拖柄，也不给整页拖柄。 */
@@ -255,6 +240,7 @@
     if (state.bound) return;
     state.bound = true;
     document.addEventListener('dragstart', onDragStart);
+    document.addEventListener('drag', onDrag);
     document.addEventListener('dragover', onDragOver);
     document.addEventListener('drop', onDrop);
     document.addEventListener('dragend', finishDrag);
@@ -262,6 +248,193 @@
     document.addEventListener('click', onTocClick);
     window.addEventListener('scroll', scheduleActive, { passive: true });
     window.addEventListener('resize', scheduleActive);
+  }
+
+  // ── 拖动表现：幽灵、软槽、让位 ────────────────────────────────────────────
+  //
+  // 这一层只碰 DOM：喂它拖动状态与量好的几何，它画出跟随的幽灵、落点软槽，
+  // 并让落点以下的块平移让位。文档怎么变不归它管（那是 submit 的事）。
+  // 浏览器里默认拿真 document / requestAnimationFrame；测试从参数塞进来。
+
+  /** 1×1 透空 GIF。原生快照只能被一张图顶掉，于是给它一张看不见的。 */
+  const TRANSPARENT_PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
+  /** 软槽的高度：块让位也让这么多。 */
+  const SLOT_HEIGHT = 10;
+
+  function suppressNativeSnapshot(dataTransfer, doc) {
+    if (!dataTransfer?.setDragImage) return null;
+    const image = doc.createElement('img');
+    image.className = 'drag-shot';
+    image.src = TRANSPARENT_PIXEL;
+    image.width = 1;
+    image.height = 1;
+    image.setAttribute('alt', '');
+    doc.body.append(image); // 少数浏览器只认已经挂在页面里的图
+    try { dataTransfer.setDragImage(image, 0, 0); } catch { /* 藏不掉就退回系统快照，不假装 */ }
+    return image;
+  }
+
+  /** 幽灵里放什么：块放这一段字，页放章节 · 标题。不克隆正文，免得把编辑器搬来搬去。 */
+  const GHOST_META = { paragraph: '段落', heading: '标题', quote: '引用', list: '列表', table: '表格', code: '代码', image: '图片' };
+
+  function ghostCopy(dragging) {
+    if (dragging.kind === 'page') {
+      const title = dragging.node.querySelector?.('.page-title')?.textContent?.trim() ?? '';
+      const chapter = dragging.node.querySelector?.('.page-chapter')?.textContent?.trim() ?? '';
+      return { meta: '整页', text: [chapter, title].filter(Boolean).join(' · ') || '这一页' };
+    }
+    const type = dragging.node.dataset?.type;
+    return {
+      meta: GHOST_META[type] ?? '段落',
+      text: dragging.node.querySelector?.('.block-text')?.textContent?.trim().slice(0, 120) || '这一段',
+    };
+  }
+
+  function buildGhost(doc, dragging) {
+    const copy = ghostCopy(dragging);
+    const ghost = doc.createElement('div');
+    ghost.className = 'drag-ghost';
+    ghost.setAttribute('aria-hidden', 'true');
+    const card = doc.createElement('div');
+    card.className = 'drag-ghost-card';
+    const width = dragging.node.getBoundingClientRect?.().width;
+    // 整页的幽灵不铺满整张纸：一条窄卡片跟手，看得见要放到哪，也不盖住落点。
+    if (width) card.style.width = `${Math.round(dragging.kind === 'page' ? Math.min(width, 320) : width)}px`;
+    const meta = doc.createElement('span');
+    meta.className = 'drag-ghost-meta';
+    meta.textContent = copy.meta;
+    const text = doc.createElement('div');
+    text.className = 'drag-ghost-text';
+    text.textContent = copy.text;
+    card.append(meta, text);
+    ghost.append(card);
+    return ghost;
+  }
+
+  /**
+   * 落点以下的块各让开一条槽。返回 `[{anchor, dy}]`，不返回颜色——
+   * 让位只走 transform，整行变色是另一套语言。
+   */
+  function shiftPlan(items, y, dy = SLOT_HEIGHT) {
+    return (items ?? [])
+      .filter((item) => item.top >= y - 0.5)
+      .map((item) => ({ anchor: item.anchor, dy }));
+  }
+
+  /** 把让位落到 transform 上；位移记在 dataset.shift 里，下次量落点要减掉它。 */
+  function applyShifts(nodes, plan, skip) {
+    const wanted = new Map((plan ?? []).map((entry) => [entry.anchor, entry.dy]));
+    for (const node of nodes ?? []) {
+      if (node === skip) continue;
+      const next = wanted.get(node.dataset.anchor) ?? 0;
+      if (next === Number(node.dataset.shift || 0)) continue; // 位置没变就不重启动画
+      node.dataset.shift = next ? String(next) : '';
+      node.style.transform = next ? `translateY(${next}px)` : '';
+    }
+  }
+
+  /**
+   * 拖动视图。`ghost` / `line` / `label` 是它画出来的东西，拖动过程中只许读。
+   * `frame` 可注入，是为了让「跟手滞后一帧」能被测：一帧里连动三次，第一帧只画第一次的位置。
+   */
+  function createDragView(env = {}) {
+    const doc = env.document ?? (isBrowser ? document : null);
+    if (!doc) throw new Error('拖动视图需要一个 document');
+    const frame = env.frame ?? ((callback) => window.requestAnimationFrame(callback));
+    const scroll = env.scroll ?? (() => ({ x: window.scrollX, y: window.scrollY }));
+    const view = { ghost: null, shot: null, line: null, label: null, dragging: null, nodes: null, pendingFrame: 0, queued: null };
+
+    function ensureLine() {
+      if (view.line) return view.line;
+      let line = doc.getElementById?.('dropLine') ?? null;
+      if (!line) {
+        line = doc.createElement('div');
+        line.id = 'dropLine';
+        line.className = 'drop-line is-slot';
+        line.hidden = true;
+        view.label = doc.createElement('span');
+        view.label.className = 'drop-label';
+        line.append(view.label);
+        doc.body.append(line);
+      } else {
+        view.label = line.querySelector?.('.drop-label') ?? null;
+      }
+      view.line = line;
+      return line;
+    }
+
+    function place(point) {
+      if (!view.ghost || !point) return;
+      view.ghost.style.transform = `translate3d(${Math.round(point.x)}px, ${Math.round(point.y)}px, 0)`;
+    }
+
+    function begin({ dragging, point, dataTransfer }) {
+      end();
+      view.dragging = dragging;
+      view.shot = suppressNativeSnapshot(dataTransfer, doc);
+      dragging.node.classList.add('is-dragging');
+      doc.body.classList.add('is-reordering');
+      view.ghost = buildGhost(doc, dragging);
+      doc.body.append(view.ghost);
+      place(point);
+    }
+
+    /** 跟手滞后一帧：这一帧画的是「排这一帧时」的鼠标位置，不是回调那一刻的。 */
+    function move(point) {
+      if (!view.ghost || !point) return;
+      view.queued = point;
+      if (view.pendingFrame) return;
+      const scheduled = point;
+      view.pendingFrame = frame(() => {
+        view.pendingFrame = 0;
+        place(scheduled);
+        if (view.queued && view.queued !== scheduled) move(view.queued);
+      });
+    }
+
+    function hover({ gap, dragging, label, items, nodes, origin }) {
+      const line = ensureLine();
+      view.nodes = nodes ?? view.nodes;
+      if (!gap) {
+        line.hidden = true;
+        applyShifts(view.nodes, [], dragging?.node);
+        return;
+      }
+      const offset = scroll();
+      line.hidden = false;
+      line.style.left = `${origin.left + offset.x}px`;
+      line.style.width = `${origin.width}px`;
+      line.style.top = `${gap.y + offset.y}px`;
+      if (view.label) view.label.textContent = label ?? '';
+      applyShifts(view.nodes, shiftPlan(items, gap.y), dragging?.node);
+    }
+
+    function end() {
+      view.ghost?.remove?.();
+      view.ghost = null;
+      view.shot?.remove?.();
+      view.shot = null;
+      view.queued = null;
+      applyShifts(view.nodes, [], null); // 落点没落成也要把让位收回去
+      view.nodes = null;
+      view.dragging?.node?.classList.remove('is-dragging');
+      doc.body.classList.remove('is-reordering');
+      if (view.line) view.line.hidden = true;
+      view.dragging = null;
+    }
+
+    return {
+      begin, move, hover, end,
+      get ghost() { return view.ghost; },
+      get line() { return view.line; },
+      get label() { return view.label; },
+    };
+  }
+
+  function dragView() {
+    if (!state.view) state.view = createDragView();
+    return state.view;
   }
 
   // ── 拖动 ────────────────────────────────────────────────────────────────
@@ -283,97 +456,116 @@
     if (event.dataTransfer) {
       event.dataTransfer.effectAllowed = 'move';
       try { event.dataTransfer.setData('text/plain', dragging.anchor ?? dragging.key); } catch { /* 老浏览器 */ }
-      try { event.dataTransfer.setDragImage(dragging.node, 16, 16); } catch { /* 设不了就算了 */ }
     }
-    dragging.node.classList.add('is-dragging');
-    document.body.classList.add('is-reordering');
+    dragView().begin({
+      dragging,
+      point: { x: event.clientX, y: event.clientY },
+      dataTransfer: event.dataTransfer,
+    });
+  }
+
+  function onDrag(event) {
+    if (!state.dragging) return;
+    pushGhost(event.clientX, event.clientY);
   }
 
   function onDragOver(event) {
     if (!state.dragging) return;
     event.preventDefault();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
-    const gap = nearestGap(gapsFor(state.dragging), event.clientY);
+    const layout = layoutFor(state.dragging);
+    const gap = nearestGap(layout.gaps, event.clientY);
     state.gap = gap;
-    showDropLine(gap, state.dragging);
+    dragView().hover({
+      gap,
+      dragging: state.dragging,
+      label: gapLabel(gap, state.dragging, {
+        page: (key) => pageOf(key),
+        blockText: (anchor) => state.hooks?.snapshot().blocks.find((block) => block.anchor === anchor)?.inline,
+      }),
+      items: layout.items,
+      nodes: layout.nodes,
+      origin: layout.origin,
+    });
+    pushGhost(event.clientX, event.clientY);
+  }
+
+  /** 有些浏览器在 drag 里给 (0, 0)，那不是鼠标位置，别把幽灵甩到左上角。 */
+  function pushGhost(x, y) {
+    if (!x && !y) return;
+    dragView().move({ x, y });
   }
 
   async function onDrop(event) {
     if (!state.dragging) return;
     event.preventDefault();
     const dragging = state.dragging;
-    const gap = nearestGap(gapsFor(dragging), event.clientY) ?? state.gap;
+    const gap = nearestGap(layoutFor(dragging).gaps, event.clientY) ?? state.gap;
     finishDrag();
     if (!gap) return;
     await submit(dragging, gap);
   }
 
   function finishDrag() {
-    state.line && (state.line.hidden = true);
-    state.dragging?.node?.classList.remove('is-dragging');
-    document.body.classList.remove('is-reordering');
+    state.view?.end();
     state.dragging = null;
     state.gap = null;
   }
 
-  /** 量出当前 DOM 的落点候选。每次拖动时现量，窗口缩放后也不会用旧矩形。 */
-  function gapsFor(dragging) {
+  /**
+   * 量出当前 DOM 的落点与让位几何。让位用 transform 实现，量的时候要把已经让开的那点
+   * 减回去（dataset.shift），否则块让开 → 落点前移 → 块收回 → 落点又回来的抖动。
+   */
+  function layoutFor(dragging) {
     const root = state.root;
-    if (!root) return [];
-    if (dragging.kind === 'page') {
-      const blocks = [...root.querySelectorAll('.doc-block[data-anchor]')];
-      const pages = [];
-      for (const divider of root.querySelectorAll('.page-divider[data-page-key]')) {
-        const key = divider.dataset.pageKey;
-        const rect = divider.getBoundingClientRect();
-        const own = blocks.filter((node) => node.dataset.pageKey === key);
-        const last = own[own.length - 1];
-        pages.push({
-          key,
-          chapterIndex: pageOf(key)?.chapterIndex ?? 0,
-          top: rect.top,
-          bottom: last ? last.getBoundingClientRect().bottom : rect.bottom,
-        });
-      }
-      return pageGaps(pages);
-    }
-    const items = [...root.querySelectorAll('.doc-block[data-anchor]')].map((node) => {
-      const rect = node.getBoundingClientRect();
-      return { anchor: node.dataset.anchor, page: node.dataset.pageKey, top: rect.top, bottom: rect.bottom };
+    const origin = { left: 0, width: 0 };
+    if (!root) return { gaps: [], items: [], nodes: [], origin };
+    const rect = root.getBoundingClientRect();
+    origin.left = rect.left;
+    origin.width = rect.width;
+    const nodes = [...root.querySelectorAll('.doc-block[data-anchor]')];
+    const items = nodes.map((node) => {
+      const box = node.getBoundingClientRect();
+      const shift = Number(node.dataset.shift || 0);
+      return { anchor: node.dataset.anchor, page: node.dataset.pageKey, top: box.top - shift, bottom: box.bottom - shift };
     });
-    const gaps = blockGaps(items);
-    // 每章多一个「搬到页外」的落点：落在章标题下，页还是页，块先出页（中间态）。
-    const topOf = (key) => {
-      const divider = root.querySelector(`.page-divider[data-page-key="${key}"]`);
-      return divider ? divider.getBoundingClientRect().top : null;
-    };
-    return gaps.concat(outsideGaps(state.hooks?.snapshot().pages ?? [], topOf));
+    if (dragging.kind !== 'page') {
+      const topOf = (key) => {
+        const divider = root.querySelector(`.page-divider[data-page-key="${key}"]`);
+        return divider ? divider.getBoundingClientRect().top : null;
+      };
+      // 每章多一个「搬到页外」的落点：块先出页（中间态），之后还能再拖回任一页。
+      return {
+        gaps: blockGaps(items).concat(outsideGaps(state.hooks?.snapshot().pages ?? [], topOf)),
+        items,
+        nodes,
+        origin,
+      };
+    }
+    const pages = [...root.querySelectorAll('.page-divider[data-page-key]')].map((divider) => {
+      const box = divider.getBoundingClientRect();
+      const shift = Number(divider.dataset.shift || 0);
+      const own = items.filter((item) => item.page === divider.dataset.pageKey);
+      const last = own[own.length - 1];
+      return {
+        key: divider.dataset.pageKey,
+        chapterIndex: pageOf(divider.dataset.pageKey)?.chapterIndex ?? 0,
+        top: box.top - shift,
+        bottom: last ? last.bottom : box.bottom - shift,
+      };
+    });
+    return { gaps: pageGaps(pages), items, nodes, origin };
   }
 
-  function showDropLine(gap, dragging) {
-    const line = ensureDropLine();
-    if (!gap) { line.hidden = true; return; }
-    const rect = state.root.getBoundingClientRect();
-    line.hidden = false;
-    line.classList.toggle('is-page', dragging.kind === 'page');
-    line.style.left = `${rect.left + window.scrollX}px`;
-    line.style.width = `${rect.width}px`;
-    line.style.top = `${gap.y + window.scrollY}px`;
-    line.querySelector('.drop-label').textContent = gapLabel(gap, dragging);
-  }
-
-  function gapLabel(gap, dragging) {
-    if (dragging.kind !== 'page' && gap.outside) {
-      return `移到「${gap.chapterTitle ?? ''}」章节下的页外`;
-    }
-    const page = pageOf(gap.page);
-    if (dragging.kind === 'page') {
-      const name = page ? `${page.chapter ?? ''} · ${page.title}` : gap.page;
-      return `移到「${name}」${gap.position === 'after' ? '之后' : '之前'}`;
-    }
-    if (!gap.before) return `移到「${page?.title ?? ''}」末尾`;
-    const target = state.hooks?.snapshot().blocks.find((block) => block.anchor === gap.before);
-    const text = String(target?.inline ?? '').replace(/\s+/g, ' ').slice(0, 12);
+  /**
+   * 落点标签。块说清插到哪一块；整页只说「整页移动」——整页拖动不换颜色，
+   * 只换这几个字，落点还是同一条软槽。
+   */
+  function gapLabel(gap, dragging, lookup) {
+    if (dragging.kind === 'page') return '整页移动';
+    if (gap.outside) return `移到「${gap.chapterTitle ?? ''}」章节下的页外`;
+    if (!gap.before) return `移到「${lookup?.page?.(gap.page)?.title ?? ''}」末尾`;
+    const text = String(lookup?.blockText?.(gap.before) ?? '').replace(/\s+/g, ' ').slice(0, 12);
     return text ? `插到「${text}」之前` : '插到这里';
   }
 
@@ -529,5 +721,12 @@
     outsideGaps,
     nearestGap,
     stepGap,
+    gapLabel,
+    shiftPlan,
+    applyShifts,
+    createDragView,
+    suppressNativeSnapshot,
+    TRANSPARENT_PIXEL,
+    SLOT_HEIGHT,
   };
 });

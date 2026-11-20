@@ -39,7 +39,8 @@ allowlist: <!-- routes:identity -->`claim`, `complete`, `patch`<!-- /routes:iden
 are model-side and can only enter through the `doc-command.mjs` CLI, so a browser
 call using one of them is rejected with a readable reason. Everything else the
 page needs is forwarded: <!-- routes:page -->`open`, `block`, `split`, `merge`, `reorder`,
-`asset_replace`, `feedback`, `tasks`, `conflicts`, `decide`, `history`, `restore`<!-- /routes:page -->.
+`asset_replace`, `feedback`, `tasks`, `conflicts`, `decide`, `history`, `restore`,
+`notes`, `note_add`, `note_delete`, `note_reopen`, `note_submit`<!-- /routes:page -->.
 `tasks` and `conflicts` are readable from both sides. `doc-command.mjs` exports
 that one route table (`DOC_ROUTES`) and identity set (`DOC_IDENTITY_ROUTES`);
 `review-command.mjs` imports the identity set, so the transport never keeps a
