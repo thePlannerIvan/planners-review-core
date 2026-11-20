@@ -84,7 +84,7 @@ node scripts/doc-workbench.mjs path/to/.planners/storyline.md --open
 
 每次提交批次还附一份**结构 diff**（`planners-doc-diff/1`）：章节与页的新增 / 删除 / 改名 / 移动 / 合并 / 拆分，块的跨页移动与删除，以及目标块已被删掉的批注（`orphan_notes`）。基准是模型上一次取稿时看到的版本，落在 `.doc-workbench/state/baseline.json`；模型侧读 `tasks` 或 `open` 时刷新，页面每 3 秒轮询锁不刷新。diff 只说结构哪里动了、不带正文，随任务一起落盘，模型读 `tasks` 就拿到 —— 没有第二条命令。结构没变时 diff 为空，提交照常成功。形状与判定规则见 [`planners-doc-diff/1`](contracts/planners-doc-diff.md)。
 
-模型一次写回多块（`POST /api/patch`）。服务端按块比对任务提交时的指纹与磁盘当前版本：没变过的块直接落盘并解锁；在这之后被人改过的那一块只标「待核对」、保持锁定、磁盘不动，其余块照常落盘。人可以选择「保留我的」「用模型版」或「放弃该块」，裁决后解锁。两个人改不同块时按块合并，同一块才会被拒绝。所有写盘走 journal，进程在两次 rename 之间被打断，重启时能恢复未提交的改动，也不会多出幽灵块。任务形状、回执与 journal 判据见 [`planners-doc-task/1`](contracts/planners-doc-task.md)。
+模型一次写回多块（`POST /api/patch`）。服务端按块比对任务提交时的指纹与磁盘当前版本：没变过的块直接落盘并解锁；在这之后被人改过的那一块只标「待核对」、保持锁定、磁盘不动，其余块照常落盘。人可以选择「保留我的」「用模型版」或「放弃该块」，裁决后解锁。两个人改不同块时按块合并，同一块才会停下来：后保存的那个标签页拿到磁盘版与自己这一版，两版都写进待核对队列（刷新、重开工作台都还在），并排选一版落盘，两边随后看到同一份结果。所有写盘走 journal，进程在两次 rename 之间被打断，重启时能恢复未提交的改动，也不会多出幽灵块。任务形状、回执与 journal 判据见 [`planners-doc-task/1`](contracts/planners-doc-task.md)。
 
 图片按正文里的 `![说明](相对路径)` 就地显示，点开是只读放大层（滚轮 / 按钮缩放，可切「适应窗口」与「1:1」看裁切）；文件取不到时块内标「未能加载 · 路径」，不画占位图。SVG 与位图一样只经 `<img>` 加载，`/asset` 只发图片 MIME 并给 SVG 带 `sandbox; script-src 'none'` 的 CSP，图里的脚本不执行。换图只换文件字节：`POST /api/asset/replace` 的请求里没有路径，用哪张图始终由正文引用决定；锁定的图块会被拒绝，正文与其他块一个字节都不动。文档引用的图登记在同名清单（`storyline.md` → `storyline.assets.json`，`doc-assets/1`），打开时按正文与磁盘重建，换过文件会留下 `replaced_from_sha256`；`node scripts/validate-doc-assets.mjs <doc>` 独立核对三边是否一致。
 

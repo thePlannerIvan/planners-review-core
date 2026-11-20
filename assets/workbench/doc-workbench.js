@@ -33,6 +33,9 @@ let feedbackTargets = [];
 let lockedAnchors = new Set();
 let selectionTimer = null;
 let taskTimer = null;
+// 保存请求在飞时不抢着重载正文；待核对记录留在内存里，重画正文后照样能锁回这一块。
+let savesInFlight = 0;
+let deferredRecords = new Map();
 
 const blockNodes = () => $$('.doc-block');
 const blockEntry = (node) => blockByAnchor.get(node?.dataset?.anchor) ?? null;
@@ -1619,7 +1622,8 @@ function applyLocks(locks) {
   for (const node of blockNodes()) {
     const owner = locks.get(node.dataset.anchor);
     if (owner) lockBlock(node, owner);
-    else unlockBlock(node);
+    // 待核对块由 syncConflicts 管：这里只解任务锁，别把它顺手解锁。
+    else if (node.dataset.lockedReason !== 'conflict') unlockBlock(node);
   }
   // 锁定 / 解锁都改变「能不能拖」：只重算句柄，不重画正文。
   DocDrag.refresh();
@@ -1636,8 +1640,35 @@ async function syncTasks() {
 }
 
 const DECISION_LABELS = { mine: '保留我的', model: '用模型版', discard: '放弃该块' };
+/** 人与人的两版只有两个出口：磁盘上先落盘的那一版，或后保存那个标签页的版本。 */
+const HUMAN_DECISION_LABELS = { mine: '保留磁盘版', theirs: '用我这一版' };
 
-/** 待核对块：显示两个版本与三个出口；裁决后重新载入，磁盘上只留一个版本。 */
+/** 出口由记录来源决定；动作名仍走同一条 transport.decide，不另造一套裁决。 */
+function deferredActions(conflict, minePending) {
+  if (conflict.source === 'human') {
+    return ['mine', 'theirs'].map((decision) => ({
+      decision,
+      label: decision === 'theirs' && !minePending ? '用另一版' : HUMAN_DECISION_LABELS[decision],
+    }));
+  }
+  return ['mine', 'model', 'discard'].map((decision) => ({ decision, label: DECISION_LABELS[decision] }));
+}
+
+function versionPane(side) {
+  const pane = document.createElement('div');
+  pane.className = 'deferred-version';
+  pane.dataset.side = side;
+  const label = document.createElement('span');
+  label.className = 'deferred-version-label';
+  const body = document.createElement('pre');
+  pane.append(label, body);
+  return pane;
+}
+
+/**
+ * 待核对块：同一个面板，两版并排 + 出口；裁决后重新载入，磁盘上只留一个版本。
+ * 模型 vs 人与人 vs 人共用这套 DOM 与交互，只有文案、来源和出口不同。
+ */
 function renderDeferred(node, conflict) {
   node.classList.add('is-deferred');
   let panel = node.querySelector('.block-deferred');
@@ -1646,47 +1677,111 @@ function renderDeferred(node, conflict) {
     panel.className = 'block-deferred';
     const note = document.createElement('p');
     note.className = 'deferred-note';
-    note.textContent = '待核对 · 你改过这一段之后，模型也改了它';
-    const details = document.createElement('details');
-    details.className = 'deferred-model';
-    const summary = document.createElement('summary');
-    summary.textContent = '看模型版';
-    const preview = document.createElement('pre');
-    details.append(summary, preview);
+    const versions = document.createElement('div');
+    versions.className = 'deferred-versions';
+    versions.append(versionPane('disk'), versionPane('other'));
     const actions = document.createElement('div');
     actions.className = 'deferred-actions';
-    for (const decision of ['mine', 'model', 'discard']) {
+    panel.append(note, versions, actions);
+    node.append(panel);
+  }
+  const human = conflict.source === 'human';
+  panel.dataset.source = human ? 'human' : 'model';
+  panel.querySelector('.deferred-note').textContent = human
+    ? '待核对 · 另一个标签页也改了这一段；选一版落盘'
+    : '待核对 · 你改过这一段之后，模型也改了它';
+  // 后保存的一方在自己的标签页里看到的是「我这一版」；别的标签页看到的是「另一版」。
+  const minePending = human && typeof node.__compose === 'function' && node.__compose() === conflict.your_content;
+  const panes = panel.querySelectorAll('.deferred-version');
+  panes[0].querySelector('.deferred-version-label').textContent = '磁盘版';
+  panes[0].querySelector('pre').textContent = conflict.disk_raw ?? '';
+  panes[1].querySelector('.deferred-version-label').textContent = human
+    ? (minePending ? '我这一版' : '另一版')
+    : '模型版';
+  panes[1].querySelector('pre').textContent = human ? (conflict.your_content ?? '') : (conflict.model_content ?? '');
+  // 出口只在来源 / 身份变化时重画，轮询不会把正按下的按钮换掉。
+  const signature = `${human ? 'human' : 'model'}:${conflict.anchor}:${minePending ? 'mine' : 'other'}`;
+  if (panel.dataset.signature !== signature) {
+    panel.dataset.signature = signature;
+    const actions = panel.querySelector('.deferred-actions');
+    actions.replaceChildren();
+    for (const { decision, label } of deferredActions(conflict, minePending)) {
       const button = document.createElement('button');
       button.type = 'button';
       button.setAttribute('data-decision', decision);
-      button.textContent = DECISION_LABELS[decision];
+      button.textContent = label;
       button.addEventListener('click', () => { void decideConflict(node.dataset.anchor, decision); });
       actions.append(button);
     }
-    panel.append(note, details, actions);
-    node.append(panel);
   }
-  const preview = panel.querySelector('.deferred-model pre');
-  if (preview) preview.textContent = conflict.model_content ?? '';
 }
 
 function clearDeferred(node) {
   if (!node.classList.contains('is-deferred')) return;
   node.classList.remove('is-deferred');
   node.querySelector('.block-deferred')?.remove();
+  unlockDeferredBlock(node);
+}
+
+/** 待核对的块也不可编辑：两版没选之前再存一次只会重演同一次撞车。 */
+function lockDeferredBlock(node) {
+  node.dataset.lockedReason = 'conflict';
+  for (const editable of node.querySelectorAll('[contenteditable="true"]')) {
+    if (editable === document.activeElement) editable.blur();
+    editable.contentEditable = 'false';
+  }
+}
+
+function unlockDeferredBlock(node) {
+  if (node.dataset.lockedReason !== 'conflict') return;
+  delete node.dataset.lockedReason;
+  if (node.classList.contains('is-locked')) return; // 还有任务锁：由 applyLocks 解
+  for (const editable of node.querySelectorAll('[contenteditable="false"]')) editable.contentEditable = 'true';
+}
+
+/**
+ * 别处改过 / 裁决过：没有本地未保存的编辑时重新载入，两个标签页看到同一份结果。
+ * 正在打字、或还有没落盘的块时不抢：下一次轮询再说。
+ */
+async function adoptDisk() {
+  if (!snapshot || snapshot.readonly || savesInFlight) return;
+  // 只看有没有没落盘的编辑：光标停在块里不算——不然人一走神，另一个标签页的裁决就永远到不了。
+  if (blockNodes().some((node) => node.__dirty)) return;
+  // 空页的待定第一块还没有锚点：正在里面写的字不能被一次重画抹掉。
+  if ($$('[data-pending-anchor]').some((node) => !isEmptyInline(inlineOf(node.querySelector('[contenteditable="true"]') ?? node)))) return;
+  let doc;
+  try {
+    doc = await transport.open();
+  } catch {
+    return;
+  }
+  if (!doc.ok || doc.sha256 === snapshot.sha256) return;
+  applySnapshot(doc);
+  status('已同步别处的改动');
 }
 
 async function syncConflicts() {
   try {
     const receipt = await transport.conflicts();
     if (!receipt.ok) return;
-    const byAnchor = new Map((receipt.conflicts ?? []).map((conflict) => [conflict.anchor, conflict]));
+    const list = receipt.conflicts ?? [];
+    const byAnchor = new Map(list.map((conflict) => [conflict.anchor, conflict]));
+    // 上一轮还挂着、这一轮没了：另一边已经裁决过了。
+    const settled = [...deferredRecords.keys()].some((anchor) => !byAnchor.has(anchor));
     for (const node of blockNodes()) {
       const conflict = byAnchor.get(node.dataset.anchor);
-      if (conflict) renderDeferred(node, conflict);
-      else clearDeferred(node);
+      if (conflict) {
+        renderDeferred(node, conflict);
+        lockDeferredBlock(node);
+      } else {
+        clearDeferred(node);
+      }
     }
+    deferredRecords = byAnchor;
     DocDrag.refresh();
+    // 两版没选之前不覆盖人眼前的正文；选完之后（或模型写回之后）按指纹对齐。
+    const changed = typeof receipt.sha256 === 'string' && snapshot?.sha256 && receipt.sha256 !== snapshot.sha256;
+    if (!list.length && (settled || changed)) await adoptDisk();
   } catch {
     // 待核对同步失败不打断编辑：保存路径仍会拒绝锁定块。
   }
@@ -1741,6 +1836,7 @@ async function persist(node) {
   if (content === entry.block.raw && !node.__dirty) return;
   status('保存中');
   let receipt;
+  savesInFlight += 1;
   try {
     receipt = await transport.saveBlock({
       anchor: node.dataset.anchor,
@@ -1751,8 +1847,16 @@ async function persist(node) {
   } catch (error) {
     status(`保存失败 · ${error.message}`, true);
     return;
+  } finally {
+    savesInFlight -= 1;
   }
   if (!receipt.ok) {
+    // 同一块在别处也被改过：不弹错、不丢编辑，立刻把两版并排摆出来让人选（票 32）。
+    if (receipt.code === 'block_conflict') {
+      status('这一段在别处也被改过 · 下面两版选一版落盘', true);
+      await syncConflicts();
+      return;
+    }
     status(`保存失败 · ${receipt.error ?? receipt.status ?? '未知错误'}${conflictHint(receipt)}`, true);
     return;
   }
@@ -2142,8 +2246,14 @@ function renderAll() {
     const entry = blockByAnchor.get(node.dataset.anchor);
     if (entry && node.querySelector('[contenteditable="true"]')) wireEditable(node, entry.block);
   }
-  // 重画会换掉节点，锁的样式跟着丢；有块在模型手里时重新拉一次任务面补回来。
+  // 重画会换掉节点，锁与待核对面板跟着丢：任务锁拉回来，待核对用内存里的记录直接补回。
   if (lockedAnchors.size) void syncTasks();
+  for (const node of blockNodes()) {
+    const conflict = deferredRecords.get(node.dataset.anchor);
+    if (!conflict) continue;
+    renderDeferred(node, conflict);
+    lockDeferredBlock(node);
+  }
   // 抽屉里的页标题、块预览都来自快照：正文重画后跟着刷新。
   renderNotes();
 }

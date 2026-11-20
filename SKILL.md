@@ -200,7 +200,7 @@ Proposal 与 By-page 调用 `scripts/render-content-review.mjs` 的 `renderConte
 | `evals/test_doc_feedback.mjs` | 块级反馈与派发回归（6 条）：任务只带块身份与指纹、整页 / 整份范围、锁定期间改别的块、完成后解锁、任务状态机、半句吸成整块 |
 | `evals/test_doc_diff.mjs` | 结构 diff 回归（13 条）：模型取稿刷新基准、提交批次随附 `planners-doc-diff/1`、空 diff 照常提交、章节 / 页 / 块的新增删除改名移动合并拆分、孤儿批注、页面轮询不冲基准、模型 CLI 用 `tasks` 读得到 |
 | `evals/test_doc_assets.mjs` | 图块与资产回归（10 条）：位图 / SVG 加载与脚本隔离、未能加载文案、放大只读；清单派生 / 新增登记 / 换图留上一版；锁定图块拒绝替换；清单漂移四类；两份样例清单 |
-| `evals/test_doc_conflict.mjs` | 待核对与并发回归（5 条）：同块双改只锁该块其余落盘、裁决两个方向、跨块并发按块合并、journal 崩溃恢复、页面裁决入口 |
+| `evals/test_doc_conflict.mjs` | 待核对与并发回归（9 条）：同块双改只锁该块其余落盘、裁决两个方向、跨块并发按块合并、journal 崩溃恢复、人与人撞车两版并存（后保存方拿回两版、两边都看到待核对）、选一版落盘后两边同结果、刷新后未落盘版本还在、页面裁决入口与人 vs 人并排面板 |
 | `evals/test_doc_dispatch.mjs` | 无插件派发与旧项目只读回归（5 条）：收件箱落盘 / 读回 / 重复写不重复、pending→processing、有插件与无插件同形、旧 JSON 只读拒绝且磁盘不变、界面状态如实 |
 | `evals/test_sidebar_surface.mjs` | 侧栏接入回归（8 条）：侧栏通道只改被编辑块的字节、同 id 刷新、派发两通道同形、模型 CLI 跨进程 claim/patch 与侧栏裁决、侧栏历史列出与恢复、页面源码只有一条 transport、无插件宿主直接打开生成的 surface、transport 的 command/wake 映射 |
 | `evals/acceptance/run.mjs` | 验收（票 10）：十份真实语料往返零字节差异、块内中文输入 / 撤销 / 跨块选区、同块双改复跑两遍；生成 `REPORT.md` 与 `records/*.json`。需要本机 Playwright / Chromium，**不并进日常回归** |

@@ -71,8 +71,8 @@
 | `POST /api/task/claim` | 模型 | `{ok, task}` | `pending → processing`，锁定 `task.blocks`；同一任务重复 claim 幂等 |
 | `POST /api/task/complete` | 模型 | `{ok, task}` | `processing → done`，只解自己持有的锁；重复 complete 幂等 |
 | `POST /api/patch` | 模型 | `{ok, contract, task_id, applied, deferred_blocks, sha256, task}` | 按块比对任务基线，一次写回多块：一致的落盘并解锁，不一致的进待核对并保持锁定（第 4 节） |
-| `GET /api/conflicts` | 页面 / 模型 | `{ok, contract, conflicts}` | 只读待核对：每条带人的版本与模型的版本 |
-| `POST /api/conflict/decide` | 人 | `{ok, contract, anchor, decision, written, sha256, block, task, deferred_blocks}` | 裁决一块：`mine` / `model` / `discard`，三种都解锁并删除待核对记录 |
+| `GET /api/conflicts` | 页面 / 模型 | `{ok, contract, sha256, conflicts}` | 只读待核对：每条带两个版本与 `source`（`model` 模型撞人 / `human` 人撞人）；`sha256` 是当前文档指纹，页面据此知道别处已裁决 |
+| `POST /api/conflict/decide` | 人 | `{ok, contract, anchor, source, decision, written, sha256, block, task, deferred_blocks}` | 裁决一块：模型那条选 `mine` / `model` / `discard`，人撞人选 `mine` / `theirs`；都删除待核对记录 |
 
 请求体都带 `task_id`（也接受 `id`）。错误码：
 
@@ -84,7 +84,7 @@
 | `task_missing` / `task_state` | 任务不存在、或状态不允许这一步（409） |
 | `task_stale` | claim 时任务绑定的块已不在文档里（409，重新提交反馈） |
 | `patch_request` / `patch_blocks` / `patch_anchor` | 写回请求不是对象、patch 为空 / 不是文本 / 锚点重复、锚点不在这条任务里或文档里已不存在（400 / 409） |
-| `block_conflict` | 人保存 / 分块 / 合并时**同一块**在别处也被改过（409，停下来让两边核对；错误里点名锚点，`details` 带回 `disk_raw` 与 `your_content` 两版，磁盘不动） |
+| `block_conflict` | 人保存 / 分块 / 合并时**同一块**在别处也被改过（409，停下来让人核对；错误里点名锚点，`details` 带回 `disk_raw` 与 `your_content` 两版，磁盘不动）。人保存撞车时两版同时写进待核对队列（`source: "human"`），刷新 / 重开工作台后还在，后保存的那一方选一版落盘 |
 | `stale_document` | 整份基线过期且没带这一块的 `base_block_sha256`，无法判断是不是同一块（409，刷新后再保存） |
 | `conflict_request` / `conflict_anchor` / `conflict_decision` / `conflict_missing` / `conflict_stale` | 裁决请求形状不对、裁决值非法、没有这条待核对 / 块已不存在（400 / 409） |
 | `locked` | 拿不到写锁（另一个工作台正在写盘，409，稍后重试） |
@@ -104,6 +104,7 @@
 - 分块（`/api/block/split`）与删空合并（`/api/block/merge`）同样先拒锁定块：
   锚点随内容走，块被锁着时改它的身份会和模型手里的基线打架。
 - 模型写回后只解已应用的块；进待核对的块继续锁着（任务状态变 `review`），人裁决后才解锁。
+- 待核对的块也不能派给模型（`submitFeedback` / `claim` 都返回 `block_locked`）：模型写回会盖掉还没裁决的那一版。
 - complete 只解自己持有的块；别的任务占着的块不受影响。`review` 状态的任务不能直接 complete。
 
 ## 4. 模型写回与待核对
@@ -147,8 +148,8 @@ POST /api/patch
 `GET /api/conflicts` 才返回两个版本的全文，供人裁决：
 
 ```json
-{"ok": true, "contract": "planners-doc-conflict/1", "conflicts": [
-  { "contract": "planners-doc-conflict/1", "anchor": "b:7b057d", "task_id": "t:…",
+{"ok": true, "contract": "planners-doc-conflict/1", "sha256": "当前文档指纹", "conflicts": [
+  { "contract": "planners-doc-conflict/1", "anchor": "b:7b057d", "source": "model", "task_id": "t:…",
     "reason": "block_changed", "base_sha256": "9f2c…", "disk_sha256": "41aa…",
     "disk_raw": "人改过的块 raw。", "model_content": "模型版块 raw。",
     "created_at": "2026-11-19T12:00:00.000Z" }
@@ -164,11 +165,29 @@ POST /api/conflict/decide
 
 | decision | 磁盘 | 是否写盘 | 回执 `written` |
 |---|---|---|---|
-| `mine` 保留我的 | 保持人当前版本 | 否 | `false` |
+| `mine` 保留我的 / 保留磁盘版 | 保持当前磁盘上的版本 | 否 | `false` |
 | `model` 用模型版 | 写入 `model_content` | 是（journal） | `true` |
-| `discard` 放弃该块 | 保持人当前版本，放弃模型的这一块 | 否 | `false` |
+| `discard` 放弃该块 | 保持当前磁盘上的版本，放弃模型的这一块 | 否 | `false` |
+| `theirs` 用我这一版 | 写入 `your_content`（人撞人的记录） | 是（journal） | `true` |
 
-三种裁决都会解锁该块、删除待核对记录；任务手里没有别的块时转 `done`，否则仍是 `review`。
+裁决都会删除待核对记录。模型那条记录还会解锁该块、任务手里没有别的块时转 `done`，否则仍是 `review`；
+出口按记录的 `source` 收窄，模型那条没有 `theirs`，人撞人那条没有 `model` / `discard`。
+
+### 人与人撞同一块（`source: "human"`）
+
+两个标签页改同一块时，后保存的那一方拿到 `block_conflict`。这时没有模型的参与：磁盘上是先落盘的那一版，
+回执带着后保存那个标签页的版本，两版同时进待核对队列：
+
+```json
+{"contract": "planners-doc-conflict/1", "anchor": "b:7b057d", "source": "human", "task_id": null,
+ "reason": "block_changed", "base_block_sha256": "9f2c…", "disk_sha256": "41aa…",
+ "disk_raw": "先落盘的那一版。", "your_content": "后保存那一方的版本。",
+ "created_at": "2026-11-20T12:00:00.000Z"}
+```
+
+- 记录落在 `conflicts.json`：刷新页面、关掉重开、换一个进程，两版都还在（**未落盘的编辑不只在内存里**）。
+- 待核对期间这一块不可编辑，也不能派给模型；两边都能裁决，裁决后两个标签页读到同一份结果。
+- 同一块再来一次撞车（第三个标签页）以最新一次的磁盘版与后保存版为准：队列按锚点一条，不堆三条。
 
 任务、锁与待核对落在文档同目录的 `.doc-workbench/state/tasks.json` 与 `conflicts.json`（`planners-doc-board/1`）。所以本地页、DSH 侧栏的命令后端与模型侧的 `doc-command.mjs` CLI 即使不在同一个进程里，也看到同一组锁；每次写前在文档写锁里读回最新状态，避免两份旧板互相覆盖。
 
