@@ -15,6 +15,8 @@ let transport = null; // 同一份页面两种宿主：本地 /api 或侧栏 com
 let saveTimer = null;
 let saveQueue = Promise.resolve();
 const blockByAnchor = new Map();
+// 出处默认收起：只记展开过的页，重画后照样展开；收起是默认，不在集合里（契约第 5 节）。
+const expandedSources = new Set();
 
 // 反馈与锁：目标块随选区 / 入口变化；锁由任务同步而来，保存时服务端还会再拦一次。
 let feedbackScope = 'blocks';
@@ -526,14 +528,23 @@ function renderStructuredBlocks(root) {
     // 章节标题下的页外块：先于本章的页出现。
     cursor = renderOrphanRun(root, blocks, cursor, chapter.index);
     for (const page of pages.filter((item) => item.chapterIndex === chapter.index)) {
+<<<<<<< HEAD
       const empty = page.blocks === 0;
       root.append(pageHeading({ ...page, empty }, { editable: true }));
+=======
+      root.append(pageHeading(page, { editable: true }));
+      const pageBlocks = [];
+>>>>>>> ticket/22-sources
       while (cursor < blocks.length && blocks[cursor].page?.key === page.key) {
-        root.append(renderBlock(blocks[cursor]));
+        pageBlocks.push(blocks[cursor]);
         cursor += 1;
       }
+<<<<<<< HEAD
       // 空页：第一块是渲染层的待定块，输入后才落盘（文件里没有占位正文）。
       if (empty) root.append(pendingFirstBlock(page));
+=======
+      renderPageBlocks(root, page, pageBlocks);
+>>>>>>> ticket/22-sources
       root.append(pageAddButton(page));
     }
     root.append(chapterAddButton(chapter));
@@ -545,6 +556,101 @@ function renderStructuredBlocks(root) {
   while (cursor < blocks.length) {
     root.append(renderBlock(blocks[cursor]));
     cursor += 1;
+  }
+}
+
+/**
+ * 一页的正文：照 `DocSources.layoutPage` 的摆法造节点。
+ * 收起时出处只出一条 32px 的条；展开后每条引用与正文块同一种渲染（可编辑、可拖、
+ * 可反馈），组尾一个「＋ 出处」。页中段的引用不在出处区里，照常按普通块摆。
+ */
+function renderPageBlocks(root, page, blocks) {
+  const expanded = expandedSources.has(page.key);
+  for (const entry of DocSources.layoutPage(blocks, { expanded })) {
+    if (entry.kind === 'block') root.append(renderBlock(entry.block));
+    else if (entry.kind === 'sources' || entry.kind === 'sources-head') root.append(sourcesBar(page, entry));
+    else if (entry.kind === 'add-source') root.append(sourcesAddButton(page));
+  }
+}
+
+/** 出处条：整条是一个按钮 —— 点击区是这一条，不是标签那几个字。 */
+function sourcesBar(page, entry) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  // 收起的那条带 `.doc-sources`（上下留白大于段距）；展开的头只占组首，不撑开正文。
+  button.classList.add('doc-sources-bar', entry.expanded ? 'doc-sources-head' : 'doc-sources');
+  button.dataset.sources = page.key;
+  button.dataset.expanded = entry.expanded ? 'true' : 'false';
+  button.setAttribute('aria-expanded', entry.expanded ? 'true' : 'false');
+  button.title = entry.expanded ? '收起出处' : `展开 ${entry.count} 条出处`;
+  const marks = DocSources.marksOf(Boolean(entry.expanded));
+  const lead = document.createElement('span');
+  lead.className = 'doc-sources-mark';
+  lead.textContent = marks.lead;
+  lead.setAttribute('aria-hidden', 'true');
+  const label = document.createElement('span');
+  label.className = 'doc-sources-label';
+  label.textContent = entry.label;
+  const leftRule = document.createElement('span');
+  leftRule.className = 'doc-sources-rule';
+  const rightRule = document.createElement('span');
+  rightRule.className = 'doc-sources-rule';
+  const trail = document.createElement('span');
+  trail.className = 'doc-sources-mark';
+  trail.textContent = marks.trail;
+  trail.setAttribute('aria-hidden', 'true');
+  button.append(lead, leftRule, label, rightRule, trail);
+  button.addEventListener('click', () => toggleSources(page.key));
+  return button;
+}
+
+/** 组尾「＋ 出处」：走已有的 structure 命令，服务端把新引用接在页尾出处区后面。 */
+function sourcesAddButton(page) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'doc-sources-add';
+  button.dataset.addSource = page.key;
+  button.title = '在页尾加一条出处';
+  button.textContent = '＋ 出处';
+  button.addEventListener('click', () => addSource(page));
+  return button;
+}
+
+function toggleSources(pageKey) {
+  if (expandedSources.has(pageKey)) expandedSources.delete(pageKey);
+  else expandedSources.add(pageKey);
+  renderAll();
+}
+
+/** 加一条出处：加完保持展开并选中占位文字，接着就能改成真正的那一条。 */
+async function addSource(page) {
+  if (snapshot?.readonly) return;
+  await flushSaves();
+  status('保存中', true);
+  let receipt;
+  try {
+    receipt = await transport.structure({
+      op: 'add-source',
+      chapter: page.chapterIndex,
+      index: page.index,
+      base_sha256: snapshot.sha256,
+    });
+  } catch (error) {
+    status(`加不了 · ${error.message}`, true);
+    return;
+  }
+  if (!receipt.ok) {
+    status(`加不了 · ${receipt.error ?? receipt.status ?? '未知错误'}`, true);
+    return;
+  }
+  expandedSources.add(page.key);
+  applySnapshot(receipt);
+  status('已加一条出处 · 直接改就行');
+  const anchor = receipt.source?.anchor;
+  const editable = blockByAnchor.get(anchor)?.node?.querySelector('[contenteditable="true"]');
+  if (editable) {
+    editable.focus();
+    selectContents(editable);
   }
 }
 
