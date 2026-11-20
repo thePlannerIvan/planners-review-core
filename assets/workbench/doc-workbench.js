@@ -873,11 +873,26 @@ function wireToolbar() {
 
 function wireEditable(node, block) {
   for (const editable of node.querySelectorAll('[contenteditable="true"]')) {
-    editable.addEventListener('input', () => {
+    // 输入法组字期间不排保存：前缀只在提交后才会被认成块类型，半截拼音不会被转换。
+    // 用 compositionstart / compositionend 记状态，比只看 input 的 isComposing 稳：
+    // 有些浏览器把提交后的那一次 input 仍标成组合中间态。
+    const schedule = () => {
       node.__dirty = true;
       status('待保存');
       clearTimeout(saveTimer);
       saveTimer = setTimeout(() => enqueueSave(node), 600);
+    };
+    editable.addEventListener('compositionstart', () => { editable.__composing = true; });
+    editable.addEventListener('compositionend', () => {
+      editable.__composing = false;
+      schedule();
+    });
+    editable.addEventListener('input', (event) => {
+      if (event.isComposing || editable.__composing) {
+        node.__dirty = true;
+        return;
+      }
+      schedule();
     });
     editable.addEventListener('blur', () => {
       if (node.__dirty) enqueueSave(node);
@@ -1805,6 +1820,113 @@ function pollTasks() {
   taskTimer = setInterval(syncTasks, 3000);
 }
 
+// ── 行首前缀 → 块类型（票 30） ─────────────────────────────────────────────
+//
+// 类型转换在保存路径上发生（服务端按 `## ` / `### ` / `- ` / `> ` / 围栏 / `|` 判定）。
+// 页面只做两件事：输入法组字期间不排保存；回执说类型变了，就把前缀从正文里隐去、
+// 把排版换成新块的排版。`## ` / `# ` 会让这一块变成页 / 章节，页面按回执快照重画。
+
+/** 刚敲了前缀、还没写内容：先不落盘，等标题出来一次转换（否则会先转义成字面量）。 */
+const PREFIX_ONLY_RE = /^(?:#{1,6}|[-*+]|\d+[.)]|>|`{1,2}|~{1,2})[ \t]*$/;
+const isPrefixOnly = (content) => PREFIX_ONLY_RE.test(String(content ?? ''));
+/** 待定块什么时候才算「有内容」：不是空白，也不是半截前缀。 */
+const pendingReady = (content) => !isEmptyInline(content) && !isPrefixOnly(content);
+/** 行首前缀：与 doc-blocks 的判定同一组形状（页面只用来移除刚敲进去的那几个字符）。 */
+const TYPED_PREFIX = (content) => {
+  const match = content.match(/^(#{1,6}[ \t]+|[-*+][ \t]+|\d+[.)][ \t]+|>[ \t]+)/);
+  return match ? match[1] : '';
+};
+
+/** 把编辑面开头 length 个字符删掉（前缀刚敲进去时就是普通文本）。 */
+function removeLeadingText(editable, length) {
+  if (length <= 0) return;
+  const walker = document.createTreeWalker(editable, NodeFilter.SHOW_TEXT);
+  let remaining = length;
+  while (remaining > 0) {
+    const node = walker.nextNode();
+    if (!node) break;
+    const text = node.nodeValue ?? '';
+    if (text.length <= remaining) {
+      remaining -= text.length;
+      node.nodeValue = '';
+    } else {
+      node.nodeValue = text.slice(remaining);
+      remaining = 0;
+    }
+  }
+}
+
+function placeCaretAtEnd(editable) {
+  editable.focus({ preventScroll: true });
+  const range = document.createRange();
+  range.selectNodeContents(editable);
+  range.collapse(false);
+  const selection = getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+/**
+ * 类型变了但不是结构：就地换排版，不重画整份文档（重画会把光标和正在敲的字弄丢）。
+ * `retype.literal` 是「标题删空退回段落」——前缀从只读 span 回到正文里。
+ */
+function patchRetypedBlock(node, entry, next, retype) {
+  const editable = node.querySelector('[contenteditable="true"]');
+  if (!editable) return false;
+  if (retype.literal) {
+    // 标题删空：编辑面里只剩浏览器留下的换行，清掉后把前缀作为正文写回去。
+    node.querySelector('.block-prefix')?.remove();
+    editable.replaceChildren(document.createTextNode(retype.literal));
+  } else {
+    const typedPrefix = retype.prefix || TYPED_PREFIX(editable.textContent ?? '');
+    removeLeadingText(editable, typedPrefix.length);
+    node.querySelector('.block-prefix')?.remove();
+    if (next.prefix) {
+      const prefix = document.createElement('span');
+      prefix.className = 'block-prefix';
+      prefix.setAttribute('aria-hidden', 'true');
+      prefix.textContent = next.prefix;
+      node.prepend(prefix);
+    }
+  }
+  node.dataset.type = next.type;
+  node.classList.toggle('is-heading', next.type === 'heading');
+  node.classList.toggle('is-quote', next.type === 'quote');
+  node.classList.toggle('is-list', next.type === 'list');
+  // 回执里的块对象就是 __compose 闭包用的那个：就地改，前缀与类型立刻生效。
+  Object.assign(entry.block, next);
+  placeCaretAtEnd(editable);
+  return true;
+}
+
+/** 换成代码 / 表格这种完全不同的 DOM：只能换节点。 */
+function replaceRetypedBlock(node, entry) {
+  const fresh = renderBlock(entry.block);
+  node.replaceWith(fresh);
+  for (const editable of fresh.querySelectorAll('[contenteditable="true"]')) {
+    wireEditable(fresh, entry.block);
+    editable.focus({ preventScroll: true });
+    break;
+  }
+  focusNode(fresh, 'end');
+}
+
+/**
+ * 回执说这一块的类型变了：把前缀从正文隐去、换成新块的排版。
+ * 只有「刚敲进去的前缀」或「退回正文的字面前缀」能就地改；代码 / 表格这种整个 DOM
+ * 都不一样的块只能换节点。
+ */
+function applyRetype(node, entry, receipt) {
+  const retype = receipt.retype;
+  if (!retype || !node) return;
+  if (retype.prefix || retype.literal) {
+    patchRetypedBlock(node, entry, receipt.block, retype);
+    return;
+  }
+  Object.assign(entry.block, receipt.block);
+  replaceRetypedBlock(node, entry);
+}
+
 function enqueueSave(node) {
   clearTimeout(saveTimer);
   saveTimer = null;
@@ -1823,9 +1945,23 @@ async function persist(node) {
     status('保存失败 · 模型正在改这一段', true);
     return;
   }
-  const content = node.__compose();
-  if (!content || !content.trim()) {
+  let content = node.__compose();
+  // 删空块时，浏览器常在编辑面里留一个 <br>，序列化后成了硬换行（`\`）。这种「只剩
+  // 浏览器残渣」的内容不能当成正文：标题 / 列表 / 引用退回前缀（反悔），段落照旧报空。
+  const editable = node.querySelector('[contenteditable="true"]');
+  const emptyInline = editable ? isEmptyInline(inlineOf(editable)) : false;
+  if (emptyInline && ['heading', 'list', 'quote'].includes(entry.block.type) && entry.block.prefix) {
+    content = entry.block.prefix.trimEnd();
+  }
+  if (!content || !content.trim() || (emptyInline && entry.block.type === 'paragraph')) {
     status('保存失败 · 块不能为空', true);
+    return;
+  }
+  // 段落里刚敲了前缀、后面还没内容：先不落盘。等服务端看到标题 / 正文再一次转换，
+  // 避免「敲到 `### ` 就停一下」先把这一行写成转义过的普通段落。
+  if (entry.block.type === 'paragraph' && PREFIX_ONLY_RE.test(content)) {
+    node.__dirty = true;
+    status('待保存');
     return;
   }
   if (content === entry.block.raw && !node.__dirty) return;
@@ -1855,11 +1991,22 @@ async function persist(node) {
     status(`保存失败 · ${receipt.error ?? receipt.status ?? '未知错误'}${conflictHint(receipt)}`, true);
     return;
   }
+  if (receipt.retype?.structure) {
+    // `# ` / `## `：这一块变成了章节 / 页，目录与正文一起重画（回执带整份快照）。
+    node.__dirty = false;
+    if (receipt.blocks && receipt.pages) applySnapshot(receipt);
+    status(receipt.retype.structure === 'page' ? '已自动保存 · 已变成一页' : '已自动保存 · 已变成一章');
+    return;
+  }
+  if (receipt.retype && receipt.block) {
+    applyRetype(node, entry, receipt);
+  }
   snapshot.sha256 = receipt.sha256;
   entry.block.raw = receipt.block?.raw ?? content;
   if (receipt.block?.sha256) entry.block.sha256 = receipt.block.sha256;
   node.__dirty = false;
-  status(receipt.merged ? '已自动保存 · 合并了别处的改动' : '已自动保存');
+  const changed = receipt.retype ? ' · 块类型已转换' : '';
+  status(`${receipt.merged ? '已自动保存 · 合并了别处的改动' : '已自动保存'}${changed}`);
 }
 
 /** 先把还没落盘的编辑排进队列，再等队列跑完；重排前必须先做这一步。 */
@@ -1989,7 +2136,7 @@ function wirePendingBlock(node, editable) {
    * 既没进这次请求、也不属于任何块，静默丢掉比慢一点更糟。
    */
   const commit = () => {
-    if (committing || isEmptyInline(inlineOf(editable))) return;
+    if (committing || !pendingReady(inlineOf(editable))) return;
     clearTimer();
     committing = true;
     editable.contentEditable = 'false';
@@ -1998,17 +2145,25 @@ function wirePendingBlock(node, editable) {
       if (editable.isConnected && editable.contentEditable === 'false') editable.contentEditable = 'true';
     });
   };
+  const schedule = () => {
+    clearTimer();
+    if (!pendingReady(inlineOf(editable))) return;
+    timer = setTimeout(commit, 400);
+  };
+  editable.addEventListener('compositionstart', () => { editable.__composing = true; });
+  editable.addEventListener('compositionend', () => {
+    editable.__composing = false;
+    if (!committing) schedule();
+  });
   editable.addEventListener('input', (event) => {
     // 输入法组合中间态不提交：第一次 input 常常只是一个拼音串。
-    if (committing || event.isComposing) return;
-    clearTimer();
-    if (isEmptyInline(inlineOf(editable))) return;
-    timer = setTimeout(commit, 400);
+    if (committing || event.isComposing || editable.__composing) return;
+    schedule();
   });
   editable.addEventListener('blur', () => {
     // 第一次输入会先把内容交给服务端，再重画；这时节点被换掉不该算「放弃」。
     if (committing) return;
-    if (isEmptyInline(inlineOf(editable))) drop(node.dataset.pendingSide === 'after' ? 'end' : 'start');
+    if (!pendingReady(inlineOf(editable))) drop(node.dataset.pendingSide === 'after' ? 'end' : 'start');
     else commit();
   });
   editable.addEventListener('keydown', (event) => {
@@ -2016,7 +2171,7 @@ function wirePendingBlock(node, editable) {
     if (event.key === 'Escape') {
       event.preventDefault();
       // 已经输入了内容就不算「放弃」：按回车/失焦同一条路提交，不静默丢字。
-      if (isEmptyInline(inlineOf(editable))) drop(node.dataset.pendingSide === 'after' ? 'end' : 'start');
+      if (!pendingReady(inlineOf(editable))) drop(node.dataset.pendingSide === 'after' ? 'end' : 'start');
       else commit();
       return;
     }
@@ -2026,8 +2181,9 @@ function wirePendingBlock(node, editable) {
       return;
     }
     if (event.key !== 'Enter') return;
-    event.preventDefault();
+    // Shift+Enter 在待定块里也照常换行：围栏代码 / 表格要先有多行才能成形。
     if (event.shiftKey) return;
+    event.preventDefault();
     commit();
   });
 }
@@ -2062,7 +2218,7 @@ function wireFirstBlock(node, editable, page) {
     clearTimer();
     if (committing || snapshot?.readonly) return;
     const content = inlineOf(editable);
-    if (isEmptyInline(content)) return; // 空页保持空页：不往文件里写占位正文
+    if (!pendingReady(content)) return; // 空页保持空页：不往文件里写占位正文或半截前缀
     committing = true;
     // 落盘前冻结这一块：回执回来会重画，这期间敲的字不能静默丢掉。
     editable.contentEditable = 'false';
@@ -2092,11 +2248,19 @@ function wireFirstBlock(node, editable, page) {
       focusBlock(receipt.block?.anchor, 'end');
     });
   };
-  editable.addEventListener('input', (event) => {
-    if (committing || event.isComposing) return;
+  const schedule = () => {
     clearTimer();
-    if (isEmptyInline(inlineOf(editable))) return;
+    if (!pendingReady(inlineOf(editable))) return;
     timer = setTimeout(commit, 400);
+  };
+  editable.addEventListener('compositionstart', () => { editable.__composing = true; });
+  editable.addEventListener('compositionend', () => {
+    editable.__composing = false;
+    if (!committing) schedule();
+  });
+  editable.addEventListener('input', (event) => {
+    if (committing || event.isComposing || editable.__composing) return;
+    schedule();
   });
   editable.addEventListener('blur', () => { if (!committing) void commit(); });
   editable.addEventListener('keydown', (event) => {

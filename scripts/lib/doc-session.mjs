@@ -211,7 +211,7 @@ function createFirstBlock(docPath, payload, board, conflicts, faults) {
     const receipt = commitDocument(docPath, {
       oldRaw: repaired.raw,
       raw: result.raw,
-      applied: [result.block.anchor],
+      applied: result.block ? [result.block.anchor] : [],
       operation: 'block',
       faults,
     });
@@ -219,7 +219,8 @@ function createFirstBlock(docPath, payload, board, conflicts, faults) {
       ok: true,
       sha256: receipt.sha256,
       replayed,
-      block: viewBlock(result.block, (value) => board.lockOf(value)),
+      block: result.block ? viewBlock(result.block, (value) => board.lockOf(value)) : null,
+      retype: result.retype ?? null,
       ...snapshotFrom(readDocument(docPath), docPath, board, conflicts),
     };
   });
@@ -310,7 +311,7 @@ function saveBlock(docPath, payload, board, conflicts, faults) {
     const receipt = commitDocument(docPath, {
       oldRaw: repaired.raw,
       raw: result.raw,
-      applied: [anchor],
+      applied: result.block ? [anchor] : [],
       operation: 'block',
       faults,
     });
@@ -318,7 +319,11 @@ function saveBlock(docPath, payload, board, conflicts, faults) {
       ok: true,
       sha256: receipt.sha256,
       merged: !documentMatches && blockMatches,
-      block: viewBlock(result.block, (value) => board.lockOf(value)),
+      // 行首 `# ` / `## ` 会把这一块变成章节 / 页：块身份随这一块消失（页标题不是块）。
+      block: result.block ? viewBlock(result.block, (value) => board.lockOf(value)) : null,
+      retype: result.retype ?? null,
+      // 结构变了，页面要重画目录；把新快照一起带回去，不让人再拉一次。
+      ...(result.retype?.structure ? snapshotFrom(readDocument(docPath), docPath, board, conflicts) : {}),
     };
   });
 }
@@ -357,7 +362,7 @@ function splitBlock(docPath, payload, board, conflicts, faults) {
     const receipt = commitDocument(docPath, {
       oldRaw: repaired.raw,
       raw: result.raw,
-      applied: [anchor, result.newBlock.anchor],
+      applied: [anchor, result.newBlock?.anchor].filter(Boolean),
       operation: 'split',
       faults,
     });
@@ -365,8 +370,9 @@ function splitBlock(docPath, payload, board, conflicts, faults) {
       ok: true,
       sha256: receipt.sha256,
       replayed,
-      block: viewBlock(result.block, (value) => board.lockOf(value)),
-      new_block: viewBlock(result.newBlock, (value) => board.lockOf(value)),
+      block: result.block ? viewBlock(result.block, (value) => board.lockOf(value)) : null,
+      // 后半是 `# ` / `## ` 时这一半得到结构，没有新块：页面按快照重画即可。
+      new_block: result.newBlock ? viewBlock(result.newBlock, (value) => board.lockOf(value)) : null,
       ...snapshotFrom(readDocument(docPath), docPath, board, conflicts),
     };
   });
@@ -595,7 +601,7 @@ function patchTask(docPath, payload, board, conflicts, faults) {
         continue;
       }
       // 先在候选全文上应用：结构不合法就整次拒绝，不留下半批写盘。
-      const result = applyBlockContent(raw, patch.anchor, patch.content);
+      const result = applyBlockContent(raw, patch.anchor, patch.content, { allowStructure: false });
       raw = result.raw;
       applied.push(patch.anchor);
       snapshots.set(patch.anchor, { before: block.raw, after: result.block.raw });
@@ -669,7 +675,7 @@ function decideConflict(docPath, payload, board, conflicts, faults) {
     let written = false;
     if (writeOther) {
       const repaired = persistRepairs(docPath, document, faults);
-      const result = applyBlockContent(repaired.raw, anchor, otherContent);
+      const result = applyBlockContent(repaired.raw, anchor, otherContent, { allowStructure: false });
       sha = commitDocument(docPath, {
         oldRaw: repaired.raw,
         raw: result.raw,
