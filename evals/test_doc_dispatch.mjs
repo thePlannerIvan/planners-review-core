@@ -13,12 +13,10 @@ const core = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const INBOX = join(core, 'scripts', 'doc-inbox.mjs');
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 
-const FRONT = '---\ncontract: planners-doc/1\ndoc: storyline\nproject: 派发测试\n---\n\n';
-const BODY = `# 派发测试
+const FRONT = '---\ncontract: planners-doc/2\ndoc: storyline\nproject: 派发测试\n---\n\n';
+const BODY = `# 章节
 
-## 章节
-
-### 页一
+## 页一
 
 第一块正文。<!-- b:aaaaaa -->
 
@@ -215,7 +213,7 @@ test('旧 JSON 主稿被打开时只读：界面状态可读、保存被拒且�
   const doc = await getJson(`${server.url}/api/doc`);
   assert.equal(doc.readonly?.reason, 'legacy-json', '旧 JSON 主稿以只读模式挂载');
   assert.match(doc.readonly?.message ?? '', /只读/, '只读原因要写给人看');
-  assert.match(doc.readonly?.message ?? '', /planners-doc\/1/, '要说清楚新工作台只认哪份契约');
+  assert.match(doc.readonly?.message ?? '', /planners-doc\/2/, '要说清楚新工作台只认哪份契约');
   assert.equal(doc.project, 'pj_test');
   assert.deepEqual(doc.legacy?.contract_version, '2.0.0');
   assert.equal(doc.pages.length, 2, '旧主稿的页要能看见，才能判断是不是它');

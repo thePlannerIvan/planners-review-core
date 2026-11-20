@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 /**
- * 生成验收语料：把真实项目 Markdown 机械改写成 planners-doc/1，原文文字逐行保留、只改结构。
+ * 生成验收语料：把真实项目 Markdown 机械改写成 planners-doc/2，原文文字逐行保留、只改结构。
  *
  * 用法：
  *   node evals/acceptance/corpus/build-corpus.mjs \
  *     [--source-root <CodexProject 根>] [--out <语料目录>] [--check]
  *
- * 为什么需要改写：工作台只认 planners-doc/1（文档头 + 章节/页层级 + 七种块），
+ * 为什么需要改写：工作台只认 planners-doc/2（文档头 + 章节/页层级 + 七种块），
  * 项目里的真实 Markdown 是自由格式。这里只做结构适配，不改写句子：
- *   · 补文档头；# 作文档标题，## 作章节，### 作页，#### 原样作标题块
- *   · 丢掉 `---` 分隔线（契约不认）；把 5–6 级标题降为段落
+ *   · 补文档头；文档名只写在 project（正文不再有标题行），# 作章节，## 作页，###–##### 作标题块
+ *   · 丢掉 `---` 分隔线（契约不认）；一级标题（文档标题）退出正文，其余标题整体上移一位
  *   · 嵌套列表项去掉缩进（契约不做嵌套）；行首原始 HTML 转义成普通文字
  *   · 章节下没有页时补一个「概览」页，文档开头没有章节时补「概述 / 原文开头」页
  * 生成的文件不带锚点：首次打开时由工作台按契约补写（见 evals/acceptance/README.md）。
@@ -36,7 +36,7 @@ const checkOnly = process.argv.includes('--check');
 
 /** 结构适配：返回原始文本（不含锚点）与改了几处。 */
 function adaptDocument(source, meta) {
-  const counts = { hr: 0, headings: 0, nestedLists: 0, htmlEscaped: 0, insertedPages: 0 };
+  const counts = { hr: 0, headings: 0, droppedTitle: 0, nestedLists: 0, htmlEscaped: 0, insertedPages: 0 };
   const lines = source.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').split('\n');
   const out = [];
   let inFence = false;
@@ -51,11 +51,11 @@ function adaptDocument(source, meta) {
       const text = heading[2].replace(/^\*\*(.+)\*\*$/, '$1').trim();
       const level = heading[1].length;
       counts.headings += 1;
-      if (level === 1 && !titleUsed) { titleUsed = true; out.push(`# ${text}`); continue; }
-      if (level === 1 || level === 2) { out.push(`## ${text}`); continue; }
-      if (level === 3) { out.push(`### ${text}`); continue; }
-      if (level === 4) { out.push(`#### ${text}`); continue; }
-      out.push(`**${text}**`); continue;
+      // 文档名只从 project 出：一级标题（文档标题）退出正文，其余标题整体上移一位。
+      if (level === 1 && !titleUsed) { titleUsed = true; counts.droppedTitle += 1; continue; }
+      if (level <= 2) { out.push(`# ${text}`); continue; }
+      if (level === 3) { out.push(`## ${text}`); continue; }
+      out.push(`${'#'.repeat(level - 1)} ${text}`); continue;
     }
     if (/^\s+(-|\*|\+|\d+[.)])\s+/.test(line)) { counts.nestedLists += 1; line = line.replace(/^\s+/, ''); }
     if (/^\s*</.test(line)) { counts.htmlEscaped += 1; line = line.replace(/^(\s*)</, '$1\\<'); }
@@ -63,42 +63,42 @@ function adaptDocument(source, meta) {
   }
 
   let raw = out.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd() + '\n';
-  raw = `---\ncontract: planners-doc/1\ndoc: ${meta.doc}\nproject: ${meta.project}\n---\n\n${raw}`;
+  raw = `---\ncontract: planners-doc/2\ndoc: ${meta.doc}\nproject: ${meta.project}\n---\n\n${raw}`;
 
-  // 每一块都必须落在某个 ### 页里：章节直接跟块时补「概览」页。
+  // 每一块都必须落在某个 ## 页里：章节直接跟块时补「概览」页。
   const withPages = [];
   let needPage = false;
   for (const line of raw.split('\n')) {
-    if (/^##\s+/.test(line)) {
-      if (needPage) { withPages.push('### 概览', ''); counts.insertedPages += 1; }
+    if (/^#\s+/.test(line)) {
+      if (needPage) { withPages.push('## 概览', ''); counts.insertedPages += 1; }
       withPages.push(line); needPage = true; continue;
     }
-    if (/^###\s+/.test(line)) { needPage = false; withPages.push(line); continue; }
+    if (/^##\s+/.test(line)) { needPage = false; withPages.push(line); continue; }
     if (needPage && line.trim() !== '') {
-      withPages.push('### 概览', ''); counts.insertedPages += 1; needPage = false;
+      withPages.push('## 概览', ''); counts.insertedPages += 1; needPage = false;
     }
     withPages.push(line);
   }
   raw = withPages.join('\n');
 
-  // 文档标题后、第一个 ## 之前如果有块，补一节「概述 / 原文开头」。
-  const front = raw.match(/^(---\n[\s\S]*?\n---\n\n)(# .*\n)([\s\S]*)$/);
+  // 文档名之后、第一个 # 章节之前如果有块，补一章一页「概述 / 原文开头」。
+  const front = raw.match(/^(---\n[\s\S]*?\n---\n\n)([\s\S]*)$/);
   if (front) {
-    const rest = front[3];
-    const firstChapter = rest.search(/^## /m);
+    const rest = front[2];
+    const firstChapter = rest.search(/^# /m);
     const head = firstChapter === -1 ? rest : rest.slice(0, firstChapter);
     if (head.trim()) {
       const tail = firstChapter === -1 ? '' : rest.slice(firstChapter);
-      raw = `${front[1]}${front[2]}\n## 概述\n\n### 原文开头\n\n${head.replace(/^\n+/, '')}${tail ? `\n${tail}` : ''}`;
+      raw = `${front[1]}# 概述\n\n## 原文开头\n\n${head.replace(/^\n+/, '')}${tail ? `\n${tail}` : ''}`;
       counts.insertedPages += 2;
     }
   }
 
-  // 有 ### 却没有 ## 时补一个章节（有些文档直接以三级标题分页）。
+  // 有 ## 页却没有 # 章节时补一章（有些文档直接以二级标题分页）。
   const lines2 = raw.split('\n');
-  if (!lines2.some((line) => /^##\s+/.test(line))) {
-    const index = lines2.findIndex((line) => /^###\s+/.test(line));
-    if (index >= 0) { lines2.splice(index, 0, '## 正文', ''); counts.insertedPages += 1; }
+  if (!lines2.some((line) => /^#\s+/.test(line))) {
+    const index = lines2.findIndex((line) => /^##\s+/.test(line));
+    if (index >= 0) { lines2.splice(index, 0, '# 正文', ''); counts.insertedPages += 1; }
   }
   return { raw: lines2.join('\n').replace(/\n{3,}/g, '\n\n'), counts };
 }
@@ -129,7 +129,7 @@ for (const item of spec.sources) {
   const sourcePath = fromRepo ? join(ROOT, item.source) : join(sourceRoot, item.source);
   if (!existsSync(sourcePath)) throw Error(`找不到来源：${sourcePath}`);
   const source = readFileSync(sourcePath, 'utf8');
-  const alreadyContract = /^---\n[\s\S]*?contract: planners-doc\/1[\s\S]*?\n---\n/.test(source);
+  const alreadyContract = /^---\n[\s\S]*?contract: planners-doc\/2[\s\S]*?\n---\n/.test(source);
   let raw;
   let counts = null;
   if (alreadyContract) {

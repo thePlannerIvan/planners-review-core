@@ -15,23 +15,21 @@ const VALIDATOR = join(core, 'scripts', 'validate-doc.mjs');
 const sandboxes = [];
 after(() => { for (const dir of sandboxes) rmSync(dir, { recursive: true, force: true }); });
 
-const FRONT = '---\ncontract: planners-doc/1\ndoc: storyline\nproject: 块操作测试\n---\n\n';
+const FRONT = '---\ncontract: planners-doc/2\ndoc: storyline\nproject: 块操作测试\n---\n\n';
 const ANCHOR = /^b:[0-9a-f]{6}$/;
 
 /** 两章三页：改第一页的块会让后面页的标题行号整体位移（旧判据误报的现场）。 */
-const THREE_PAGES = `# 块操作测试
+const THREE_PAGES = `# 第一章
 
-## 第一章
-
-### 页一
+## 页一
 
 第一段第一行。<!-- b:aaaaaa -->
 
 第二段。<!-- b:bbbbbb -->
 
-## 第二章
+# 第二章
 
-### 页二
+## 页二
 
 第三段。<!-- b:cccccc -->
 `;
@@ -175,13 +173,11 @@ test('Enter 在块首分块：新块在前半拿新锚点，原锚点跟着原�
 });
 
 test('Enter 分块：标题块回车，后半块成为正文段落，标题本身不变', async (t) => {
-  const { path } = scratchDoc(`# 块操作测试
+  const { path } = scratchDoc(`# 章节
 
-## 章节
+## 页一
 
-### 页一
-
-#### 小节标题<!-- b:dddddd -->
+### 小节标题<!-- b:dddddd -->
 
 正文。<!-- b:eeeeee -->
 `);
@@ -196,18 +192,16 @@ test('Enter 分块：标题块回车，后半块成为正文段落，标题本�
   });
   assert.equal(response.status, 200, JSON.stringify(response.body));
   assert.equal(response.body.block.type, 'heading', '前半仍是标题块');
-  assert.equal(response.body.block.raw, '#### 小节');
+  assert.equal(response.body.block.raw, '### 小节');
   assert.equal(response.body.new_block.type, 'paragraph', '标题回车后的后半是正文段落');
   assert.equal(response.body.new_block.raw, '标题');
   assert.equal(validate(path).code, 0, '标题分块后仍合规');
 });
 
 test('Enter 分块拒绝空的一半、前后文重叠与不可拆的块类型', async (t) => {
-  const { path } = scratchDoc(`# 块操作测试
+  const { path } = scratchDoc(`# 章节
 
-## 章节
-
-### 页一
+## 页一
 
 第一段。<!-- b:aaaaaa -->
 

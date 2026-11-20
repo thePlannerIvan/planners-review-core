@@ -1,5 +1,5 @@
 {
-  "note": "语料来源清单。前 8 份是 01-projects / 07-SkillLab 下的真实 Markdown；后 2 份是仓库内的契约样例（含图片语法）。build-corpus.mjs 按此清单生成 planners-doc/1 语料：原文文字逐行保留，只改结构（分隔线、嵌套缩进、标题层级）。",
+  "note": "语料来源清单。前 8 份是 01-projects / 07-SkillLab 下的真实 Markdown；后 2 份是仓库内的契约样例（含图片语法）。build-corpus.mjs 按此清单生成 planners-doc/2 语料：原文文字逐行保留，只改结构（分隔线、嵌套缩进、标题层级，以及文档标题退出正文）。",
   "sources": [
     {
       "out": "01-needscope.md",

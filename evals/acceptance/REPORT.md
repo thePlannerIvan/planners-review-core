@@ -1,7 +1,7 @@
 # 文字工作台 · 验收记录（票 10「实测与验收」）
 
 > 生成方式：`node evals/acceptance/run.mjs`。下列时间、sha256、条数、块数均为本次运行的实际输出；重跑会覆盖本文件，并在 `records/` 下留一份同次运行的 JSON。
-> 语料不是手搓样例：8 份来自 `01-projects` 与 `07-SkillLab` 的真实项目 Markdown，2 份是仓库内的契约样例（覆盖图片语法）。真实文档按 `planners-doc/1` 做结构适配，原文文字逐行保留、只改结构；来源、源文件 sha256 与适配计数见下表与 `corpus/manifest.json`。
+> 语料不是手搓样例：8 份来自 `01-projects` 与 `07-SkillLab` 的真实项目 Markdown，2 份是仓库内的契约样例（覆盖图片语法）。真实文档按 `planners-doc/2` 做结构适配，原文文字逐行保留、只改结构；来源、源文件 sha256 与适配计数见下表与 `corpus/manifest.json`。
 
 
 ## 结论
@@ -11,12 +11,12 @@
 | 往返一次不改动未编辑的块 | 通过 | 10 份语料，42/42 条断言通过；每份都做了「打开→不编辑→关闭」字节对比与「改一块」字节区间对比 |
 | 块内中文输入、撤销重做、跨块选区 | 通过 | 10/10 条通过；IME 组合 3 次，输入文本「中文输入实测，标点：。！？「引号」；」；未通过项：无 |
 | 同块双改只锁该块 | 通过 | 2 遍演练，13/13 条通过；每遍都记录派发、claim、被拒回执、patch 待核对、裁决与磁盘结果 |
-| 记录落在仓库内可复用 | 通过 | 本文件 + `evals/acceptance/records/2026-11-19T15-00-20Z.json` + 可执行入口 `evals/acceptance/run.mjs` 与语料 `evals/acceptance/corpus/` |
+| 记录落在仓库内可复用 | 通过 | 本文件 + `evals/acceptance/records/2026-11-20T10-25-59Z.json` + 可执行入口 `evals/acceptance/run.mjs` 与语料 `evals/acceptance/corpus/` |
 
 ## 运行环境
 
-- 时间：2026年11月19日星期四 23:00:20（2026-11-19T15:00:20.187Z）
-- 分支 / commit：`ticket/12-block-structure` / `628bc7c1caaff5fd842e33c7921ea05bee2b24ef`（工作区有未提交改动）
+- 时间：2026年11月20日星期五 18:25:59（2026-11-20T10:25:59.226Z）
+- 分支 / commit：`ticket/20-contract-v2` / `c24660a07d9a6c3b4b3f49a0b1d23515326293dc`（工作区有未提交改动）
 - Node：v22.22.2
 - 浏览器：Playwright（全局安装）/ Chromium 147.0.7727.15
 - 平台：darwin arm64
@@ -42,8 +42,8 @@
 | 6 | `06-planners-form-compatibility.md` | `01-projects/planners-form/COMPATIBILITY.md` | `34178579900c` | 结构适配 | 26 | 3 | 0 | 0 | 0 | 26 | 一致 | 只一块 |
 | 7 | `07-plugins-upstream-readme.md` | `01-projects/dsh-plugins-upstream/README.md` | `7fbe1c2ebe59` | 结构适配 | 26 | 1 | 0 | 1 | 1 | 26 | 一致 | 只一块 |
 | 8 | `08-workbench-engineering.md` | `07-SkillLab/workbench-redesign/ENGINEERING.md` | `3d3ba0f9e34e` | 结构适配 | 34 | 0 | 0 | 0 | 0 | 34 | 一致 | 只一块 |
-| 9 | `09-storyline-example.md` | `contracts/examples/storyline.md` | `0d8b8b0c0455` | 原样（仓库样例） | 48 | 0 | 1 | 2 | 0 | 0 | 一致 | 只一块 |
-| 10 | `10-by-page-example.md` | `contracts/examples/by-page.md` | `41f420ecfc89` | 原样（仓库样例） | 54 | 2 | 1 | 1 | 1 | 0 | 一致 | 只一块 |
+| 9 | `09-storyline-example.md` | `contracts/examples/storyline.md` | `3f32bf591ebe` | 原样（仓库样例） | 40 | 0 | 1 | 13 | 0 | 0 | 一致 | 只一块 |
+| 10 | `10-by-page-example.md` | `contracts/examples/by-page.md` | `2c589e942139` | 原样（仓库样例） | 48 | 2 | 1 | 8 | 1 | 0 | 一致 | 只一块 |
 
 ## 判据一：往返零字节差异
 
@@ -52,25 +52,25 @@
 - 通过 42/42 条断言。
 - 十份语料的往返字节全部一致：10/10。
 - 「改一块」全部只动目标块：10/10；差异区间全部落在目标块内：10/10。
-- 表格/图片/引用/代码块都在语料里（合计 18 表、2 图、15 引用、10 代码块），未编辑时逐字保留。
+- 表格/图片/引用/代码块都在语料里（合计 18 表、2 图、33 引用、10 代码块），未编辑时逐字保留。
 
 
 ## 判据二：中文输入、撤销重做、跨块选区
 
-浏览器：Playwright 驱动 Chromium，块内输入走真实 DOM 与 CDP 输入事件。测试语料：`02-gwtb`，块 `b:90334c`。
+浏览器：Playwright 驱动 Chromium，块内输入走真实 DOM 与 CDP 输入事件。测试语料：`02-gwtb`，块 `b:987b5c`。
 
 - 输入方法：CDP Input.imeSetComposition + Input.insertText + keyboard.insertText；组合事件 3 次，随后输入中文标点「中文输入实测，标点：。！？「引号」；」。
 - 输入后 DOM 与磁盘都等于「原文 + 输入」：是。
 - 撤销：磁盘回到输入前文本（通过）；重做：磁盘恢复被撤销的输入（通过）。
-- 跨块选区：选中 3 块，页面吸附 3 块（["b:90334c","b:74d07f","b:912c58"]），派发回执绑定 3 块，原文 sha 不变：是。
+- 跨块选区：选中 3 块，页面吸附 3 块（["b:987b5c","b:f7c876","b:be6f16"]），派发回执绑定 3 块，原文 sha 不变：是。
 
 ### 块内换行、回车分块与删空合并
 
 | 动作 | 键 | 结论 | 证据 |
 |---|---|---|---|
 | 块内换行 | Shift+Enter | 通过 | HTTP 200，磁盘块 raw = `"证据：标题端内容母题高度分散，没有单一受众画像。评论端\"通勤\"\"暴走\"\"上班\"高频出现，说明实际购买者偏向实用场景。中文输入实测，标点：。！？「引号」；撤销重做\n换行之后"`，仍是同一块两行 |
-| 回车分块 | Enter | 通过 | 新锚点 `b:220cbb`，新块 raw「分块之后」，块数 52 → 53，原块 raw 逐字不动 |
-| 删空合并 | 空块开头 Backspace | 通过 | 被删锚点 `b:220cbb`，前一块 `b:90334c` 的 raw 逐字不动，块数 53 → 52 |
+| 回车分块 | Enter | 通过 | 新锚点 `b:d08e1a`，新块 raw「分块之后」，块数 52 → 53，原块 raw 逐字不动 |
+| 删空合并 | 空块开头 Backspace | 通过 | 被删锚点 `b:d08e1a`，前一块 `b:987b5c` 的 raw 逐字不动，块数 53 → 52 |
 
 回车分块与删空合并会改变块数量，所以走显式命令（`POST /api/block/split` / `POST /api/block/merge`），
 不混进「保存一块」。空块在契约里没有锚点可落（锚点必须贴内容），所以回车时为空的那一半先在页面里待定，
@@ -82,8 +82,8 @@
 
 | 遍 | A / B | claim 后锁 | 被锁改 A | 改 B（A 锁 / 待核对） | patch 待核对 | 裁决后 A | 其余块 |
 |---|---|---|---|---|---|---|---|
-| 1 | `b:7d441f` / `b:cfcda9` | A=true B=false | 409 block_locked | 200 / 200 | applied=[] deferred=b:7d441f:block_changed | 模型版 | 改了 2 块，7/9 块逐字不动 |
-| 2 | `b:ad0bde` / `b:c401e7` | A=true B=false | 409 block_locked | 200 / 200 | applied=[] deferred=b:ad0bde:block_changed | 模型版 | 改了 2 块，7/9 块逐字不动 |
+| 1 | `b:c036b9` / `b:c9445a` | A=true B=false | 409 block_locked | 200 / 200 | applied=[] deferred=b:c036b9:block_changed | 模型版 | 改了 2 块，7/9 块逐字不动 |
+| 2 | `b:6e5cf4` / `b:0b67d5` | A=true B=false | 409 block_locked | 200 / 200 | applied=[] deferred=b:6e5cf4:block_changed | 模型版 | 改了 2 块，7/9 块逐字不动 |
 
 - 两遍结构性结论一致：是。
 - 待核对面板里的两版：磁盘版保留了人的 A1，模型版保留 Am；裁决 model 后磁盘落 Am，B 保留人改的两版叠加。完整回执见同次 JSON。
@@ -107,5 +107,5 @@ node evals/acceptance/corpus/build-corpus.mjs --check   # 校验语料仍与来�
 ```
 
 - 语料来源与源文件 sha256：`evals/acceptance/corpus/manifest.json`
-- 本次机器可读记录：`evals/acceptance/records/2026-11-19T15-00-20Z.json`
+- 本次机器可读记录：`evals/acceptance/records/2026-11-20T10-25-59Z.json`
 - 回退票：见上表；未修实现，只记录事实。
