@@ -260,11 +260,18 @@ test('行内编辑序列化：普通文本里的 Markdown 符号被转义，不�
   const { serializeInline } = await inlineModule();
   assert.equal(serializeInline(el('div', [text('5 * 3 与 snake_case 与 [草稿] 与 `反引号`')])),
     '5 \\* 3 与 snake\\_case 与 \\[草稿\\] 与 \\`反引号\\`');
-  // 行首如果是块级标记，也必须转义，否则下一次打开会被切成另一种块。
-  assert.equal(serializeInline(el('div', [text('# 不是标题')])), '\\# 不是标题');
-  assert.equal(serializeInline(el('div', [text('- 不是列表')])), '\\- 不是列表');
-  assert.equal(serializeInline(el('div', [text('1. 不是有序列表')])), '1\\. 不是有序列表');
-  assert.equal(serializeInline(el('div', [text('1) 也不是')])), '1\\) 也不是');
+});
+
+test('行内编辑序列化：行首的块前缀原样交给保存路径，不再在这里转义成字面量', async () => {
+  const { serializeInline } = await inlineModule();
+  // 前缀由服务端按「行首 + 紧跟空格」认成块类型，序列化层不再抢着加反斜杠。
+  assert.equal(serializeInline(el('div', [text('# 是标题')])), '# 是标题');
+  assert.equal(serializeInline(el('div', [text('- 是列表')])), '- 是列表');
+  assert.equal(serializeInline(el('div', [text('1. 是有序列表')])), '1. 是有序列表');
+  assert.equal(serializeInline(el('div', [text('> 是引用')])), '> 是引用');
+  assert.equal(serializeInline(el('div', [text('```\n代码\n```')])), '```\n代码\n```');
+  // 行中间同样的符号仍然转义：那里没有块语义。
+  assert.equal(serializeInline(el('div', [text('前面 a > b')])), '前面 a \\> b');
 });
 
 test('行内编辑序列化：链接地址带空格、代码里有反引号时仍然可解析', async () => {
@@ -364,7 +371,7 @@ test('改一段话时，表格对齐、代码块、图片 title 都不动', asyn
 });
 
 // ── 保存边界：只换内容，不换块身份与结构 ─────────────────────────────────────
-test('借编辑面改块结构、改类型或提交过期基线都会被拒，磁盘不动', async (t) => {
+test('借编辑面拆块、写锚点或提交过期基线都会被拒，磁盘不动', async (t) => {
   const dir = scratchDir();
   const path = writeDoc(dir, 'storyline.md', `
 
@@ -386,9 +393,11 @@ test('借编辑面改块结构、改类型或提交过期基线都会被拒，�
   assert.equal(split.status, 409, JSON.stringify(split.body));
   assert.equal(split.body.code, 'block_structure', '空行会把一块变成两块，必须拒绝');
 
-  const retype = await attempt({ anchor: 'b:aaaaaa', content: '- 变成列表', base_sha256: opened.sha256 });
-  assert.equal(retype.status, 409, JSON.stringify(retype.body));
-  assert.equal(retype.body.code, 'block_structure', '改块类型必须拒绝');
+  // 块类型变化不再一律拒绝：行首前缀产生的类型变化是编辑的一部分（票 30）。
+  // 这里只保证「不是前缀能解释的越界」仍然被挡住：一块里写第二个锚点。
+  const anchor = await attempt({ anchor: 'b:aaaaaa', content: '第一段<!-- b:bbbbbb -->', base_sha256: opened.sha256 });
+  assert.equal(anchor.status, 409, JSON.stringify(anchor.body));
+  assert.ok(['block_content_anchor', 'block_structure'].includes(anchor.body.code), '一块里不能写第二个锚点');
 
   const empty = await attempt({ anchor: 'b:aaaaaa', content: '   ', base_sha256: opened.sha256 });
   assert.equal(empty.status, 409, JSON.stringify(empty.body));

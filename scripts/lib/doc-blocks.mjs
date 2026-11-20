@@ -746,20 +746,274 @@ export function repairAnchors(raw, options = {}) {
   return { raw: bom + next, changed: true, repairs };
 }
 
-/** 把一段块 raw 按块类型重新拼成带锚点的原文（用于替换）。 */
-export function encodeBlock(block, content, eol = '\n') {
-  return STANDALONE.has(block.type)
-    ? `${content}${eol}${anchorText(block.anchor)}`
-    : `${content}${anchorText(block.anchor)}`;
+// ───────────── 行首 Markdown 前缀 → 块类型（SPEC 第 7 节） ─────────────
+//
+// 块的类型由**行首前缀**产生：`# ` / `## ` 改变结构（章节 / 页），`### `–`###### `
+// 是标题块，`- ` / `1. ` 列表，`> ` 引用，围栏代码，`|` 起表格。判据有两条：
+//
+//   · 前缀必须在这一块的第一行开头（行首）；
+//   · 除围栏与表格外，前缀后面必须紧跟空格（`##标题` 还是段落文字）。
+//
+// 写入后前缀从正文隐去、只留排版：块的 raw 就是元素本身，页 / 章节就是真标题行。
+// 不是前缀能解释的内容一律当普通段落——该转义的行首标记在这里补反斜杠，保证它
+// 下一次打开还是同一个段落，而不是悄悄变成另一种块。
+
+const HEADING_MARK_RE = /^(#{1,6})([ \t]+)([\s\S]*)$/;
+const EMPTY_HEADING_MARK_RE = /^#{1,6}[ \t]*$/;
+const ORDERED_MARK_RE = /^(\d+)([.)])([ \t]+)/;
+const LIST_MARK_RE = /^([-*+])([ \t]+)/;
+const QUOTE_MARK_RE = /^([ \t]*>[ \t]+)/;
+const FENCE_OPEN_RE = /^(`{3,}|~{3,})(.*)$/;
+const FENCE_CLOSE_RE = /^\s*(`{3,}|~{3,})\s*$/;
+const SETEXT_UNDERLINE_RE = /^=+[ \t]*$/;
+
+/** 逐行去掉行尾空白；代码例外（围栏里的空格是内容）。 */
+function normalizeTypedLines(text, { code = false } = {}) {
+  const trimmed = String(text ?? '').replace(/\r\n?/g, '\n').replace(/\s+$/, '');
+  return code ? trimmed : trimmed.split('\n').map((line) => line.replace(/[ \t]+$/, '')).join('\n');
+}
+
+/**
+ * 普通段落里「不是前缀」的行首标记要转义，否则下一次解析会把它切成另一种块。
+ * 只处理真正会改变这一行解析结果的标记；`#标签` 这种没有空格的写法不算。
+ */
+function escapeLiteralLine(line, nextLine) {
+  if (!line || line.startsWith('\\')) return line;
+  if (HEADING_MARK_RE.test(line) || EMPTY_HEADING_MARK_RE.test(line)) return `\\${line}`;
+  if (ORDERED_MARK_RE.test(line)) return line.replace(/^(\d+)([.)])/, '$1\\$2');
+  if (LIST_MARK_RE.test(line)) return `\\${line}`;
+  if (/^[ \t]*>/.test(line)) return `\\${line}`;
+  if (FENCE_OPEN_RE.test(line)) return `\\${line}`;
+  if (SETEXT_UNDERLINE_RE.test(line.trim()) || HR_RE.test(line.trim())) return `\\${line}`;
+  // 只有下一行是分隔行时，这一行才会被当成表头。
+  if (nextLine !== undefined && line.includes('|') && TABLE_DELIMITER_RE.test(nextLine)) return `\\${line}`;
+  return line;
+}
+
+/** 整段落字面量化：每一行都按「会不会被当成另一种块」决定要不要加反斜杠。 */
+function escapeLiteralParagraph(text) {
+  const lines = String(text ?? '').replace(/\r\n?/g, '\n').split('\n');
+  return lines.map((line, index) => escapeLiteralLine(line, lines[index + 1])).join('\n');
+}
+
+/** 把候选 raw 放进一份最小文档里解析，确认它就是「一种块」且字节能读回。 */
+function probeSingleBlock(raw, type) {
+  const probe = parseDocument(
+    `---\ncontract: planners-doc/2\ndoc: storyline\nproject: 前缀探针\n---\n\n# 章\n\n## 页\n\n${raw}\n`,
+    { checkImages: false },
+  );
+  return probe.blocks.length === 1
+    && probe.blocks[0].type === type
+    && probe.blocks[0].raw === raw
+    && probe.errors.length === 0;
+}
+
+/** 字面计划：整段当普通段落，该转义的行首标记补反斜杠。 */
+function literalPlan(text, options = {}) {
+  const { literal = null } = options;
+  const normalized = normalizeTypedLines(text);
+  return {
+    type: 'paragraph',
+    structural: false,
+    prefix: '',
+    literal: literal ?? (normalized.trim() && !normalized.includes('\n') ? normalized.trim() : null),
+    raw: escapeLiteralParagraph(normalized),
+  };
+}
+
+/**
+ * 把一块的编辑内容翻译成「这一块应该长成什么」。
+ *
+ * 入参 `content` 是**整块 raw**：标题 / 列表 / 引用由页面在行内内容前补回前缀，
+ * 段落就是它自己。模型写回时可能只给行内内容，所以当前类型有前缀而内容没有时先补回。
+ *
+ * @returns {{type:string, raw:string, prefix:string, literal:string|null,
+ *   structural:boolean, level?:number, title?:string, rest?:string}}
+ */
+export function planTypedBlock(content, options = {}) {
+  const { currentType = 'paragraph', currentPrefix = '' } = options;
+  let text = String(content ?? '').replace(/\r\n?/g, '\n').replace(/\s+$/, '');
+  // 「反悔」：标题 / 列表的文字被删空时，内容只剩它自己的前缀。前缀退回正文，
+  // 这一块变回段落——不再是一个空标题（列表清空也走同一条路）。
+  if (currentPrefix && text === currentPrefix.trim() && ['heading', 'list'].includes(currentType)) {
+    return literalPlan(text, { literal: text });
+  }
+  if (currentPrefix && !/^(#{1,6}[ \t]|[-*+][ \t]|\d+[.)][ \t]|>[ \t]|`{3,}|~{3,})/.test(text)) {
+    text = `${currentPrefix}${text}`;
+  }
+  const lines = text.split('\n');
+  const first = lines[0] ?? '';
+  const restLines = lines.slice(1);
+  // 围栏与表格是「独立块」：页面里的块内换行会序列化成 `\\` + 换行（CommonMark 硬换行），
+  // 那只是编辑器对多行段落的写法；落到代码 / 表格里应当是真正的换行。
+  const hardBreakFree = text.replace(/\\\n/g, '\n');
+  const plainLines = hardBreakFree.split('\n');
+  const plainFirst = plainLines[0] ?? '';
+
+  const heading = first.match(HEADING_MARK_RE);
+  if (heading) {
+    const level = heading[1].length;
+    const prefix = heading[1] + heading[2];
+    const title = heading[3].trim();
+    if (!title) return literalPlan(text);
+    if (level <= 2) {
+      return {
+        type: level === 1 ? 'chapter' : 'page',
+        structural: true,
+        level,
+        title,
+        prefix,
+        literal: null,
+        raw: `${'#'.repeat(level)} ${title}`,
+        rest: restLines.join('\n').trim(),
+      };
+    }
+    const raw = normalizeTypedLines(`${'#'.repeat(level)} ${title.replace(/\n+/g, ' ')}`);
+    if (probeSingleBlock(raw, 'heading')) {
+      return { type: 'heading', structural: false, level, prefix, literal: null, raw, rest: '' };
+    }
+    return literalPlan(text);
+  }
+
+  const ordered = first.match(ORDERED_MARK_RE);
+  const list = first.match(LIST_MARK_RE);
+  if ((ordered || list) && !HR_RE.test(first.trim())) {
+    const raw = normalizeTypedLines(text);
+    if (probeSingleBlock(raw, 'list')) {
+      return {
+        type: 'list', structural: false, prefix: ordered ? ordered[0] : list[0], literal: null, raw, rest: '',
+      };
+    }
+    return literalPlan(text);
+  }
+
+  const quote = first.match(QUOTE_MARK_RE);
+  if (quote) {
+    const raw = normalizeTypedLines(text);
+    if (probeSingleBlock(raw, 'quote')) {
+      return { type: 'quote', structural: false, prefix: quote[1], literal: null, raw, rest: '' };
+    }
+    return literalPlan(text);
+  }
+
+  const fence = plainFirst.match(FENCE_OPEN_RE);
+  if (fence) {
+    // 围栏必须闭合：没闭合的代码块会把后面的页与块全吞进去。
+    const closed = plainLines.slice(1).some((line) => {
+      const match = line.match(FENCE_CLOSE_RE);
+      return match && match[1][0] === fence[1][0] && match[1].length >= fence[1].length;
+    });
+    const raw = normalizeTypedLines(hardBreakFree, { code: true });
+    if (closed && probeSingleBlock(raw, 'code')) {
+      return { type: 'code', structural: false, prefix: '', literal: null, raw, rest: '' };
+    }
+    return literalPlan(text);
+  }
+
+  // 表格：首行有 `|`、第二行是分隔行、之后每行都有 `|`——与解析器的认定一致。
+  if (plainFirst.includes('|') && plainLines.length >= 2 && TABLE_DELIMITER_RE.test(plainLines[1])
+    && plainLines.slice(1).every((line) => line.includes('|'))) {
+    const raw = normalizeTypedLines(hardBreakFree);
+    if (probeSingleBlock(raw, 'table')) {
+      return { type: 'table', structural: false, prefix: '', literal: null, raw, rest: '' };
+    }
+    return literalPlan(text);
+  }
+
+  return literalPlan(text);
+}
+
+/** 按计划拼出这一块的新 raw（锚点按类型摆：独立块的锚点单独一行）。 */
+function typedReplacement(plan, anchor, eol) {
+  const anchorText = `<!-- ${anchor} -->`;
+  if (plan.structural) {
+    const line = `${'#'.repeat(plan.level)} ${plan.title}`;
+    const rest = plan.rest ? escapeLiteralParagraph(plan.rest) : '';
+    return rest ? `${line}${eol}${eol}${rest}${anchorText}` : line;
+  }
+  return STANDALONE.has(plan.type) ? `${plan.raw}${eol}${anchorText}` : `${plan.raw}${anchorText}`;
+}
+
+const pageIdentity = (block) => pageKeyOf(block.page) ?? '-';
+const titlesOf = (items, title) => items.filter((item) => item.title === title).length;
+
+/**
+ * 校验「前缀转换」写出来的结果：
+ *   · 普通类型（标题 / 列表 / 引用 / 代码 / 表格）：只换这一块的类型，块数、锚点顺序、
+ *     所属页都不变，其余块 raw 逐字不动；
+ *   · `# ` / `## `：这一块变成结构行，锚点随这一块消失（有剩余文字时留给那段正文），
+ *     其余块的位置与 raw 逐字不动，章节 / 页真的多了一个并且就在这一行。
+ */
+function verifyTypedWrite(parsed, after, block, plan, anchor, fail) {
+  const targetIndex = parsed.blocks.indexOf(block);
+  const others = parsed.blocks.filter((item) => item !== block);
+
+  if (!plan.structural) {
+    if (after.blocks.length !== parsed.blocks.length) fail('block_structure', '写回后块的数量变了，已拒绝');
+    if (after.blocks.map((item) => item.anchor).join(',') !== parsed.blocks.map((item) => item.anchor).join(',')) {
+      fail('block_structure', '写回后块的锚点顺序变了，已拒绝');
+    }
+    for (let index = 0; index < parsed.blocks.length; index += 1) {
+      if (index === targetIndex) continue;
+      const prior = parsed.blocks[index];
+      const next = after.blocks[index];
+      if (next.raw !== prior.raw || next.type !== prior.type || pageIdentity(next) !== pageIdentity(prior)) {
+        fail('block_structure', '写回动到了别的块，已拒绝');
+      }
+    }
+    const written = after.blocks[targetIndex];
+    if (!written || written.anchor !== anchor || written.type !== plan.type || written.raw !== plan.raw) {
+      fail('block_structure', '写入后无法按同一块读回，已拒绝');
+    }
+    if (pageIdentity(written) !== pageIdentity(block)) fail('block_structure', '写回把这一块挪出了原来那一页，已拒绝');
+    return written;
+  }
+
+  const rest = plan.rest ? escapeLiteralParagraph(plan.rest) : null;
+  const remainder = rest ? after.blocks[targetIndex] : null;
+  if (rest) {
+    if (after.blocks.length !== others.length + 1 || !remainder
+      || remainder.anchor !== anchor || remainder.type !== 'paragraph' || remainder.raw !== rest) {
+      fail('block_structure', '前缀后面的正文没有干净地落在新结构下，已拒绝');
+    }
+  } else if (after.blocks.length !== others.length || after.blocks.some((item) => item.anchor === anchor)) {
+    fail('block_structure', '结构行不能带锚点，已拒绝');
+  }
+  const remaining = rest ? after.blocks.filter((_, index) => index !== targetIndex) : after.blocks;
+  if (remaining.map((item) => item.anchor).join(',') !== others.map((item) => item.anchor).join(',')
+    || remaining.some((item, index) => item.raw !== others[index].raw || item.type !== others[index].type)) {
+    fail('block_structure', '结构变化动到了别的块，已拒绝');
+  }
+
+  // 新结构必须就在被替换的那一行上：`## 标题` / `# 标题` 真的成了页 / 章节。
+  const line = block.startLine;
+  const scope = plan.type === 'page' ? after.pages : after.chapters;
+  const prior = plan.type === 'page' ? parsed.pages : parsed.chapters;
+  if (scope.length !== prior.length + 1) fail('block_structure', `这次修改没有干净地加出一${plan.type === 'page' ? '页' : '章'}，已拒绝`);
+  const created = scope.find((item) => item.line === line && item.title === plan.title);
+  if (!created || titlesOf(scope, plan.title) !== titlesOf(prior, plan.title) + 1) {
+    fail('block_structure', `写入后找不到标题为「${plan.title}」的${plan.type === 'page' ? '页' : '章节'}，已拒绝`);
+  }
+  if (plan.type === 'page' && rest) {
+    if (remainder.page?.title !== plan.title) fail('block_structure', '前缀后面的正文没有落在新页里，已拒绝');
+  }
+  if (plan.type === 'chapter' && rest) {
+    if (remainder.chapter?.title !== plan.title) fail('block_structure', '前缀后面的正文没有落在新章节下，已拒绝');
+  }
+  return null;
 }
 
 /**
  * 只替换被编辑的那一块。返回的新原文里，这一块之外的所有字节都来自原文。
- * 替换前会重新解析候选全文，确认块的数量与身份没有变化——任何可能改变文档结构的
- * 内容（空行、标题、第二个锚点……）都被拒绝，而不是被静默吞掉。
+ *
+ * 块类型由行首前缀产生（SPEC 第 7 节）：`## ` 变成一页、`### ` 变成标题块、`- ` 变成
+ * 列表……写盘时前缀隐去。前缀解释不了的内容按普通段落写回，行首标记补反斜杠。
+ *
+ * 除「前缀产生的类型变化」之外，任何会改变文档结构的内容（空行、第二个锚点、多出来的
+ * 块）仍被拒绝，而不是被静默吞掉。
  */
 export function applyBlockContent(raw, anchor, content, options = {}) {
-  const { eol = String(raw).includes('\r\n') ? '\r\n' : '\n' } = options;
+  const { eol = String(raw).includes('\r\n') ? '\r\n' : '\n', allowStructure = true } = options;
   const fail = (code, message) => { throw Object.assign(Error(message), { code }); };
   const parsed = parseDocument(raw, { checkImages: false });
   const source = parsed.text;
@@ -770,32 +1024,48 @@ export function applyBlockContent(raw, anchor, content, options = {}) {
   const evaluated = assessBlock(block);
   if (!evaluated.editable) fail('block_degraded', `这一块超出可编辑子集：${evaluated.reason}`);
   if (typeof content !== 'string') fail('block_content', '块内容必须是文本');
-  const normalized = STANDALONE.has(block.type) ? content.replace(/\s+$/, '') : content
-    .split(eol).join('\n').split('\n').map((line) => line.replace(/\s+$/, '')).join(eol).replace(/\s+$/, '');
-  if (!normalized.trim()) fail('block_empty', '块内容不能为空；删除块不在本版编辑面内');
-  if (ANCHOR_ANY_RE.test(normalized)) fail('block_content_anchor', '块内容里不能写锚点');
-  const replacement = encodeBlock(block, normalized, eol);
-  const next = source.slice(0, block.startOffset) + replacement + source.slice(block.endOffset);
+  const overall = content.replace(/\r\n?/g, '\n').replace(/\s+$/, '');
+  if (!overall.trim()) fail('block_empty', '块内容不能为空；删除块不在本版编辑面内');
+  if (ANCHOR_ANY_RE.test(overall)) fail('block_content_anchor', '块内容里不能写锚点');
 
+  const planned = planTypedBlock(overall, { currentType: block.type, currentPrefix: blockPrefix(block) });
+  // 模型写回与待核对裁决只换内容：结构行由显式的结构 / 重排命令产生，不从一个 patch 里长出来。
+  const plan = planned.structural && !allowStructure
+    ? literalPlan(overall)
+    : planned;
+  const replacement = typedReplacement(plan, anchor, eol);
+  const next = source.slice(0, block.startOffset) + replacement + source.slice(block.endOffset);
   const after = parseDocument(next, { checkImages: false });
-  // 只允许「同一块换内容」：块的数量、类型顺序、所属页都不能变。
-  // 否则把「- 变成列表」粘进段落会静默换掉块类型，锚点还在但语义已经不同。
-  //
-  // 判据是**页身份**（章节号 + 页序号），不是页标题所在的绝对行号：块里多一行会让
-  // 后面所有页的行号整体位移，用行号当判据会把「同一页里换内容」误判成「结构变了」，
-  // 多行块就永远存不下来。页身份由顺序决定（契约第 2 节），不随行号漂移。
-  const shape = (document) => document.blocks
-    .map((item) => `${item.type}@${item.page ? pageKeyOf(item.page) : '-'}`)
-    .join(',');
-  const beforeAnchors = parsed.blocks.filter((item) => item.anchor).map((item) => item.anchor);
-  const afterAnchors = after.blocks.filter((item) => item.anchor).map((item) => item.anchor);
-  if (shape(after) !== shape(parsed)
-    || beforeAnchors.join(',') !== afterAnchors.join(',')) {
-    fail('block_structure', '这次修改会改变文档的块结构（块类型、空行、标题或多个锚点），已拒绝');
+  let written;
+  try {
+    written = verifyTypedWrite(parsed, after, block, plan, anchor, fail);
+  } catch (error) {
+    if (error.code !== 'block_structure' || plan.type === 'paragraph') throw error;
+    // 前缀能认出来、但在这一份文档里落不干净（例如多行列表会变成两块）：退回字面段落，
+    // 保存不失败，前缀也不会丢。
+    const fallback = literalPlan(overall);
+    const fallbackNext = source.slice(0, block.startOffset) + typedReplacement(fallback, anchor, eol) + source.slice(block.endOffset);
+    const fallbackAfter = parseDocument(fallbackNext, { checkImages: false });
+    written = verifyTypedWrite(parsed, fallbackAfter, block, fallback, anchor, fail);
+    return {
+      raw: bom + fallbackNext,
+      block: written,
+      retype: block.type === fallback.type ? null : {
+        from: block.type, to: fallback.type, prefix: '', literal: fallback.literal, structure: null,
+      },
+    };
   }
-  const written = after.blocks.find((item) => item.anchor === anchor);
-  if (!written || written.raw !== normalized) fail('block_structure', '写入后无法按同一块读回，已拒绝');
-  return { raw: bom + next, block: written };
+  return {
+    raw: bom + next,
+    block: written,
+    retype: block.type === plan.type && !plan.structural ? null : {
+      from: block.type,
+      to: plan.type,
+      prefix: plan.prefix,
+      literal: plan.literal,
+      structure: plan.structural ? plan.type : null,
+    },
+  };
 }
 
 // ───────────── 分块与合并：块的数量这两种操作会变，所以各有显式命令 ─────────────
@@ -834,13 +1104,24 @@ function formatBlockContent(type, prefix, content) {
 // （页空、章节空、块落在页外），它们照样落盘。结构问题由快照带回、由交付口的
 // `validate-doc` 与 CI 判定；这里只验证「这次操作本身做对了」（块身份、数量、顺序）。
 
+/** 这一段是以块前缀开头的整块 raw（而不是块内行内内容）。 */
+const TYPED_MARKER_START_RE = /^(?:#{1,6}[ \t]|[-*+][ \t]|\d+[.)][ \t]|>[ \t]|`{3,}|~{3,}|\|)/;
+const startsWithTypedMarker = (text) => TYPED_MARKER_START_RE.test(String(text ?? ''));
+
+/** 按原块类型把行内内容拼回块 raw 的计划（不带锚点）。 */
+function inlinePlan(type, prefix, content) {
+  const raw = formatBlockContent(type, prefix, content);
+  return { type, structural: false, prefix, literal: null, raw, rest: '' };
+}
+
 /**
  * 在光标处把一块拆成两块：前半留在原锚点，后半拿一个新锚点，紧跟在原块之后。
  *
- * 入参的 before / after 是**块内行内 Markdown**（不含 `- ` / `> ` / `### ` 这些块前缀），
- * 块前缀由这里按原块类型补：标题拆开后，后半退成正文段落；列表与引用保持同类。
+ * 入参的 before / after 默认是**块内行内 Markdown**（不含 `- ` / `> ` / `### ` 这些块前缀），
+ * 块前缀由这里按原块类型补。但一段如果自己以块前缀开头（页面里的待定块第一次输入就是这样），
+ * 它就按前缀决定类型：`### ` 得到标题块，`## ` 得到一页（这一半没有块身份，锚点留给另一半）。
  *
- * @returns {{raw:string, block:object, newBlock:object}}
+ * @returns {{raw:string, block:object, newBlock:object|null}}
  */
 export function splitBlockContent(raw, { anchor, before, after, keep = 'before' } = {}, options = {}) {
   const { eol = String(raw).includes('\r\n') ? '\r\n' : '\n', generate = generateAnchor } = options;
@@ -866,32 +1147,58 @@ export function splitBlockContent(raw, { anchor, before, after, keep = 'before' 
   if (!second.trim()) reorderFail('block_empty', '拆分后后半为空：空块没有锚点可落，不能写进文档');
 
   const prefix = blockPrefix(block);
-  const firstRaw = formatBlockContent(block.type, prefix, first);
+  // 前半守住原锚点，所以它只能在这四类块里变；后半是新块，标题 / 列表 / 引用 / 代码 / 表格都行。
+  const firstPlan = startsWithTypedMarker(first)
+    ? planTypedBlock(first, { currentType: block.type, currentPrefix: '' })
+    : inlinePlan(block.type, prefix, first);
+  if (firstPlan.structural) {
+    reorderFail('block_structure', '前半是页 / 章节标题时没有块身份可留；先把标题写完再分块');
+  }
+  if (!SPLITTABLE_TYPES.has(firstPlan.type)) {
+    reorderFail('block_split_type', `拆分出的${TYPE_NAMES[firstPlan.type] ?? firstPlan.type}不能带着原锚点；只有段落 / 标题 / 列表项 / 引用可以`);
+  }
   // 标题回车后的后半是正文：再写一个同级别标题会把页内小节越拆越深。
   const secondType = block.type === 'heading' ? 'paragraph' : block.type;
-  const secondRaw = formatBlockContent(secondType, secondType === 'heading' ? '' : prefix, second);
+  const secondPlan = startsWithTypedMarker(second)
+    ? planTypedBlock(second, { currentType: secondType, currentPrefix: '' })
+    : inlinePlan(secondType, secondType === 'heading' ? '' : prefix, second);
+  if (secondPlan.structural && keep === 'after') {
+    reorderFail('block_structure', '后半变成页 / 章节标题时，原锚点不能跟着这一半；请用 keep: before');
+  }
+
   const seen = new Set(parsed.blocks.map((item) => item.anchor).filter(Boolean));
   const newAnchor = generate(seen);
   // 块首回车时新块在前半，原锚点要跟着原来的内容留到后半；两种落法都只换这一处。
   const firstAnchor = keep === 'after' ? newAnchor : anchor;
   const secondAnchor = keep === 'after' ? anchor : newAnchor;
-  const replacement = `${firstRaw}<!-- ${firstAnchor} -->${eol}${eol}${secondRaw}<!-- ${secondAnchor} -->`;
+  const firstRaw = typedReplacement(firstPlan, firstAnchor, eol);
+  const secondRaw = typedReplacement(secondPlan, secondAnchor, eol);
+  const replacement = `${firstRaw}${eol}${eol}${secondRaw}`;
   const next = source.slice(0, block.startOffset) + replacement + source.slice(block.endOffset);
 
   const afterDocument = parseDocument(next, { checkImages: false });
   const position = parsed.blocks.indexOf(block);
   const firstBlock = afterDocument.blocks[position];
-  const secondBlock = afterDocument.blocks[position + 1];
-  if (afterDocument.blocks.length !== parsed.blocks.length + 1
-    || firstBlock?.anchor !== firstAnchor || firstBlock.raw !== firstRaw
-    || secondBlock?.anchor !== secondAnchor || secondBlock.raw !== secondRaw) {
+  const secondBlock = secondPlan.structural ? null : afterDocument.blocks[position + 1];
+  const expectedCount = parsed.blocks.length + (secondPlan.structural ? 0 : 1);
+  if (afterDocument.blocks.length !== expectedCount
+    || firstBlock?.anchor !== firstAnchor || firstBlock.raw !== firstPlan.raw || firstBlock.type !== firstPlan.type
+    || (!secondPlan.structural
+      && (secondBlock?.anchor !== secondAnchor || secondBlock.raw !== secondPlan.raw || secondBlock.type !== secondPlan.type))) {
     reorderFail('block_structure', '拆分后的块序列与预期不一致，已拒绝');
   }
   const pageOf = (item) => pageKeyOf(item.page) ?? '0-0';
-  if (pageOf(firstBlock) !== pageOf(block) || pageOf(secondBlock) !== pageOf(block)) {
+  if (pageOf(firstBlock) !== pageOf(block) || (secondBlock && pageOf(secondBlock) !== pageOf(block))) {
     reorderFail('block_structure', '拆分把块挪出了原来那一页，已拒绝');
   }
-  for (const piece of [firstBlock, secondBlock]) {
+  if (secondPlan.structural) {
+    const scope = secondPlan.type === 'page' ? afterDocument.pages : afterDocument.chapters;
+    const prior = secondPlan.type === 'page' ? parsed.pages : parsed.chapters;
+    if (scope.length !== prior.length + 1 || !scope.some((item) => item.title === secondPlan.title)) {
+      reorderFail('block_structure', `拆分没有干净地加出一${secondPlan.type === 'page' ? '页' : '章'}，已拒绝`);
+    }
+  }
+  for (const piece of [firstBlock, secondBlock].filter(Boolean)) {
     const check = assessBlock(piece);
     if (!check.editable) reorderFail('block_degraded', `拆分出的${TYPE_NAMES[piece.type] ?? piece.type}超出可编辑子集：${check.reason}`);
   }
@@ -974,25 +1281,49 @@ export function createBlockInPage(raw, { chapter, index, content } = {}, options
   const page = locatePage(parsed, { chapter, index });
   if (page.blocks.length) reorderFail('page_not_empty', `页「${page.title}」已经有块；新块请用拆分或拖入`);
   if (typeof content !== 'string') reorderFail('block_content', '块内容必须是文本');
-  const normalized = normalizeInline(content);
-  if (!normalized.trim()) reorderFail('block_empty', '第一块不能为空');
-  if (ANCHOR_ANY_RE.test(normalized)) reorderFail('block_content_anchor', '块内容里不能写锚点');
+  const overall = content.replace(/\r\n?/g, '\n').replace(/\s+$/, '');
+  if (!overall.trim()) reorderFail('block_empty', '第一块不能为空');
+  if (ANCHOR_ANY_RE.test(overall)) reorderFail('block_content_anchor', '块内容里不能写锚点');
   const seen = new Set(parsed.blocks.map((item) => item.anchor).filter(Boolean));
   const anchor = generate(seen);
+  // 空页的第一块同样由行首前缀决定类型：`### ` 落成标题块而不是把锚点写进标题行。
+  const plan = planTypedBlock(overall, { currentType: 'paragraph', currentPrefix: '' });
   const headingEnd = parsed.lineStarts[page.line - 1] + (parsed.lines[page.line - 1] ?? '').length;
-  const insert = `${eol}${eol}${normalized}<!-- ${anchor} -->`;
+  const insert = `${eol}${eol}${typedReplacement(plan, anchor, eol)}`;
   const next = parsed.text.slice(0, headingEnd) + insert + parsed.text.slice(headingEnd);
   const after = parseDocument(next, { checkImages: false });
-  const written = after.blocks.find((item) => item.anchor === anchor);
-  if (after.blocks.length !== parsed.blocks.length + 1
-    || after.chapters.length !== parsed.chapters.length
-    || after.pages.length !== parsed.pages.length
-    || !written || written.raw !== normalized
+  const written = after.blocks.find((item) => item.anchor === anchor) ?? null;
+  const expectedChapters = plan.structural && plan.type === 'chapter'
+    ? parsed.chapters.length + 1 : parsed.chapters.length;
+  const expectedPages = plan.structural && plan.type === 'page'
+    ? parsed.pages.length + 1 : parsed.pages.length;
+  if (after.chapters.length !== expectedChapters
+    || after.pages.length !== expectedPages
+    || after.blocks.length !== parsed.blocks.length + (plan.structural && !plan.rest ? 0 : 1)) {
+    reorderFail('block_structure', '第一块没有干净地落在这一页里，已拒绝');
+  }
+  if (plan.structural) {
+    const scope = plan.type === 'page' ? after.pages : after.chapters;
+    const prior = plan.type === 'page' ? parsed.pages : parsed.chapters;
+    if (scope.length !== prior.length + 1 || !scope.some((item) => item.title === plan.title)) {
+      reorderFail('block_structure', '第一块没有干净地变成页 / 章节，已拒绝');
+    }
+    if (plan.rest && (!written || written.raw !== escapeLiteralParagraph(plan.rest))) {
+      reorderFail('block_structure', '第一块前缀后面的正文没有干净地落盘，已拒绝');
+    }
+  } else if (!written || written.raw !== plan.raw
+    || written.type !== plan.type
     || written.page?.chapter?.index !== page.chapter.index
     || written.page.index !== page.index) {
     reorderFail('block_structure', '第一块没有干净地落在这一页里，已拒绝');
   }
-  return { raw: raw.startsWith('\uFEFF') ? `\uFEFF${next}` : next, block: written };
+  return {
+    raw: raw.startsWith('\uFEFF') ? `\uFEFF${next}` : next,
+    block: written,
+    ...(plan.structural ? {
+      retype: { from: 'paragraph', to: plan.type, prefix: plan.prefix, literal: null, structure: plan.type },
+    } : {}),
+  };
 }
 
 // ───────────── 重排：只挪位置，不换内容 ─────────────
