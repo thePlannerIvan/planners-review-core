@@ -21,7 +21,7 @@ import {
   syncManifest,
 } from './doc-assets.mjs';
 import { TASK_CONTRACT, TASK_SCOPES, createTaskBoard } from './doc-tasks.mjs';
-import { CONFLICT_CONTRACT, CONFLICT_DECISIONS, createConflictBoard } from './doc-conflicts.mjs';
+import { CONFLICT_CONTRACT, decisionsFor, createConflictBoard } from './doc-conflicts.mjs';
 import { commitDocument, journalPathFor, recoverJournal, withWriteLock } from './doc-journal.mjs';
 import { createFileBoardStores } from './doc-boards.mjs';
 import { applyStructure } from './doc-structure.mjs';
@@ -77,7 +77,9 @@ export function viewBlock(block, lockOf = () => null, conflictOf = () => null) {
     // 出处区：页末连续的引用（契约第 5 节）。位置就是语义，渲染收起成一条是工作台的事。
     in_sources: block.inSources === true,
     ...(image ? { image } : {}),
-    deferred: conflict ? { task_id: conflict.task_id, reason: conflict.reason } : null,
+    deferred: conflict
+      ? { task_id: conflict.task_id, reason: conflict.reason, source: conflict.source ?? 'model' }
+      : null,
     ...(block.type === 'table' ? { table: tableModel(block) } : {}),
   };
 }
@@ -168,7 +170,9 @@ function snapshotFrom(document, docPath, board, conflicts, journalState = null) 
       (anchor) => board.lockOf(anchor),
       (anchor) => conflicts.get(anchor),
     )),
-    deferred_blocks: conflicts.list().map(({ anchor, task_id, reason }) => ({ anchor, task_id, reason })),
+    deferred_blocks: conflicts.list().map(({ anchor, task_id, reason, source }) => ({
+      anchor, task_id, reason, source: source ?? 'model',
+    })),
     journal: journalState,
     assets: assets.manifest.assets,
     assets_manifest: basename(assets.path),
@@ -226,6 +230,9 @@ function createFirstBlock(docPath, payload, board, conflicts, faults) {
  * 另一进程刚改过的别的块因此不会被这次保存覆盖（回执 `merged: true`）。
  * 同一块被改过才停下来问人（`block_conflict`）：这时没有安全的落点，重放会覆盖别人的写入。
  * 没带这一块的基线指纹时无法判断是不是同一块，按 `stale_document` 让人刷新后再核对。
+ *
+ * 停下来之前把这次没落盘的版本写进待核对队列（`source: "human"`）：刷新、重开工作台
+ * 之后它还在，后保存的那一方能并排看到磁盘版与自己这一版、选一版落盘（票 32）。
  */
 function saveBlock(docPath, payload, board, conflicts, faults) {
   if (!payload || typeof payload !== 'object') fail('block_request', '请求体必须是 JSON 对象');
@@ -237,7 +244,9 @@ function saveBlock(docPath, payload, board, conflicts, faults) {
   return withWriteLock(docPath, () => {
     // 锁可能来自另一个进程（模型 CLI / 另一个工作台）：以磁盘上的任务板为准再判一次。
     board.refresh();
+    conflicts.refresh();
     if (board.lockOf(anchor)) fail('block_locked', `模型正在改这一段（${anchor}），等它完成后再编辑`);
+    const pending = conflicts.get(anchor);
     const document = readDocument(docPath);
     const block = blockAt(document, anchor);
     if (!block) fail('block_anchor', `找不到块 ${anchor}；文档可能已被修改，请刷新工作台`);
@@ -245,13 +254,24 @@ function saveBlock(docPath, payload, board, conflicts, faults) {
     const blockMatches = typeof baseBlockSha === 'string' && baseBlockSha === sha256(block.raw);
     if (!documentMatches && !blockMatches) {
       if (typeof baseBlockSha === 'string') {
-        // 停下来问人，但把两版都带回去：磁盘上是哪一版、这个窗口改成了哪一版。
-        fail('block_conflict', `这一块（${anchor}）在别处也被改过；你的编辑已保留，请刷新工作台后核对`, {
+        // 停下来问人，但两版都留住：磁盘上是哪一版、这个窗口改成了哪一版。
+        // 记录落盘（不是只进回执），刷新之后未落盘的版本还能恢复、还能选。
+        conflicts.defer({
+          source: 'human',
+          anchor,
+          base_block_sha256: baseBlockSha,
+          disk_sha256: sha256(block.raw),
+          disk_raw: block.raw,
+          your_content: content,
+        });
+        fail('block_conflict', `这一块（${anchor}）在别处也被改过；你的编辑已保留，请核对后选一版落盘`, {
           anchor, disk_raw: block.raw, disk_sha256: sha256(block.raw), base_block_sha256: baseBlockSha, your_content: content,
         });
       }
       fail('stale_document', `文档已在别处被修改，这一块（${anchor}）没带基线指纹、无法安全重放；请刷新工作台后再保存`);
     }
+    // 这一块已经在待核对：两版没选之前不再往盘上放新的整份编辑，先裁决。
+    if (pending) fail('block_locked', `这一块（${anchor}）正在待核对，先裁决再编辑`);
     const repaired = persistRepairs(docPath, document, faults);
     const result = applyBlockContent(repaired.raw, anchor, content);
     const receipt = commitDocument(docPath, {
@@ -284,7 +304,7 @@ function splitBlock(docPath, payload, board, conflicts, faults) {
     board.refresh();
     conflicts.refresh();
     if (board.lockOf(anchor)) fail('block_locked', `模型正在改这一段（${anchor}），等它完成后再拆分`);
-    if (conflicts.get(anchor)) fail('block_locked', `这一块（${anchor}）正在待核对，先裁决再编辑`);
+    const pending = conflicts.get(anchor);
     const document = readDocument(docPath);
     const block = blockAt(document, anchor);
     if (!block) fail('block_anchor', `找不到块 ${anchor}；文档可能已被修改，请刷新工作台`);
@@ -298,6 +318,7 @@ function splitBlock(docPath, payload, board, conflicts, faults) {
       }
       fail('stale_document', `文档已在别处被修改，这一块（${anchor}）没带基线指纹、无法安全重放；请刷新工作台后再拆分`);
     }
+    if (pending) fail('block_locked', `这一块（${anchor}）正在待核对，先裁决再编辑`);
     const repaired = persistRepairs(docPath, document, faults);
     const result = splitBlockContent(repaired.raw, { anchor, before, after, keep });
     const receipt = commitDocument(docPath, {
@@ -333,7 +354,7 @@ function mergeBlocks(docPath, payload, board, conflicts, faults) {
     board.refresh();
     conflicts.refresh();
     if (board.lockOf(anchor)) fail('block_locked', `模型正在改这一段（${anchor}），等它完成后再合并`);
-    if (conflicts.get(anchor)) fail('block_locked', `这一块（${anchor}）正在待核对，先裁决再编辑`);
+    const pending = conflicts.get(anchor);
     const document = readDocument(docPath);
     const block = blockAt(document, anchor);
     if (!block) fail('block_anchor', `找不到块 ${anchor}；文档可能已被修改，请刷新工作台`);
@@ -350,6 +371,7 @@ function mergeBlocks(docPath, payload, board, conflicts, faults) {
       }
       fail('stale_document', `文档已在别处被修改，这一块（${anchor}）没带基线指纹、无法安全重放；请刷新工作台后再合并`);
     }
+    if (pending) fail('block_locked', `这一块（${anchor}）正在待核对，先裁决再编辑`);
     const repaired = persistRepairs(docPath, document, faults);
     const result = mergeBlockContent(repaired.raw, { anchor, previous, content });
     const receipt = commitDocument(docPath, {
@@ -416,18 +438,20 @@ function feedbackTargets(document, payload) {
 }
 
 /** 提交一条块级反馈任务：只带块身份与 sha256(block.raw)，不把正文抄进任务。 */
-function submitFeedback(docPath, payload, board) {
+function submitFeedback(docPath, payload, board, conflicts) {
   if (!payload || typeof payload !== 'object') fail('feedback_request', '请求体必须是 JSON 对象');
   const text = typeof payload.text === 'string' ? payload.text.trim() : '';
   if (!text) fail('feedback_text', '请先写下要模型改什么');
   if (text.length > 4000) fail('feedback_text', '一条反馈不要超过 4000 字');
   return withWriteLock(docPath, () => {
     board.refresh();
+    conflicts.refresh();
     const read = readDocument(docPath);
     const { scope, page, blocks } = feedbackTargets(read, payload);
-    const locked = blocks.filter((block) => board.lockOf(block.anchor));
+    // 待核对的块也不能派给模型：模型写回会盖掉还没裁决的那一版（人 vs 人时是另一方的编辑）。
+    const locked = blocks.filter((block) => board.lockOf(block.anchor) || conflicts.get(block.anchor));
     if (locked.length) {
-      fail('block_locked', `这些块正由模型处理，等它完成再派发：${locked.map((block) => block.anchor).join('、')}`);
+      fail('block_locked', `这些块正由模型处理或待核对，先处理完再派发：${locked.map((block) => block.anchor).join('、')}`);
     }
     // 任务绑定的锚点必须是磁盘上也认的身份；被拒的派发不写盘。
     const document = persistRepairs(docPath, read);
@@ -447,13 +471,14 @@ function submitFeedback(docPath, payload, board) {
   });
 }
 
-/** 模型开始处理：确认任务绑定的块还在，才锁块。 */
-function claimTask(docPath, payload, board) {
+/** 模型开始处理：确认任务绑定的块还在、没有待核对，才锁块。 */
+function claimTask(docPath, payload, board, conflicts) {
   if (!payload || typeof payload !== 'object') fail('task_request', '请求体必须是 JSON 对象');
   const id = payload.task_id ?? payload.id;
   if (typeof id !== 'string' || !id) fail('task_id', '需要任务 id');
   return withWriteLock(docPath, () => {
     board.refresh();
+    conflicts.refresh();
     const task = board.get(id);
     if (!task) fail('task_missing', `找不到任务 ${id}；可能已被清理`);
     const document = readDocument(docPath);
@@ -461,6 +486,11 @@ function claimTask(docPath, payload, board) {
     const missing = task.blocks.filter(({ anchor }) => !present.has(anchor));
     if (missing.length) {
       fail('task_stale', `任务里的块已不存在：${missing.map(({ anchor }) => anchor).join('、')}；请重新提交反馈`);
+    }
+    // 待核对的块先让人裁决：模型写回会盖掉还没裁决的那一版。
+    const held = task.blocks.filter(({ anchor }) => conflicts.get(anchor));
+    if (held.length) {
+      fail('block_locked', `这些块正在待核对，先裁决再处理：${held.map(({ anchor }) => anchor).join('、')}`);
     }
     return { ok: true, task: board.claim(id) };
   });
@@ -572,29 +602,42 @@ function patchTask(docPath, payload, board, conflicts, faults) {
 }
 
 /**
- * 人裁决一块待核对：mine 保留磁盘上人的版本，model 写入模型版，discard 放弃这一块的
- * 模型改动（磁盘同样保持人的版本）。三种裁决都解锁并删除待核对记录。
+ * 人裁决一块待核对，两种来源同一套动作、同一份记录：
+ *
+ *   · 模型 vs 人（`source: "model"`）：mine 保留磁盘上人的版本，model 写入模型版，
+ *     discard 放弃这一块的模型改动（磁盘同样保持人的版本）。
+ *   · 人 vs 人（`source: "human"`）：mine 保留磁盘上先落盘的那一版，theirs 写入
+ *     后保存那个标签页的版本。没有任务可解锁。
+ *
+ * 裁决都删除待核对记录；删掉之后同一块在两边都能正常保存。
  */
 function decideConflict(docPath, payload, board, conflicts, faults) {
   if (!payload || typeof payload !== 'object') fail('conflict_request', '请求体必须是 JSON 对象');
   const { anchor, decision } = payload;
   if (typeof anchor !== 'string' || !BLOCK_ANCHOR_RE.test(anchor)) fail('conflict_anchor', '锚点形状不对');
-  if (!CONFLICT_DECISIONS.includes(decision)) fail('conflict_decision', '裁决只能是 mine / model / discard');
-
   return withWriteLock(docPath, () => {
     board.refresh();
     conflicts.refresh();
     const conflict = conflicts.get(anchor);
     if (!conflict) fail('conflict_missing', `${anchor} 没有待核对的版本；可能已经被裁决过了`);
+    // 出口由记录的来源决定：人与人的记录没有模型版可选，反之亦然。
+    const source = conflict.source === 'human' ? 'human' : 'model';
+    const allowed = decisionsFor(source);
+    if (!allowed.includes(decision)) {
+      fail('conflict_decision', `${source === 'human' ? '人与人的待核对' : '模型与人的待核对'}只能选 ${allowed.join(' / ')}`);
+    }
+    // 写盘那一侧：模型版或后保存那个标签页的版本。两种记录用不同字段装它。
+    const otherContent = source === 'human' ? conflict.your_content : conflict.model_content;
+    const writeOther = decision === 'model' || decision === 'theirs';
     const document = readDocument(docPath);
-    // 模型版落地时同样要归档：改前是裁决时的磁盘 raw，改后是这次写进去的 raw。
+    // 另一版落地时同样要归档：改前是裁决时的磁盘 raw，改后是这次写进去的 raw。
     const beforeRaw = blockAt(document, anchor)?.raw ?? conflict.disk_raw;
     let block;
     let sha = document.hash;
     let written = false;
-    if (decision === 'model') {
+    if (writeOther) {
       const repaired = persistRepairs(docPath, document, faults);
-      const result = applyBlockContent(repaired.raw, anchor, conflict.model_content);
+      const result = applyBlockContent(repaired.raw, anchor, otherContent);
       sha = commitDocument(docPath, {
         oldRaw: repaired.raw,
         raw: result.raw,
@@ -609,11 +652,11 @@ function decideConflict(docPath, payload, board, conflicts, faults) {
       sha = repaired.hash;
       block = blockAt(repaired, anchor) ?? fail('conflict_stale', `找不到块 ${anchor}；文档可能已被修改`);
     }
-    const taskId = conflict.task_id;
     conflicts.resolve(anchor);
-    const task = board.release(taskId, [anchor]);
-    // 裁决成模型版：这一块确实改成了模型的内容，这条批注才归档；保留人的版本则仍是没动。
-    const notes = written
+    // 模型那条记录挂着任务：裁决后解锁、任务收尾。人与人的记录没有任务，解不了也不该解。
+    const task = conflict.task_id ? board.release(conflict.task_id, [anchor]) : null;
+    // 裁决成另一版：这一块确实改成了那份内容，这批批注才归档；保留磁盘版则仍是没动。
+    const notes = written && task?.batch
       ? settleBatchNotes(docPath, {
         batch: task.batch,
         snapshots: new Map([[anchor, { before: beforeRaw, after: block.raw }]]),
@@ -623,14 +666,15 @@ function decideConflict(docPath, payload, board, conflicts, faults) {
       ok: true,
       contract: CONFLICT_CONTRACT,
       anchor,
+      source,
       decision,
       written,
       sha256: sha,
       block: viewBlock(block, (value) => board.lockOf(value), (value) => conflicts.get(value)),
       task,
       ...(notes ? { notes } : {}),
-      deferred_blocks: conflicts.list().map(({ anchor: value, task_id: owner, reason }) => ({
-        anchor: value, task_id: owner, reason,
+      deferred_blocks: conflicts.list().map(({ anchor: value, task_id: owner, reason, source: kind }) => ({
+        anchor: value, task_id: owner, reason, source: kind,
       })),
     };
   });
@@ -1109,7 +1153,7 @@ export async function createDocSession({ docPath, faults = null, persistent = tr
     replaceAsset: (payload) => guarded(() => replaceImageAsset(file, payload, board, conflicts)),
     history: () => historyOf(file),
     restore: (payload) => guarded(() => restoreVersion(file, payload, board, conflicts, faults)),
-    submitFeedback: (payload) => guarded(() => submitFeedback(file, payload, board)),
+    submitFeedback: (payload) => guarded(() => submitFeedback(file, payload, board, conflicts)),
     notes: () => (legacy ? { ok: true, contract: NOTES_CONTRACT, notes: [] } : listNotes(file)),
     addNote: (payload) => guarded(() => addNotes(file, payload)),
     deleteNote: (payload) => guarded(() => deleteNote(file, payload)),
@@ -1119,10 +1163,15 @@ export async function createDocSession({ docPath, faults = null, persistent = tr
     reopenNote: (payload) => guarded(() => reopenNote(file, payload)),
     // 侧栏每 3 秒轮询一次锁：读之前先读回磁盘，模型 CLI 在另一个进程里加的锁才看得见。
     tasks: () => { board.refresh(); return { ok: true, contract: TASK_CONTRACT, tasks: board.list() }; },
-    claim: (payload) => guarded(() => claimTask(file, payload, board)),
+    claim: (payload) => guarded(() => claimTask(file, payload, board, conflicts)),
     complete: (payload) => guarded(() => completeTask(file, payload, board)),
     patch: (payload) => guarded(() => patchTask(file, payload, board, conflicts, faults)),
-    conflicts: () => { conflicts.refresh(); return { ok: true, contract: CONFLICT_CONTRACT, conflicts: conflicts.list() }; },
+    // 同时给出当前文档指纹：页面轮询时据此判断「别处已经裁决 / 写过了」，两边才能看到同一份结果。
+    conflicts: () => {
+      conflicts.refresh();
+      const document = readForView(file);
+      return { ok: true, contract: CONFLICT_CONTRACT, sha256: sha256(document.raw), conflicts: conflicts.list() };
+    },
     decide: (payload) => guarded(() => decideConflict(file, payload, board, conflicts, faults)),
   };
 }

@@ -431,9 +431,15 @@ body[data-ds-dark-theme] .doc { box-shadow: inset 0 0 0 1px rgb(255 255 255 / .0
   border-radius: 6px;
 }
 .deferred-note { margin: 0 0 6px; font-size: 12px; color: #92400e; }
-.deferred-model summary { cursor: pointer; font-size: 12px; color: var(--muted); }
-.deferred-model pre {
-  margin: 6px 0 0; max-height: 160px; overflow: auto; padding: 8px;
+/* 两版并排：磁盘版与另一版各占一栏，窄了自动折成一上一下，不藏起来。 */
+.deferred-versions {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px;
+}
+.deferred-version { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.deferred-version-label { font-size: 11px; letter-spacing: .04em; color: var(--muted); }
+.deferred-version[data-side="other"] .deferred-version-label { color: #92400e; }
+.deferred-version pre {
+  margin: 0; max-height: 160px; overflow: auto; padding: 8px;
   background: #fafaf8; border-radius: 4px; font-family: var(--mono); font-size: 12px;
   line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere;
 }
@@ -747,7 +753,7 @@ body[data-ds-dark-theme] .block-code { background: #101012; color: #E7E7E1; }
 body[data-ds-dark-theme] .block-text code,
 body[data-ds-dark-theme] .doc-block table code { background: var(--trough); }
 body[data-ds-dark-theme] .doc-block th { background: var(--trough); }
-body[data-ds-dark-theme] .deferred-model pre { background: var(--trough); }
+body[data-ds-dark-theme] .deferred-version pre { background: var(--trough); }
 body[data-ds-dark-theme] .doc-block figure img { background: var(--paper); }
 body[data-ds-dark-theme] .structure-notice { background: rgb(217 165 20 / 12%); color: #E5C26A; }
 body[data-ds-dark-theme] .readonly-notice { background: rgb(217 165 20 / 14%); color: #E5C26A; }
@@ -758,7 +764,8 @@ body[data-ds-dark-theme] .feedback-submit { color: #141416; }
 /* 用墨色当底的小徽标 / 提示，在暗色里要反过来；黄条里的褐色文字也要提亮。 */
 body[data-ds-dark-theme] .selection-feedback,
 body[data-ds-dark-theme] .block-lock { color: #141416; }
-body[data-ds-dark-theme] .deferred-note { color: #E5C26A; }
+body[data-ds-dark-theme] .deferred-note,
+body[data-ds-dark-theme] .deferred-version[data-side="other"] .deferred-version-label { color: #E5C26A; }
 body[data-ds-dark-theme] .structure-group,
 body[data-ds-dark-theme] .structure-extra { color: #C9A94F; }
 body[data-ds-dark-theme] .structure-jump {

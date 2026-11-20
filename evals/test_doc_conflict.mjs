@@ -384,6 +384,141 @@ test('崩溃中断用 journal 恢复未提交的写盘，不产生幽灵块', as
   assert.equal(new Set(guardedDoc.blocks.map((block) => block.anchor)).size, guardedDoc.blocks.length);
 });
 
+// ── 人与人撞同一块：后保存的一方拿回两版，两版都落盘、刷新还在 ────────────────
+//
+// 走到公开缝：两个人就是两个工作台（两个标签页），同一份 fixture、同一个状态目录。
+// 断言只看回执、/api/conflicts、/api/doc 与磁盘字节 —— 待核对记录怎么存是实现细节。
+
+const MINE_A = 'A 这一版。';
+const MINE_B = 'B 这一版。';
+
+/** 两个标签页改同一块：A 先落盘，B 拿着过期基线后保存，必须拿回两版。 */
+async function twoTabsRace(t, docPath) {
+  const first = await openWorkbench(t, docPath);
+  const second = await openWorkbench(t, docPath);
+  const a0 = await getDoc(first.url);
+  const b0 = await getDoc(second.url);
+  assert.equal(a0.sha256, b0.sha256, '两个标签页从同一份基线打开');
+  const savedA = await postJson(`${first.url}/api/block`, {
+    anchor: 'b:aaaaaa', content: MINE_A, base_sha256: a0.sha256, base_block_sha256: blockOf(a0, 'b:aaaaaa').sha256,
+  });
+  assert.equal(savedA.status, 200, JSON.stringify(savedA.body));
+  const raced = await postJson(`${second.url}/api/block`, {
+    anchor: 'b:aaaaaa', content: MINE_B, base_sha256: b0.sha256, base_block_sha256: blockOf(b0, 'b:aaaaaa').sha256,
+  });
+  assert.equal(raced.status, 409, JSON.stringify(raced.body));
+  assert.equal(raced.body.code, 'block_conflict');
+  return { first, second, raced };
+}
+
+test('人与人撞同一块：后保存的一方拿回磁盘版与自己的版本，两个标签页都看到待核对', async (t) => {
+  const { path } = scratchDoc();
+  const { first, second, raced } = await twoTabsRace(t, path);
+
+  // 回执里两版都在，磁盘一个字节都不动。
+  assert.equal(raced.body.details.disk_raw, MINE_A, '回执要给出磁盘上那一版');
+  assert.equal(raced.body.details.your_content, MINE_B, '回执要给出这个标签页这一版');
+  assert.ok(readFileSync(path, 'utf8').includes(`${MINE_A}<!-- b:aaaaaa -->`), '撞车不落盘');
+
+  // 两个标签页读到同一条待核对：人与人的记录不挂任务，带自己的那一版。
+  for (const server of [first, second]) {
+    const whole = await getConflicts(server.url);
+    assert.equal(typeof whole.sha256, 'string', '待核对回执要带当前文档指纹，页面才知道别处裁决完了');
+    assert.equal(whole.conflicts.length, 1, '两个标签页看到同一条待核对');
+    const [record] = whole.conflicts;
+    assert.equal(record.anchor, 'b:aaaaaa');
+    assert.equal(record.source, 'human', '记录要说明这是人与人撞车，不是模型撞车');
+    assert.equal(record.task_id, null, '人与人的待核对不挂任务');
+    assert.equal(record.disk_raw, MINE_A);
+    assert.equal(record.your_content, MINE_B, '未落盘的版本必须留在盘上，刷新才不会丢');
+    const doc = await getDoc(server.url);
+    assert.equal(whole.sha256, doc.sha256, '待核对回执的指纹就是文档指纹');
+    assert.equal(blockOf(doc, 'b:aaaaaa').locked, true, '待核对期间这一块不可编辑');
+    assert.ok(blockOf(doc, 'b:aaaaaa').deferred, '块视图要标出待核对');
+  }
+
+  // 待核对没裁决之前不能把这一块派给模型：否则模型写回会盖掉未落盘的那一版。
+  const blocked = await postJson(`${first.url}/api/feedback`, {
+    scope: 'blocks', anchors: ['b:aaaaaa'], text: '模型来改这一块。',
+  });
+  assert.equal(blocked.status, 409, JSON.stringify(blocked.body));
+  assert.equal(blocked.body.code, 'block_locked', '待核对的块先裁决，再派发');
+});
+
+test('选一版落盘：用我这一版 / 保留磁盘版，两个标签页看到同一份结果', async (t) => {
+  const { path } = scratchDoc();
+  const { first, second } = await twoTabsRace(t, path);
+
+  // 人与人的两版只有两个出口：模型版那套 decision 不能拿来用，被拒也不动待核对。
+  const wrong = await postJson(`${second.url}/api/conflict/decide`, { anchor: 'b:aaaaaa', decision: 'model' });
+  assert.equal(wrong.status, 400, JSON.stringify(wrong.body));
+  assert.equal(wrong.body.code, 'conflict_decision', '人与人的记录没有模型版可留');
+  assert.equal((await getConflicts(second.url)).conflicts.length, 1, '被拒的裁决不能动待核对');
+
+  // 出口一：用「我这一版」（后保存的那一方）。
+  const theirs = await postJson(`${second.url}/api/conflict/decide`, { anchor: 'b:aaaaaa', decision: 'theirs' });
+  assert.equal(theirs.status, 200, JSON.stringify(theirs.body));
+  assert.equal(theirs.body.decision, 'theirs');
+  assert.equal(theirs.body.written, true, '选我这一版要落盘');
+  assert.equal(theirs.body.block.raw, MINE_B);
+  assert.ok(readFileSync(path, 'utf8').includes(`${MINE_B}<!-- b:aaaaaa -->`), '选中的一版要写到盘上');
+
+  const finalA = await getDoc(first.url);
+  const finalB = await getDoc(second.url);
+  assert.equal(finalA.sha256, finalB.sha256, '裁决后两个标签页指向同一份文档');
+  assert.equal(blockOf(finalA, 'b:aaaaaa').raw, MINE_B);
+  assert.equal(blockOf(finalB, 'b:aaaaaa').raw, MINE_B);
+  for (const url of [first.url, second.url]) {
+    assert.equal((await getConflicts(url)).conflicts.length, 0, '裁决后两个标签页都不再有这条待核对');
+  }
+
+  // 出口二：保留磁盘版（不写盘，另一方的版本被明确放弃）。
+  const c0 = await getDoc(first.url);
+  const d0 = await getDoc(second.url);
+  const diskNow = '磁盘这一版。';
+  const savedC = await postJson(`${first.url}/api/block`, {
+    anchor: 'b:aaaaaa', content: diskNow, base_sha256: c0.sha256, base_block_sha256: blockOf(c0, 'b:aaaaaa').sha256,
+  });
+  assert.equal(savedC.status, 200, JSON.stringify(savedC.body));
+  const racedAgain = await postJson(`${second.url}/api/block`, {
+    anchor: 'b:aaaaaa', content: '我的第二版。', base_sha256: d0.sha256, base_block_sha256: blockOf(d0, 'b:aaaaaa').sha256,
+  });
+  assert.equal(racedAgain.status, 409, JSON.stringify(racedAgain.body));
+
+  const keep = await postJson(`${second.url}/api/conflict/decide`, { anchor: 'b:aaaaaa', decision: 'mine' });
+  assert.equal(keep.status, 200, JSON.stringify(keep.body));
+  assert.equal(keep.body.written, false, '保留磁盘版不需要写盘');
+  assert.equal(keep.body.block.raw, diskNow);
+  assert.ok(readFileSync(path, 'utf8').includes(`${diskNow}<!-- b:aaaaaa -->`));
+  assert.equal((await getConflicts(first.url)).conflicts.length, 0);
+  assert.equal((await getConflicts(second.url)).conflicts.length, 0);
+  assert.equal(blockOf(await getDoc(second.url), 'b:aaaaaa').raw, diskNow);
+});
+
+test('不选就不会静默丢编辑：重开工作台后未落盘的版本还在，仍能选一版落盘', async (t) => {
+  const { path } = scratchDoc();
+  const { first, second, raced } = await twoTabsRace(t, path);
+  assert.equal(raced.status, 409);
+
+  // 「刷新」= 关掉后保存的那个标签页，换一个新会话重新打开同一份文档。
+  await second.close();
+  const reopened = await openWorkbench(t, path);
+
+  const recovered = await getConflicts(reopened.url);
+  assert.equal(recovered.conflicts.length, 1, '刷新后待核对还在');
+  assert.equal(recovered.conflicts[0].your_content, MINE_B, '未落盘的版本从盘上恢复，不是只在内存里');
+  assert.equal(recovered.conflicts[0].disk_raw, MINE_A, '磁盘版也还在，两版能并排比');
+  assert.equal(blockOf(await getDoc(reopened.url), 'b:aaaaaa').locked, true);
+
+  // 刷新之后照样能选：用我那一版落盘。
+  const theirs = await postJson(`${reopened.url}/api/conflict/decide`, { anchor: 'b:aaaaaa', decision: 'theirs' });
+  assert.equal(theirs.status, 200, JSON.stringify(theirs.body));
+  assert.equal(theirs.body.written, true);
+  assert.ok(readFileSync(path, 'utf8').includes(`${MINE_B}<!-- b:aaaaaa -->`));
+  assert.equal((await getConflicts(first.url)).conflicts.length, 0, '第一个标签页也看到裁决已生效');
+  assert.equal(blockOf(await getDoc(first.url), 'b:aaaaaa').raw, MINE_B);
+});
+
 // ── 渲染面：待核对块要有可见状态、两个版本与三个裁决入口 ──────────────────────
 test('工作台页面为待核对块给出三个裁决入口，并按块带上保存基线', () => {
   const page = readFileSync(join(core, 'assets', 'workbench', 'doc-workbench.js'), 'utf8');
@@ -402,4 +537,25 @@ test('工作台页面为待核对块给出三个裁决入口，并按块带上�
   assert.match(page, /'review'/, '待核对状态属于锁定态');
   assert.match(css, /\.block-deferred/, '待核对面板必须有样式');
   assert.match(css, /\.is-deferred/, '待核对块要有可见状态');
+});
+
+// ── 渲染面：人与人的待核对复用同一个面板，两版并排、两个出口 ────────────────
+test('工作台把人与人的待核对放进同一个面板：磁盘版与我这一版并排，按来源换出口', () => {
+  const page = readFileSync(join(core, 'assets', 'workbench', 'doc-workbench.js'), 'utf8');
+  const css = readFileSync(join(core, 'assets', 'workbench', 'doc-workbench.css'), 'utf8');
+
+  // 同一个面板、同一套样式：不许另造一套「人的冲突」组件。
+  assert.match(page, /block-deferred/, '复用既有待核对面板');
+  assert.match(page, /deferred-versions/, '两版并排，不是折叠一行');
+  assert.match(page, /disk_raw/, '磁盘版要显示');
+  assert.match(page, /your_content/, '未落盘的版本要显示');
+  assert.match(page, /source === 'human'/, '按记录来源换文案与出口，不按任务猜');
+  assert.match(page, /'theirs'/, '人与人的两个出口是 mine / theirs，不借用模型版的 model');
+  for (const label of ['保留磁盘版', '用我这一版']) {
+    assert.ok(page.includes(label), `缺少人与人待核对的出口 ${label}`);
+  }
+  assert.match(page, /transport\.decide\(/, '裁决仍走同一条命令');
+  assert.match(page, /receipt\.sha256/, '轮询要知道文档指纹变了，另一方才看得到裁决结果');
+  assert.match(page, /transport\.open\(\)/, '别处裁决后重新打开，双方看到同一份结果');
+  assert.match(css, /\.deferred-versions/, '两版并排必须有样式');
 });
