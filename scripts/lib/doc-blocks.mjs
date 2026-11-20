@@ -34,6 +34,13 @@ export const TYPE_NAMES = {
 };
 export const STANDALONE = new Set(['image', 'table', 'code']);
 export const BLOCK_TYPES = new Set(['paragraph', 'heading', 'list', 'image', 'table', 'code', 'quote']);
+/**
+ * 页中间敲 `# 标题` 造章后自动补的那一页（票 36）。
+ *
+ * 造章会让原页剩下的块失去页身份，所以新章下面紧跟一个占位页把它们收住，
+ * 一个块都不掉到页外；页名本身就是给人改的提示，页面会把它切到可编辑并选中。
+ */
+export const PENDING_PAGE_TITLE = '标题待修改';
 const BLOCK_TAGS = new Set([
   'address', 'article', 'aside', 'blockquote', 'canvas', 'details', 'div', 'dl', 'fieldset',
   'figcaption', 'figure', 'footer', 'form', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header',
@@ -940,9 +947,51 @@ function typedReplacement(plan, anchor, eol) {
   if (plan.structural) {
     const line = `${'#'.repeat(plan.level)} ${plan.title}`;
     const rest = plan.rest ? escapeLiteralParagraph(plan.rest) : '';
-    return rest ? `${line}${eol}${eol}${rest}${anchorText}` : line;
+    // 造章之后紧跟一个占位页（票 36）：原页剩下的块要归到某个页里。
+    const head = plan.autoPage
+      ? `${line}${eol}${eol}## ${plan.pageTitle ?? PENDING_PAGE_TITLE}`
+      : line;
+    return rest ? `${head}${eol}${eol}${rest}${anchorText}` : head;
   }
   return STANDALONE.has(plan.type) ? `${plan.raw}${eol}${anchorText}` : `${plan.raw}${anchorText}`;
+}
+
+/** 这一块所在页里，排在它后面的块（造章之后它们会失去页身份）。 */
+function pageBlocksAfter(block) {
+  const blocks = block.page?.blocks;
+  if (!blocks) return false;
+  const index = blocks.indexOf(block);
+  return index >= 0 && index < blocks.length - 1;
+}
+
+/**
+ * 造章之后要不要自动补一个占位页（票 36）：后面还有块要收（同一个页里排在它后面的块，
+ * 或者拆分出来的另一半）就得补，否则那些块会变成页外块。页首 / 空页没有块可收时不补。
+ */
+function withAutoPage(plan, following) {
+  if (!plan.structural || plan.type !== 'chapter') return plan;
+  if (!plan.rest && !following) return plan;
+  return { ...plan, autoPage: true, pageTitle: PENDING_PAGE_TITLE };
+}
+
+/**
+ * 回执里「自动补的那一页」：新章下面两行、标题是占位名的那一页。
+ * 页面拿到 `key` 就能直接定位到那一页的标题、切到可编辑。
+ *
+ * 按**行**找而不是按「新增的页身份」找：页身份是章节号 + 页内序号，造章会让后面的
+ * 章节整体后移，新页可能拿到一个旧页用过的身份（例如原来章二的第 1 页）。
+ */
+function autoPageView(after, plan, chapterLine) {
+  if (!plan.autoPage) return null;
+  const title = plan.pageTitle ?? PENDING_PAGE_TITLE;
+  const page = after.pages.find((item) => item.line === chapterLine + 2 && item.title === title);
+  if (!page) return null;
+  return {
+    chapter: page.chapter?.index ?? null,
+    index: page.index,
+    title: page.title,
+    key: pageKeyOf(page),
+  };
 }
 
 const pageIdentity = (block) => pageKeyOf(block.page) ?? '-';
@@ -995,9 +1044,9 @@ function verifyTypedWrite(parsed, after, block, plan, anchor, fail) {
     || remaining.some((item, index) => item.raw !== others[index].raw || item.type !== others[index].type)) {
     fail('block_structure', '结构变化动到了别的块，已拒绝');
   }
-  // 页外块只许减少，不许增加（票 34）：`# ` 落在页中间时，同一页后面剩下的块会全被
-  // 推到页外。这种「造出来的章节」不干净 —— 退回字面段落（保存不失败，文字还在），
-  // 由人显式地把章节加在章节边界上。`## ` 是页边界本身，落在页中间不产生页外块。
+  // 页外块只许减少，不许增加（票 34）：这条不变量是「造结构不许把人写下的正文与出处
+  // 推出页外」的兜底判据。票 36 把 `# ` 落在页中间这条放宽成「造章 + 自动补一个占位页」，
+  // 占位页会把原来这页剩下的块全收住，所以这里仍然必须是「不增加」。
   if (outsidePageCount(after) > outsidePageCount(parsed)) {
     fail('block_structure', '这次结构变化会把同一页后面的块推出页外，已拒绝');
   }
@@ -1011,11 +1060,23 @@ function verifyTypedWrite(parsed, after, block, plan, anchor, fail) {
   if (!created || titlesOf(scope, plan.title) !== titlesOf(prior, plan.title) + 1) {
     fail('block_structure', `写入后找不到标题为「${plan.title}」的${plan.type === 'page' ? '页' : '章节'}，已拒绝`);
   }
+  // 造章时补的占位页必须正好落在新章下面一行（空行之后），并且页数只多这一个。
+  if (plan.autoPage) {
+    const pageTitle = plan.pageTitle ?? PENDING_PAGE_TITLE;
+    const auto = after.pages.find((item) => item.line === line + 2 && item.title === pageTitle);
+    if (!auto) fail('block_structure', '自动补的那一页没有落在新章下面，已拒绝');
+    if (after.pages.length !== parsed.pages.length + 1) {
+      fail('block_structure', '自动补页时页的数量对不上，已拒绝');
+    }
+  } else if (plan.type === 'chapter' && after.pages.length !== parsed.pages.length) {
+    fail('block_structure', '造章没有补出该补的页，已拒绝');
+  }
   if (plan.type === 'page' && rest) {
     if (remainder.page?.title !== plan.title) fail('block_structure', '前缀后面的正文没有落在新页里，已拒绝');
   }
   if (plan.type === 'chapter' && rest) {
-    if (remainder.chapter?.title !== plan.title) fail('block_structure', '前缀后面的正文没有落在新章节下，已拒绝');
+    const expected = plan.autoPage ? (plan.pageTitle ?? PENDING_PAGE_TITLE) : plan.title;
+    if (remainder.page?.title !== expected) fail('block_structure', '前缀后面的正文没有落在新页里，已拒绝');
   }
   return null;
 }
@@ -1047,9 +1108,11 @@ export function applyBlockContent(raw, anchor, content, options = {}) {
 
   const planned = planTypedBlock(overall, { currentType: block.type, currentPrefix: blockPrefix(block) });
   // 模型写回与待核对裁决只换内容：结构行由显式的结构 / 重排命令产生，不从一个 patch 里长出来。
-  const plan = planned.structural && !allowStructure
-    ? literalPlan(overall)
-    : planned;
+  const structural = planned.structural && allowStructure ? planned : null;
+  // `# ` 落在页中间时，原页剩下的块要有页可归（票 36）：造章 + 补一个占位页。
+  const plan = structural
+    ? withAutoPage(structural, pageBlocksAfter(block))
+    : (planned.structural ? literalPlan(overall) : planned);
   const replacement = typedReplacement(plan, anchor, eol);
   const next = source.slice(0, block.startOffset) + replacement + source.slice(block.endOffset);
   const after = parseDocument(next, { checkImages: false });
@@ -1072,6 +1135,7 @@ export function applyBlockContent(raw, anchor, content, options = {}) {
       },
     };
   }
+  const autoPage = autoPageView(after, plan, block.startLine);
   return {
     raw: bom + next,
     block: written,
@@ -1081,6 +1145,7 @@ export function applyBlockContent(raw, anchor, content, options = {}) {
       prefix: plan.prefix,
       literal: plan.literal,
       structure: plan.structural ? plan.type : null,
+      ...(autoPage ? { auto_page: autoPage } : {}),
     },
   };
 }
@@ -1164,30 +1229,44 @@ export function splitBlockContent(raw, { anchor, before, after, keep = 'before' 
   if (!second.trim()) reorderFail('block_empty', '拆分后后半为空：空块没有锚点可落，不能写进文档');
 
   const prefix = blockPrefix(block);
-  // 前半守住原锚点，所以它只能在这四类块里变；后半是新块，标题 / 列表 / 引用 / 代码 / 表格都行。
-  const firstPlan = startsWithTypedMarker(first)
+  // 两半都可以由行首前缀定类型：前半敲 `# 标题`（页首块上回车，票 36）就变成章节，
+  // 后半是新块，标题 / 列表 / 引用 / 代码 / 表格都行。
+  const plannedFirst = startsWithTypedMarker(first)
     ? planTypedBlock(first, { currentType: block.type, currentPrefix: '' })
     : inlinePlan(block.type, prefix, first);
-  if (firstPlan.structural) {
-    reorderFail('block_structure', '前半是页 / 章节标题时没有块身份可留；先把标题写完再分块');
-  }
-  if (!SPLITTABLE_TYPES.has(firstPlan.type)) {
-    reorderFail('block_split_type', `拆分出的${TYPE_NAMES[firstPlan.type] ?? firstPlan.type}不能带着原锚点；只有段落 / 标题 / 列表项 / 引用可以`);
+  if (!plannedFirst.structural && !SPLITTABLE_TYPES.has(plannedFirst.type)) {
+    reorderFail('block_split_type', `拆分出的${TYPE_NAMES[plannedFirst.type] ?? plannedFirst.type}不能带着原锚点；只有段落 / 标题 / 列表项 / 引用可以`);
   }
   // 标题回车后的后半是正文：再写一个同级别标题会把页内小节越拆越深。
   const secondType = block.type === 'heading' ? 'paragraph' : block.type;
-  const secondPlan = startsWithTypedMarker(second)
+  const plannedSecond = startsWithTypedMarker(second)
     ? planTypedBlock(second, { currentType: secondType, currentPrefix: '' })
     : inlinePlan(secondType, secondType === 'heading' ? '' : prefix, second);
-  if (secondPlan.structural && keep === 'after') {
-    reorderFail('block_structure', '后半变成页 / 章节标题时，原锚点不能跟着这一半；请用 keep: before');
+
+  // 哪一半有块身份：结构行只有带正文（`# 标题` 下面那段）时才有块可落。
+  const firstHasBlock = !plannedFirst.structural || Boolean(plannedFirst.rest);
+  const secondHasBlock = !plannedSecond.structural || Boolean(plannedSecond.rest);
+  // 原锚点优先跟着 `keep` 指定的那一半；那一半变成结构行、没有块身份时，落到另一半上。
+  // 两半都没有块身份时不猜：拒绝，而不是让块身份悄悄消失。
+  const preferred = keep === 'after' ? secondHasBlock : firstHasBlock;
+  const anchorSide = preferred
+    ? (keep === 'after' ? 'second' : 'first')
+    : (keep === 'after' ? 'first' : 'second');
+  if (anchorSide === 'first' ? !firstHasBlock : !secondHasBlock) {
+    reorderFail('block_structure', '拆分出来的两半都没有块身份可落；请把标题写完再分块');
   }
+
+  // 造章时把原来这页剩下的块收进自动补的页：两半都可能是 `# `，后半如果是结构行，
+  // 它自己会收住后面的块，前半就不用再补。
+  const blocksAfter = pageBlocksAfter(block);
+  const firstFollowing = secondHasBlock || (blocksAfter && !plannedSecond.structural);
+  const firstPlan = withAutoPage(plannedFirst, firstFollowing);
+  const secondPlan = withAutoPage(plannedSecond, blocksAfter);
 
   const seen = new Set(parsed.blocks.map((item) => item.anchor).filter(Boolean));
   const newAnchor = generate(seen);
-  // 块首回车时新块在前半，原锚点要跟着原来的内容留到后半；两种落法都只换这一处。
-  const firstAnchor = keep === 'after' ? newAnchor : anchor;
-  const secondAnchor = keep === 'after' ? anchor : newAnchor;
+  const firstAnchor = anchorSide === 'second' ? newAnchor : anchor;
+  const secondAnchor = anchorSide === 'first' ? newAnchor : anchor;
   const firstRaw = typedReplacement(firstPlan, firstAnchor, eol);
   const secondRaw = typedReplacement(secondPlan, secondAnchor, eol);
   const replacement = `${firstRaw}${eol}${eol}${secondRaw}`;
@@ -1195,39 +1274,104 @@ export function splitBlockContent(raw, { anchor, before, after, keep = 'before' 
 
   const afterDocument = parseDocument(next, { checkImages: false });
   const position = parsed.blocks.indexOf(block);
-  const firstBlock = afterDocument.blocks[position];
-  const secondBlock = secondPlan.structural ? null : afterDocument.blocks[position + 1];
-  const expectedCount = parsed.blocks.length + (secondPlan.structural ? 0 : 1);
+  const firstPiece = firstPlan.structural
+    ? (firstPlan.rest ? { anchor: firstAnchor, raw: escapeLiteralParagraph(firstPlan.rest), type: 'paragraph' } : null)
+    : { anchor: firstAnchor, raw: firstPlan.raw, type: firstPlan.type };
+  const secondPiece = secondPlan.structural
+    ? (secondPlan.rest ? { anchor: secondAnchor, raw: escapeLiteralParagraph(secondPlan.rest), type: 'paragraph' } : null)
+    : { anchor: secondAnchor, raw: secondPlan.raw, type: secondPlan.type };
+  const pieces = [firstPiece, secondPiece].filter(Boolean);
+  const expectedCount = parsed.blocks.length - 1 + pieces.length;
+  const sequence = [
+    ...parsed.blocks.slice(0, position),
+    ...pieces,
+    ...parsed.blocks.slice(position + 1),
+  ];
   if (afterDocument.blocks.length !== expectedCount
-    || firstBlock?.anchor !== firstAnchor || firstBlock.raw !== firstPlan.raw || firstBlock.type !== firstPlan.type
-    || (!secondPlan.structural
-      && (secondBlock?.anchor !== secondAnchor || secondBlock.raw !== secondPlan.raw || secondBlock.type !== secondPlan.type))) {
+    || sequence.some((item, index) => {
+      const written = afterDocument.blocks[index];
+      return !written || written.anchor !== item.anchor || written.raw !== item.raw || written.type !== item.type;
+    })) {
     reorderFail('block_structure', '拆分后的块序列与预期不一致，已拒绝');
   }
-  const pageOf = (item) => pageKeyOf(item.page) ?? '0-0';
-  if (pageOf(firstBlock) !== pageOf(block) || (secondBlock && pageOf(secondBlock) !== pageOf(block))) {
+  // 页外块只许减少，不许增加（票 34 / 票 36）：造章补了占位页之后，原来这页剩下的块
+  // 一个都不许掉到页外。
+  if (outsidePageCount(afterDocument) > outsidePageCount(parsed)) {
+    reorderFail('block_structure', '拆分出来的结构会把同一页后面的块推出页外，已拒绝');
+  }
+  const firstLine = block.startLine;
+  // 后半从「前半占的行数 + 一个空行」之后开始。
+  const secondLine = firstLine + firstRaw.split(/\r?\n/).length + 1;
+  const verifyStructure = (plan, line) => {
+    if (!plan.structural) return;
+    const scope = plan.type === 'page' ? afterDocument.pages : afterDocument.chapters;
+    if (!scope.some((item) => item.line === line && item.title === plan.title)) {
+      reorderFail('block_structure', `拆分没有干净地加出一${plan.type === 'page' ? '页' : '章'}，已拒绝`);
+    }
+    if (plan.autoPage) {
+      const title = plan.pageTitle ?? PENDING_PAGE_TITLE;
+      if (!afterDocument.pages.some((item) => item.line === line + 2 && item.title === title)) {
+        reorderFail('block_structure', '自动补的那一页没有落在新章下面，已拒绝');
+      }
+    }
+  };
+  verifyStructure(firstPlan, firstLine);
+  verifyStructure(secondPlan, secondLine);
+  const expectedChapters = parsed.chapters.length
+    + (firstPlan.type === 'chapter' ? 1 : 0) + (secondPlan.type === 'chapter' ? 1 : 0);
+  const expectedPages = parsed.pages.length
+    + (firstPlan.type === 'page' ? 1 : 0) + (secondPlan.type === 'page' ? 1 : 0)
+    + (firstPlan.autoPage ? 1 : 0) + (secondPlan.autoPage ? 1 : 0);
+  if (afterDocument.chapters.length !== expectedChapters || afterDocument.pages.length !== expectedPages) {
+    reorderFail('block_structure', '拆分出来的结构数量与预期不一致，已拒绝');
+  }
+  // 每块要么留在原来那一页，要么归到这一半造出来的页里，不许掉出页外。
+  const firstPieceBlock = firstHasBlock ? afterDocument.blocks[position] : null;
+  const secondPieceBlock = secondHasBlock
+    ? afterDocument.blocks[position + (firstHasBlock ? 1 : 0)] : null;
+  const pageKeyAt = (line) => pageKeyOf(afterDocument.pages.find((item) => item.line === line));
+  const firstPiecePage = firstPlan.structural
+    ? (firstPlan.type === 'page' ? pageKeyAt(firstLine) : (firstPlan.autoPage ? pageKeyAt(firstLine + 2) : null))
+    : pageKeyOf(block.page);
+  const secondPiecePage = secondPlan.structural
+    ? (secondPlan.type === 'page' ? pageKeyAt(secondLine) : (secondPlan.autoPage ? pageKeyAt(secondLine + 2) : null))
+    : (firstPlan.structural
+      ? (firstPlan.type === 'page' ? pageKeyAt(firstLine) : (firstPlan.autoPage ? pageKeyAt(firstLine + 2) : null))
+      : pageKeyOf(block.page));
+  if (firstPieceBlock && pageKeyOf(firstPieceBlock.page) !== firstPiecePage) {
     reorderFail('block_structure', '拆分把块挪出了原来那一页，已拒绝');
   }
-  if (secondPlan.structural) {
-    // 拆分出来的 `# ` 同样不能落在页中间：后半之后的块会掉到页外（票 34）。
-    if (outsidePageCount(afterDocument) > outsidePageCount(parsed)) {
-      reorderFail('block_structure', '拆分出来的章节会把同一页后面的块推出页外，已拒绝');
-    }
-    const scope = secondPlan.type === 'page' ? afterDocument.pages : afterDocument.chapters;
-    const prior = secondPlan.type === 'page' ? parsed.pages : parsed.chapters;
-    if (scope.length !== prior.length + 1 || !scope.some((item) => item.title === secondPlan.title)) {
-      reorderFail('block_structure', `拆分没有干净地加出一${secondPlan.type === 'page' ? '页' : '章'}，已拒绝`);
-    }
+  if (secondPieceBlock && pageKeyOf(secondPieceBlock.page) !== secondPiecePage) {
+    reorderFail('block_structure', '拆分把块挪出了原来那一页，已拒绝');
   }
-  for (const piece of [firstBlock, secondBlock].filter(Boolean)) {
-    const check = assessBlock(piece);
-    if (!check.editable) reorderFail('block_degraded', `拆分出的${TYPE_NAMES[piece.type] ?? piece.type}超出可编辑子集：${check.reason}`);
-  }
-  // 回执里 block 永远是「守住原锚点的那一块」，newBlock 是这次新生成的块：
+  pieces.forEach((piece, index) => {
+    const written = afterDocument.blocks[position + index];
+    const check = assessBlock(written);
+    if (!check.editable) reorderFail('block_degraded', `拆分出的${TYPE_NAMES[written.type] ?? written.type}超出可编辑子集：${check.reason}`);
+  });
+  // 回执里 block 是「守住原锚点的那一块」，newBlock 是这次新生成的块：
   // 块首回车时新块在前、原块在后，但身份跟着内容走，不能按前后位置命名。
-  const kept = keep === 'after' ? secondBlock : firstBlock;
-  const created = keep === 'after' ? firstBlock : secondBlock;
-  return { raw: bom + next, block: kept, newBlock: created };
+  const kept = anchorSide === 'second' ? secondPieceBlock : firstPieceBlock;
+  const created = anchorSide === 'second' ? firstPieceBlock : secondPieceBlock;
+  const structurePlans = [firstPlan, secondPlan].filter((plan) => plan.structural);
+  const lastStructure = structurePlans[structurePlans.length - 1] ?? null;
+  return {
+    raw: bom + next,
+    block: kept,
+    newBlock: created,
+    ...(lastStructure ? {
+      retype: {
+        from: block.type,
+        to: lastStructure.type,
+        prefix: lastStructure.prefix,
+        literal: null,
+        structure: lastStructure.type,
+        auto_page: [firstPlan, secondPlan]
+          .map((plan, index) => autoPageView(afterDocument, plan, index === 0 ? firstLine : secondLine))
+          .filter(Boolean).pop() ?? null,
+      },
+    } : {}),
+  };
 }
 
 /**
@@ -1308,16 +1452,18 @@ export function createBlockInPage(raw, { chapter, index, content } = {}, options
   const seen = new Set(parsed.blocks.map((item) => item.anchor).filter(Boolean));
   const anchor = generate(seen);
   // 空页的第一块同样由行首前缀决定类型：`### ` 落成标题块而不是把锚点写进标题行。
-  const plan = planTypedBlock(overall, { currentType: 'paragraph', currentPrefix: '' });
+  // 空页里没有别的块可收，所以造章只在前缀后面还带着正文时才补占位页（票 36）：
+  // 页首敲一个光标题不会凭空多出一页。
+  const planned = planTypedBlock(overall, { currentType: 'paragraph', currentPrefix: '' });
+  const plan = withAutoPage(planned, false);
   const headingEnd = parsed.lineStarts[page.line - 1] + (parsed.lines[page.line - 1] ?? '').length;
   const insert = `${eol}${eol}${typedReplacement(plan, anchor, eol)}`;
   const next = parsed.text.slice(0, headingEnd) + insert + parsed.text.slice(headingEnd);
   const after = parseDocument(next, { checkImages: false });
   const written = after.blocks.find((item) => item.anchor === anchor) ?? null;
-  const expectedChapters = plan.structural && plan.type === 'chapter'
-    ? parsed.chapters.length + 1 : parsed.chapters.length;
-  const expectedPages = plan.structural && plan.type === 'page'
-    ? parsed.pages.length + 1 : parsed.pages.length;
+  const expectedChapters = parsed.chapters.length + (plan.type === 'chapter' ? 1 : 0);
+  const expectedPages = parsed.pages.length
+    + (plan.type === 'page' ? 1 : 0) + (plan.autoPage ? 1 : 0);
   if (after.chapters.length !== expectedChapters
     || after.pages.length !== expectedPages
     || after.blocks.length !== parsed.blocks.length + (plan.structural && !plan.rest ? 0 : 1)) {
@@ -1329,11 +1475,21 @@ export function createBlockInPage(raw, { chapter, index, content } = {}, options
   if (plan.structural) {
     const scope = plan.type === 'page' ? after.pages : after.chapters;
     const prior = plan.type === 'page' ? parsed.pages : parsed.chapters;
-    if (scope.length !== prior.length + 1 || !scope.some((item) => item.title === plan.title)) {
+    const created = scope.find((item) => item.title === plan.title && item.line === page.line + 2);
+    if (scope.length !== prior.length + 1 || !created) {
       reorderFail('block_structure', '第一块没有干净地变成页 / 章节，已拒绝');
+    }
+    if (plan.autoPage) {
+      const title = plan.pageTitle ?? PENDING_PAGE_TITLE;
+      if (!after.pages.some((item) => item.line === page.line + 4 && item.title === title)) {
+        reorderFail('block_structure', '第一块造章时没有干净地补出占位页，已拒绝');
+      }
     }
     if (plan.rest && (!written || written.raw !== escapeLiteralParagraph(plan.rest))) {
       reorderFail('block_structure', '第一块前缀后面的正文没有干净地落盘，已拒绝');
+    }
+    if (plan.rest && plan.autoPage && written?.page?.title !== (plan.pageTitle ?? PENDING_PAGE_TITLE)) {
+      reorderFail('block_structure', '第一块前缀后面的正文没有落在占位页里，已拒绝');
     }
   } else if (!written || written.raw !== plan.raw
     || written.type !== plan.type
@@ -1341,11 +1497,19 @@ export function createBlockInPage(raw, { chapter, index, content } = {}, options
     || written.page.index !== page.index) {
     reorderFail('block_structure', '第一块没有干净地落在这一页里，已拒绝');
   }
+  const autoPage = autoPageView(after, plan, page.line + 2);
   return {
     raw: raw.startsWith('\uFEFF') ? `\uFEFF${next}` : next,
     block: written,
     ...(plan.structural ? {
-      retype: { from: 'paragraph', to: plan.type, prefix: plan.prefix, literal: null, structure: plan.type },
+      retype: {
+        from: 'paragraph',
+        to: plan.type,
+        prefix: plan.prefix,
+        literal: null,
+        structure: plan.type,
+        ...(autoPage ? { auto_page: autoPage } : {}),
+      },
     } : {}),
   };
 }
