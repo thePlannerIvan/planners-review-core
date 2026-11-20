@@ -73,13 +73,17 @@
   /**
    * 历史批注：只给人看「当初那句话 + 时间 + 所在页」。
    * 快照（改前 / 改后块 raw）故意不出现在这里 —— 它是给模型回查的，不进列表。
+   *
+   * 「模型没动这条」也在这里：抽屉只留正文 / 时间 / 删除三样，这条没归档的批注
+   * 退回历史面板，仍可重新打开；`model_state` 让列表能如实标出来，不靠文本猜。
    */
   function history(notes, { pages = [] } = {}) {
     const list = Array.isArray(notes) ? notes : [];
     return list
-      .filter((note) => note.state === 'resolved')
+      .filter((note) => note.state === 'resolved'
+        || (note.state === 'committed' && note.model_state === 'untouched'))
       .sort((left, right) => (
-        String(right.resolved_at ?? '').localeCompare(String(left.resolved_at ?? ''))
+        String(right.resolved_at ?? right.created_at ?? '').localeCompare(String(left.resolved_at ?? left.created_at ?? ''))
         || String(right.created_at ?? '').localeCompare(String(left.created_at ?? ''))
       ))
       .map((note) => ({
@@ -87,6 +91,7 @@
         text: note.text,
         created_at: note.created_at,
         resolved_at: note.resolved_at ?? null,
+        model_state: note.model_state ?? null,
         page: pageInfo(note, pages),
       }));
   }

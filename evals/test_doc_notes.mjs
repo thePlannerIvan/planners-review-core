@@ -370,9 +370,9 @@ test('批注抽屉默认展开：按页列出，同一块收成计数气泡，�
   assert.match(page, /transport\.submitNotes\(/, '底部一次提交整批');
   assert.match(page, /note-bubble/, '同一块多条收成一个计数气泡');
   assert.match(page, /notesSubmit\.disabled/, '空白时按钮是禁用的状态，不是点了才报错');
-  assert.match(page, /已提交/, '提交后该批进入已提交态，看得见');
-  assert.match(page, /加入批注/, '写批注的入口在同一个行内输入里');
-  assert.match(page, /feedbackNote[\s\S]{0,240}hidden = scope !== 'blocks'/, '批注只落在块上：整页 / 整份派发不改成逐块批注');
+  assert.match(page, /startNoteDraft/, '点块尾气泡直接在抽屉里开草稿');
+  assert.match(page, /note-draft/, '草稿在抽屉里就地写，不再有第二层浮层');
+  assert.match(page, /flushPendingDraft/, '有字才落盘，空草稿不留');
   assert.match(transport, /note_submit/, '通道只有一套动作名：批注提交是 note_submit');
   assert.match(surface, /DOC_SCRIPTS|assertDocScripts/, '侧栏自包含入口按唯一脚本清单内联批注分组逻辑');
 
@@ -582,12 +582,15 @@ test('历史批注列表只给原话、时间、所在页；快照不展开，�
   ];
 
   const history = DocNotes.history(notes, { pages });
-  assert.deepEqual(history.map((item) => item.id), ['n:2', 'n:1'], '新的归档在前，没归档的不进历史');
-  assert.deepEqual(Object.keys(history[0]).sort(), ['created_at', 'id', 'page', 'resolved_at', 'text'],
-    '历史条目只有人当初那句话、时间、所在页；快照不在列表上');
-  assert.equal(history[1].text, '这句太虚');
-  assert.equal(history[1].created_at, '2026-11-20T08:00:00.000Z');
-  assert.deepEqual(history[1].page, {
+  assert.deepEqual(history.map((item) => item.id), ['n:3', 'n:2', 'n:1'],
+    '新的归档在前；「模型没动」的那条也进历史（抽屉只留三样）');
+  assert.deepEqual(Object.keys(history[0]).sort(),
+    ['created_at', 'id', 'model_state', 'page', 'resolved_at', 'text'],
+    '历史条目只有人当初那句话、时间、所在页与结构化状态；快照不在列表上');
+  assert.equal(history[0].model_state, 'untouched', '没动的那条带着结构化状态，页面据此标出来');
+  assert.equal(history[2].text, '这句太虚');
+  assert.equal(history[2].created_at, '2026-11-20T08:00:00.000Z');
+  assert.deepEqual(history[2].page, {
     key: '1-1', chapter: 1, index: 1, chapterTitle: '一、判断', title: '品类机会',
   }, '历史能说清这句话当初在哪一章哪一页');
 });
@@ -613,8 +616,8 @@ test('历史批注与版本历史在同一个面板的两个页签，默认停�
 
   assert.match(page, /DocNotes\.history\(/, '历史批注按同一份分组规则列出来');
   assert.match(page, /transport\.reopenNote\(/, '每条可重新打开，走同一条 route 词汇');
-  assert.match(page, /noteStateSection\('已提交'|已提交/, '没改到的留在右侧，标「模型没动这条」');
-  assert.match(page, /模型没动这条/);
+  assert.doesNotMatch(page, /noteStateSection|\.note-badge\b/, '抽屉不再用状态分组与徽标');
+  assert.match(page, /note-delete/, '草稿仍可单条删除');
   assert.match(transport, /note_reopen:\s*'\/api\/note\/reopen'/, '本地路由表加一个同名动作');
   assert.match(transport, /reopenNote:\s*\(body\)\s*=>\s*send\('note_reopen'/, '页面只发 {route, body}');
   assert.match(command, /note_reopen:\s*\(\{ session, body \}\)\s*=>\s*session\.reopenNote\(body\)/,

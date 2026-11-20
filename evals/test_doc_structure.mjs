@@ -385,3 +385,109 @@ test('章节尾加章：新章带第一页插在这一章之后，章末加章�
   assert.deepEqual(last.chapters.map((chapter) => chapter.title), ['第一章', '新章节', '第二章', '新章节']);
   assert.equal(validate(path).code, 1, '空页仍然由交付校验器报出来');
 });
+
+// ── 页中间加章节 / 加页：落点永远是结构边界，页里的块一个都不被推出去（票 34） ──
+// 现场：一页两块列表 + 一组出处，人在页中间点「＋ 新章节」，新章落在第二个列表项之后，
+// 该页剩下的列表项与整组出处全成了页外块（校验器报 block_outside_page）。
+// 判据只落在公开的缝：磁盘上的文本 + 目录快照 + 校验器。
+const MIDDLE_PAGE = `# 第一章
+
+## 页一
+
+主张句。<!-- b:aaaaaa -->
+
+- 列表一。<!-- b:bbbbbb -->
+
+- 列表二。<!-- b:cccccc -->
+
+> 出处一。<!-- b:dddddd -->
+
+> 出处二。<!-- b:eeeeee -->
+
+## 页二
+
+第二页的段落。<!-- b:ffffff -->
+
+# 第二章
+
+## 页三
+
+第三页的段落。<!-- b:999999 -->
+`;
+
+const pageOfBlock = (doc, anchor) => doc.blocks.find((block) => block.anchor === anchor)?.page ?? null;
+
+test('在页中间加章节：新章落在章节边界之后，该页原有块全部仍在这一页里', async (t) => {
+  const { path } = scratchDoc(MIDDLE_PAGE);
+  const server = await openWorkbench(t, path);
+  const before = await getDoc(server.url);
+
+  // 人正在第 1 章第 1 页中间点「＋ 新章节」：请求只说明「我在这页」。
+  const added = await postStructure(server.url, {
+    op: 'add-chapter',
+    page: { chapter: 1, index: 1 },
+    base_sha256: before.sha256,
+  });
+  assert.equal(added.status, 200, JSON.stringify(added.body));
+  assert.equal(added.body.ok, true);
+  assert.deepEqual(
+    { index: added.body.chapter.index, title: added.body.chapter.title },
+    { index: 2, title: '新章节' },
+    '新章插在第 1 章之后，成为第 2 章',
+  );
+
+  const saved = readFileSync(path, 'utf8');
+  const chapterLine = headingLine(saved, '# 新章节');
+  assert.ok(chapterLine > 0, `文件里要有新章节标题行：${saved}`);
+  assert.ok(chapterLine > headingLine(saved, '第二页的段落。<!-- b:ffffff -->'),
+    '新章在这一章最后一页之后，不是在第 1 页中间');
+  assert.ok(chapterLine < headingLine(saved, '# 第二章'), '新章在下一章之前');
+
+  const after = await getDoc(server.url);
+  for (const anchor of ['b:aaaaaa', 'b:bbbbbb', 'b:cccccc', 'b:dddddd', 'b:eeeeee']) {
+    const page = pageOfBlock(after, anchor);
+    assert.ok(page, `块 ${anchor} 不应被推出页外`);
+    assert.equal(page.title, '页一', `块 ${anchor} 仍在这一页里`);
+  }
+  const pageOne = after.pages.find((item) => item.title === '页一');
+  assert.equal(pageOne.blocks, 5, '这一页的五个块一个不丢');
+  assert.equal(pageOne.sources, 2, '整组出处仍在这一页里');
+  assert.deepEqual(after.pages.map((page) => `${page.chapterIndex}:${page.index}:${page.title}`), [
+    '1:1:页一', '1:2:页二', '2:1:新页', '3:1:页三',
+  ], '新章只有一页，后面的章节整体后移');
+
+  const verdict = validate(path);
+  assert.equal(verdict.code, 1, '新章的第一页是空页，由交付校验器报出来');
+  assert.deepEqual(verdict.out.errors.map((error) => error.code), ['page_empty'],
+    '只有空页这类内容级问题，没有 block_outside_page');
+});
+
+test('在页中间加页：新页落在页边界之后，出处区整组仍在这一页里', async (t) => {
+  const { path } = scratchDoc(MIDDLE_PAGE);
+  const server = await openWorkbench(t, path);
+  const before = await getDoc(server.url);
+
+  const added = await postStructure(server.url, {
+    op: 'add-page',
+    page: { chapter: 1, index: 1 },
+    base_sha256: before.sha256,
+  });
+  assert.equal(added.status, 200, JSON.stringify(added.body));
+  assert.equal(added.body.page.chapter, 1);
+  assert.equal(added.body.page.index, 2);
+
+  const saved = readFileSync(path, 'utf8');
+  const pageLine = headingLine(saved, '## 新页');
+  assert.ok(pageLine > headingLine(saved, '> 出处二。<!-- b:eeeeee -->'), '新页在页一最后一块之后');
+  assert.ok(pageLine < headingLine(saved, '## 页二'), '新页在页二之前');
+
+  const after = await getDoc(server.url);
+  for (const anchor of ['b:aaaaaa', 'b:bbbbbb', 'b:cccccc', 'b:dddddd', 'b:eeeeee']) {
+    assert.equal(pageOfBlock(after, anchor)?.title, '页一', `块 ${anchor} 仍在这一页里`);
+  }
+  assert.equal(after.pages.find((item) => item.title === '页一').blocks, 5, '页一的块一个不丢');
+
+  const verdict = validate(path);
+  assert.deepEqual(verdict.out.errors.map((error) => error.code), ['page_empty'],
+    '只有空页这类内容级问题，没有 block_outside_page');
+});

@@ -22,6 +22,21 @@
   const LAYOUT_MEDIUM = 900;
   const SCROLL_THRESHOLD = 8;
 
+  // 字号只改一个变量：纸宽、左右留白、行宽各有自己的尺度，不跟字号走。
+  const FONT_SIZE_MIN = 15;
+  const FONT_SIZE_MAX = 21;
+  const FONT_SIZE_DEFAULT = 16.5;
+  const FONT_SIZE_STEP = 0.5;
+  const FONT_SIZE_KEY = 'planners-doc-font-size';
+
+  /** 读出来的任何数都夹到 15–21 的半步上；读不出来就退回默认，不让页面变成 NaN。 */
+  function clampFontSize(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return FONT_SIZE_DEFAULT;
+    const stepped = Math.round(number / FONT_SIZE_STEP) * FONT_SIZE_STEP;
+    return Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, stepped));
+  }
+
   /**
    * 三栏降级规则的唯一一份：断点与每档的尺寸都从这里出。
    * 值是 `container-type: inline-size` 的容器宽度；差 0.02px 用来表达「不到下一档」。
@@ -78,8 +93,67 @@
     return 'narrow';
   }
 
-  function createLayout({ document: doc, body } = {}) {
+  /**
+   * 字号缩放：只改 `--doc-fs` 一个变量，纸宽 / 留白 / 行宽都不碰。
+   *
+   * 选择存在浏览器本地（localStorage），下次打开还是那个字号；按钮到边界就禁用，
+   * 让「还能不能往下调」在点之前就看得见。
+   */
+  function createFontSize({ document: doc, storage } = {}) {
     const host = doc ?? (typeof document === 'undefined' ? null : document);
+    const root = host?.documentElement ?? null;
+    let size = FONT_SIZE_DEFAULT;
+
+    function store() {
+      if (storage !== undefined) return storage;
+      try { return globalThis.localStorage ?? null; } catch { return null; }
+    }
+
+    function syncButtons() {
+      for (const [id, disabled] of [['fontSmaller', size <= FONT_SIZE_MIN], ['fontLarger', size >= FONT_SIZE_MAX]]) {
+        const button = host?.getElementById?.(id) ?? host?.querySelector?.(`#${id}`) ?? null;
+        if (button) button.disabled = disabled;
+      }
+    }
+
+    function apply(value) {
+      size = clampFontSize(value);
+      root?.style?.setProperty?.('--doc-fs', `${size}px`);
+      syncButtons();
+      return size;
+    }
+
+    function persist() {
+      try { store()?.setItem?.(FONT_SIZE_KEY, String(size)); } catch { /* 隐私模式写不进去就算了 */ }
+    }
+
+    function set(value) {
+      apply(value);
+      persist();
+      return size;
+    }
+
+    /** 接上线：读回本地选择、挂两枚按钮。返回解绑函数。 */
+    function bind() {
+      let saved = null;
+      try { saved = store()?.getItem?.(FONT_SIZE_KEY) ?? null; } catch { saved = null; }
+      apply(saved === null || saved === '' ? FONT_SIZE_DEFAULT : saved);
+      const smaller = host?.getElementById?.('fontSmaller') ?? host?.querySelector?.('#fontSmaller') ?? null;
+      const larger = host?.getElementById?.('fontLarger') ?? host?.querySelector?.('#fontLarger') ?? null;
+      const onSmaller = () => { if (size > FONT_SIZE_MIN) set(size - FONT_SIZE_STEP); };
+      const onLarger = () => { if (size < FONT_SIZE_MAX) set(size + FONT_SIZE_STEP); };
+      smaller?.addEventListener?.('click', onSmaller);
+      larger?.addEventListener?.('click', onLarger);
+      return () => {
+        smaller?.removeEventListener?.('click', onSmaller);
+        larger?.removeEventListener?.('click', onLarger);
+      };
+    }
+
+    return { apply, bind, set, size: () => size };
+  }
+
+  function createLayout({ document: doc, body } = {}) {    const host = doc ?? (typeof document === 'undefined' ? null : document);
     const root = body ?? host?.body ?? null;
     const state = {
       mode: 'wide',
@@ -220,6 +294,19 @@
   }
 
   return {
-    LAYOUT_WIDE, LAYOUT_MEDIUM, SCROLL_THRESHOLD, containerCSS, installContainerCSS, layoutMode, createLayout,
+    LAYOUT_WIDE,
+    LAYOUT_MEDIUM,
+    SCROLL_THRESHOLD,
+    FONT_SIZE_MIN,
+    FONT_SIZE_MAX,
+    FONT_SIZE_DEFAULT,
+    FONT_SIZE_STEP,
+    FONT_SIZE_KEY,
+    clampFontSize,
+    createFontSize,
+    containerCSS,
+    installContainerCSS,
+    layoutMode,
+    createLayout,
   };
 });

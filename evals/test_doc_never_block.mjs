@@ -333,16 +333,20 @@ test('模型只锁自己正在写的那几块：被挡时点名是哪一块，�
   assert.match(readFileSync(path, 'utf8'), /别的块照常改。<!-- b:aaaaaa -->/);
 });
 
-// ── 顶部黄条：结构问题只提示、不拦人；每条都能跳到出问题的位置 ─────────────
-test('顶部黄条列出页外块与空页，每条都能跳过去，且不阻断保存', () => {
+// ── 结构问题只剩一个小圆点：只提示、不拦人；点开才列清单，每条能跳 ───────────
+test('结构问题只在保存态旁亮一个无字圆点，点开才列页外块与空页并跳过去', () => {
   const page = readFileSync(join(core, 'assets', 'workbench', 'doc-workbench.js'), 'utf8');
+  const html = readFileSync(join(core, 'assets', 'workbench', 'doc-workbench.html'), 'utf8');
   const css = readFileSync(join(core, 'assets', 'workbench', 'doc-workbench.css'), 'utf8');
   const drag = readFileSync(join(core, 'assets', 'workbench', 'doc-drag.js'), 'utf8');
 
-  // 黄条：页外块与空页分成两组，各自是一个可点的跳转按钮。
-  assert.match(page, /structureNotice/, '顶部有一条结构提示');
-  assert.match(page, /不在任何页/, '黄条要说明哪几块不在任何页里');
-  assert.match(page, /空页/, '黄条要说明哪一页是空的');
+  // 圆点：没有文字、默认不显示；清单里有页外块与空页两组，各自是可点的跳转。
+  assert.doesNotMatch(html, /structure-notice|结构提醒|保存不受影响/, '黄条整条删掉');
+  const dot = html.match(/<button[^>]*id="structureDot"[^>]*>/);
+  assert.ok(dot, '保存态旁有一颗圆点');
+  assert.match(dot[0], /\bhidden\b/, '没问题时什么都不显示');
+  assert.match(page, /不在任何页/, '清单要说明哪几块不在任何页里');
+  assert.match(page, /空页/, '清单要说明哪一页是空的');
   assert.match(page, /data-jump-anchor/, '页外块要能点着跳到那一块');
   assert.match(page, /data-jump-page/, '空页要能点着跳到那一页');
   assert.match(page, /focusAnchor/, '跳到块用拖拽模块的定位函数');
@@ -351,12 +355,16 @@ test('顶部黄条列出页外块与空页，每条都能跳过去，且不阻�
   // 空页与页外块在正文里也要有落点，否则「跳过去」无处可去。
   assert.match(page, /is-empty/, '空页要画出来（否则没有跳转目标）');
   assert.match(page, /is-orphan/, '页外块要有自己的分段');
-  assert.match(drag, /focusAnchor,/, '定位函数要由拖拽模块导出，黄条与拖拽共用同一份');
+  assert.match(drag, /focusAnchor,/, '定位函数要由拖拽模块导出，圆点清单与拖拽共用同一份');
   assert.match(drag, /scrollToPage,/, '滚动定位要由拖拽模块导出');
 
-  // 黄条不是错误红：底 / 边 / 字按「提醒」配色，且没有把保存按钮藏起来。
-  assert.match(css, /\.structure-notice\s*\{[^}]*#fff8e1/s, '黄条要用提醒底色');
-  assert.match(css, /\.structure-notice\s*\{[^}]*#6b4e00/s, '黄条文字用提醒色');
+  // 圆点是提醒色的小圆，不是一条黄条；正文不被它占走一行。
+  const dotRule = css.match(/\.structure-dot\s*\{([^}]*)\}/);
+  assert.ok(dotRule, '圆点要有样式');
+  assert.match(dotRule[1], /width:\s*6px/);
+  assert.match(dotRule[1], /height:\s*6px/);
+  assert.match(dotRule[1], /border-radius:\s*50%/);
+  assert.doesNotMatch(css, /\.structure-notice/, '黄条的样式一起删掉');
   assert.match(css, /\.page-divider\.is-empty/, '空页要有明确样式');
 });
 

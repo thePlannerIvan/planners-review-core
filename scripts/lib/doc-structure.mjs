@@ -9,7 +9,7 @@
  * `add-page` / `add-chapter` / `add-source`。回执里给出新结构的 `{chapter, page}`
  * 或新块 `{source}`，页面据此定位并聚焦。
  */
-import { generateAnchor, parseDocument } from './doc-blocks.mjs';
+import { generateAnchor, outsidePageCount, parseDocument } from './doc-blocks.mjs';
 import DocIdentity from '../../assets/workbench/doc-identity.js';
 
 const { pageKeyOf } = DocIdentity;
@@ -75,6 +75,57 @@ function pageAt(parsed, chapter, value) {
 }
 
 /**
+ * 新增章节 / 新增页的定位：接受扁平 `{chapter, index}`，也接受「人正看着的这一页」
+ * `{page: {chapter, index}}`。从页出发的请求只提供上下文 —— 新章节 / 新页永远落在
+ * 结构边界之后，不会落在那一页的中间（票 34）。
+ */
+function targetOf(payload) {
+  const page = payload?.page;
+  if (page && typeof page === 'object' && !Array.isArray(page)) {
+    return {
+      chapter: page.chapter ?? payload?.chapter,
+      index: page.index ?? payload?.index,
+    };
+  }
+  return { chapter: payload?.chapter, index: payload?.index };
+}
+
+/** 页的边界：同一章下一页的标题行；没有下一页就退到下一章的标题行；都没有就是文件末尾。 */
+function pageBoundaryLine(parsed, chapter, page) {
+  return chapter.pages[page.index]?.line ?? parsed.chapters[chapter.index]?.line ?? null;
+}
+
+/** 章节的边界：下一章的标题行；最后一章没有下一章，落点是文件末尾。 */
+function chapterBoundaryLine(parsed, chapter) {
+  return parsed.chapters[chapter.index]?.line ?? null;
+}
+
+/**
+ * 结构写回后的兜底检查（票 34）：新章节 / 页落下后，页里的块一个都不能掉到页外，
+ * 已有块的 raw 一个字节都不能动，结构数量也正好只多出该多的那一个。
+ * 落点算错时宁可报错不写，也不把同一个 page 的正文与出处推出页外。
+ */
+function verifyStructureWrite(before, output, expect) {
+  const after = parseDocument(output, { checkImages: false });
+  if (outsidePageCount(after) > outsidePageCount(before)) {
+    fail('structure_boundary', '这次结构改动会把页里的块推出页外，已拒绝');
+  }
+  if (after.blocks.length !== before.blocks.length) {
+    fail('structure_boundary', '这次结构改动动了块，已拒绝');
+  }
+  const raws = new Map(before.blocks.map((block) => [block.anchor, block.raw]));
+  for (const block of after.blocks) {
+    if (block.anchor && raws.has(block.anchor) && raws.get(block.anchor) !== block.raw) {
+      fail('structure_boundary', '这次结构改动动了已有块的内容，已拒绝');
+    }
+  }
+  if (after.chapters.length !== before.chapters.length + (expect.chapters ?? 0)
+    || after.pages.length !== before.pages.length + (expect.pages ?? 0)) {
+    fail('structure_boundary', '这次结构改动没有落在预期的结构边界上，已拒绝');
+  }
+}
+
+/**
  * 对一份原文应用一个结构动作。调用方负责 baseline（`base_sha256`）与写锁；
  * 这里只保证「除了这一处结构，其余字节不动」，并回执新结构的位置。
  */
@@ -122,15 +173,15 @@ export function applyStructure(raw, payload) {
   }
 
   if (op === 'add-page') {
-    const chapter = chapterAt(parsed, payload.chapter);
-    const page = pageAt(parsed, chapter, payload.index);
+    const target = targetOf(payload);
+    const chapter = chapterAt(parsed, target.chapter);
+    const page = pageAt(parsed, chapter, target.index);
     const title = cleanTitle(payload.title, NEW_PAGE_TITLE);
     const insert = `## ${title}${eol}`;
-    // 落点：同一页之后。下一页 / 下一章的标题行就是边界；都没有就追加到文件末尾。
-    const nextPage = chapter.pages[page.index]; // 1-based 页号，数组下标正好是下一页
-    const nextChapter = parsed.chapters[chapter.index];
-    const boundary = nextPage?.line ?? nextChapter?.line ?? null;
+    // 落点：这一页的边界之后。下一页 / 下一章的标题行就是边界；都没有就追加到文件末尾。
+    const boundary = pageBoundaryLine(parsed, chapter, page);
     const output = boundary ? insertBeforeLine(boundary, `## ${title}${eol}${eol}`) : appendAtEnd(insert);
+    verifyStructureWrite(parsed, output, { pages: 1 });
     return {
       raw: bom + output,
       changed: true,
@@ -156,12 +207,16 @@ export function applyStructure(raw, payload) {
   }
 
   // add-chapter：章节尾加一章，同时给它第一页；空章节在目录里没有意义。
-  const chapter = chapterAt(parsed, payload.chapter);
+  // 从页出发的请求（「我在这一页点＋新章节」）也落在这里：新章永远在章节边界之后，
+  // 不落在页中间 —— 否则该页剩下的块会全被推出页外（票 34）。
+  const target = targetOf(payload);
+  const chapter = chapterAt(parsed, target.chapter);
   const title = cleanTitle(payload.title, NEW_CHAPTER_TITLE);
   const pageTitle = cleanTitle(payload.page_title, NEW_PAGE_TITLE);
   const insert = `# ${title}${eol}${eol}## ${pageTitle}${eol}`;
-  const nextChapter = parsed.chapters[chapter.index];
-  const output = nextChapter ? insertBeforeLine(nextChapter.line, `${insert}${eol}`) : appendAtEnd(insert);
+  const boundary = chapterBoundaryLine(parsed, chapter);
+  const output = boundary ? insertBeforeLine(boundary, `${insert}${eol}`) : appendAtEnd(insert);
+  verifyStructureWrite(parsed, output, { chapters: 1, pages: 1 });
   return {
     raw: bom + output,
     changed: true,
