@@ -28,7 +28,6 @@ const expandedSources = new Set();
 
 // 反馈与锁：目标块随选区 / 入口变化；锁由任务同步而来，保存时服务端还会再拦一次。
 let feedbackScope = 'blocks';
-let feedbackPage = null;
 let feedbackTargets = [];
 let lockedAnchors = new Set();
 let selectionTimer = null;
@@ -38,7 +37,6 @@ let savesInFlight = 0;
 let deferredRecords = new Map();
 
 const blockNodes = () => $$('.doc-block');
-const blockEntry = (node) => blockByAnchor.get(node?.dataset?.anchor) ?? null;
 
 const status = (text, failed = false) => {
   const node = $('#saveState');
@@ -752,10 +750,8 @@ function renderReadonlyState() {
   const structure = $('#structureDot');
   if (structure) structure.hidden = true;
   closeStructurePanel();
-  for (const id of ['#notesOverallPage', '#notesOverallDoc']) {
-    const button = $(id);
-    if (button) button.disabled = true;
-  }
+  const whole = $('#notesOverallDoc');
+  if (whole) whole.disabled = true;
   $('#selectionFeedback').hidden = true;
   $('#historyOpen').hidden = true;
   $('#historyPanel').hidden = true;
@@ -925,13 +921,12 @@ function ensureNotesOpen() {
 }
 
 /** 打开抽屉底部的反馈输入：不再有任何浮层，也没有「将改 N 块」这类说明。 */
-function openComposer(anchors, { scope = 'blocks', page = null } = {}) {
+function openComposer(anchors, { scope = 'blocks' } = {}) {
   if (!anchors.length) return;
   if (snapshot?.readonly) { status('只读 · 旧 JSON 主稿不能派发反馈', true); return; }
   const compose = $('#notesCompose');
   if (!compose) return;
   feedbackScope = scope;
-  feedbackPage = page;
   setFeedbackTargets(anchors);
   ensureNotesOpen();
   compose.hidden = false;
@@ -948,7 +943,6 @@ function closeComposer() {
   if (compose) compose.hidden = true;
   $('#selectionFeedback').hidden = true;
   feedbackScope = 'blocks';
-  feedbackPage = null;
   setFeedbackTargets([]);
 }
 
@@ -965,7 +959,6 @@ async function submitFeedback() {
   if (!feedbackTargets.length) { showFeedbackError('没有选中的块；重新选一段再提交。'); return; }
   const payload = { scope: feedbackScope, text };
   if (feedbackScope === 'blocks') payload.anchors = [...feedbackTargets];
-  if (feedbackScope === 'page') payload.page = { ...feedbackPage };
   await saveQueue; // 先把正在保存的块落盘，任务指纹才是人看到的版本
   const button = $('#notesComposeSubmit');
   button.disabled = true;
@@ -1046,64 +1039,31 @@ function wireSelectionFeedback() {
   document.addEventListener('selectionchange', scheduleSelectionTargets);
 }
 
-// ── 整体反馈（批注抽屉）：整页按当前视野最近的块定页，整份绑定所有块 ───────────
-function currentPage() {
-  const nodes = blockNodes().filter((node) => blockEntry(node)?.block?.page);
-  if (!nodes.length) return null;
-  const middle = window.innerHeight / 2;
-  let best = null;
-  let distance = Infinity;
-  for (const node of nodes) {
-    const rect = node.getBoundingClientRect();
-    const gap = Math.abs((rect.top + rect.bottom) / 2 - middle);
-    if (gap < distance) { distance = gap; best = node; }
-  }
-  return best ? blockEntry(best).block.page : null;
-}
-
-function anchorsOfPage(page) {
-  return snapshot.blocks
-    .filter((block) => block.anchor && block.page?.key === page.key)
-    .map((block) => block.anchor);
-}
-
-/** 整体反馈也落回抽屉里的同一个输入：不新开浮层，顶栏也不多一项。 */
+// ── 整篇反馈（批注抽屉）：对整份稿子提一条意见，草稿就写在抽屉里 ─────────────
+// 「按页」这个范围概念删掉了：人会在具体的位置批注，不必先选一页再说话。
+/** 整篇反馈也落回抽屉里的同一个输入：不新开浮层，顶栏也不多一项。 */
 function wireOverallFeedback() {
-  const pageButton = $('#notesOverallPage');
   const docButton = $('#notesOverallDoc');
-  pageButton?.addEventListener('click', () => {
-    if (!snapshot) return;
-    const page = currentPage();
-    if (!page) { status('找不到当前页；先滚到正文再点', true); return; }
-    const anchors = anchorsOfPage(page);
-    if (!anchors.length) { status('这一页还没有可反馈的块', true); return; }
-    openComposer(anchors, {
-      scope: 'page',
-      page: { chapter: page.chapter, number: page.number, title: page.title },
-    });
-  });
-
   docButton?.addEventListener('click', () => {
     if (!snapshot) return;
     const anchors = snapshot.blocks.filter((block) => block.anchor).map((block) => block.anchor);
     if (!anchors.length) { status('这份稿还没有可反馈的块', true); return; }
     openComposer(anchors, { scope: 'doc' });
   });
-
-  for (const button of [pageButton, docButton]) {
-    if (button) button.disabled = Boolean(snapshot?.readonly);
-  }
+  if (docButton) docButton.disabled = Boolean(snapshot?.readonly);
 }
 
 // ── 批注：草稿攒在右侧抽屉里，底部一次提交整批 ────────────────────────────────
 //
 // 批注与「直接派发」是两条路：写进抽屉的草稿不唤醒任何人，可以跨页跨天接着提；
-// 底部「提交给模型修改」把整批装成一条任务。分组规则在 doc-notes.js 里（Node 侧
-// 直接测同一份），这里只负责把分组画出来、把动作接到同一条 route 词汇上。
+// 底部「提交模型」把整批装成一条任务。排序规则在 doc-notes.js 里（Node 侧直接测
+// 同一份），这里只负责把条目画出来、把动作接到同一条 route 词汇上。
+//
+// 抽屉里只有「被引用的那句话」：页名、章节名、页号在正文里已经有了，这里再写一遍
+// 只是噪声。位置靠点一条跳回正文，不靠抽屉里的文字。
 let notesState = [];
 let notesLoaded = false;
 let notesError = null;
-const expandedBubbles = new Set();
 // 点块尾气泡后先在这里攒一条空草稿：只在页面里，第一次失焦 / 提交时才落盘。
 // 空的不留（服务端也不收空批注）；落盘后回到 notesState，和别的草稿一样可删可提交。
 let pendingDraft = null;
@@ -1114,30 +1074,50 @@ const NOTE_UNTOUCHED_TEXT = '模型没动这条';
 
 const blockOrder = () => new Map((snapshot?.blocks ?? []).map((block, index) => [block.anchor, index]));
 
-/** 块预览只留那句话的开头；没有字就留空，不拿锚点（b:xxxx）充数。 */
-function blockPreview(anchor) {
+/**
+ * 这一块的那句话：抽屉里唯一用来认出「这条批注说的是哪儿」的东西。
+ * 取块内联内容（不含 `- ` / `> ` 前缀），空白收成一行；没有字就留空，不拿锚点充数。
+ */
+function blockQuote(anchor) {
   const raw = snapshot?.blocks?.find((block) => block.anchor === anchor)?.inline ?? '';
-  const text = String(raw).replace(/\s+/g, ' ').trim();
-  if (!text) return '';
-  return text.length > 24 ? `${text.slice(0, 24)}…` : text;
+  return String(raw).replace(/\s+/g, ' ').trim();
 }
 
 const noteTime = (value) => (value ? new Date(value).toLocaleString() : '');
 
-/** 每条批注只有三样：正文、时间、删除（只有草稿能删，已提交的在模型手里）。 */
-function noteRow(note) {
+/**
+ * 一条批注：它引用的那句话（一行，放不下就省略）、你写的那句话、时间与删除。
+ * 页名 / 章节名 / 页号都不进来 —— 那句话自己就说清了位置。删除只给草稿：
+ * 已提交的在模型手里。上半可点，点了跳回正文里那一块。
+ */
+function noteRow(note, state) {
   const item = document.createElement('li');
   item.className = 'note-row';
-  const text = document.createElement('p');
+  const jump = document.createElement('button');
+  jump.type = 'button';
+  jump.className = 'note-jump';
+  jump.dataset.anchor = note.anchor ?? '';
+  jump.title = '跳到正文里的这一块';
+  const quote = blockQuote(note.anchor);
+  if (quote) {
+    const line = document.createElement('span');
+    line.className = 'note-quote';
+    line.textContent = quote;
+    jump.append(line);
+  }
+  const text = document.createElement('span');
   text.className = 'note-text';
   text.textContent = note.text;
+  jump.append(text);
+  jump.addEventListener('click', () => revealNoteTarget(note.anchor));
   const meta = document.createElement('div');
   meta.className = 'note-meta';
   const time = document.createElement('time');
   time.className = 'note-time';
+  time.dateTime = note.created_at ?? '';
   time.textContent = noteTime(note.created_at);
   meta.append(time);
-  if (note.state === 'draft') {
+  if (state === 'draft') {
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.className = 'note-delete';
@@ -1146,16 +1126,23 @@ function noteRow(note) {
     remove.addEventListener('click', () => { void deleteNote(note.id, remove); });
     meta.append(remove);
   }
-  item.append(text, meta);
+  item.append(jump, meta);
   return item;
 }
 
-/** 正在写的那一条：抽屉里就地一个输入框，光标进来就能打字。 */
+/** 正在写的那一条：抽屉里就地一个输入框，光标进来就能打字；上面同样挂着那句话。 */
 function draftRow() {
   const item = document.createElement('li');
   item.className = 'note-row note-draft';
   // 这一行只代表它创建时的那条草稿：重画后别去动后来新开的那一条。
   const draft = pendingDraft;
+  const quote = blockQuote(draft?.anchor);
+  if (quote) {
+    const line = document.createElement('span');
+    line.className = 'note-quote';
+    line.textContent = quote;
+    item.append(line);
+  }
   const textarea = document.createElement('textarea');
   textarea.className = 'note-draft-text';
   textarea.rows = 2;
@@ -1196,102 +1183,48 @@ function draftRow() {
   return item;
 }
 
-/** 同一块的多条批注只占一个位置：一个圆角计数气泡，点开才展开这一块的全部。 */
-function noteBlock(block) {
-  const group = document.createElement('div');
-  group.className = 'note-block';
-  const head = document.createElement('div');
-  head.className = 'note-block-head';
-  const previewText = blockPreview(block.anchor);
-  if (previewText) {
-    const preview = document.createElement('span');
-    preview.className = 'note-block-preview';
-    preview.textContent = previewText;
-    head.append(preview);
-  }
-  const pending = pendingDraft?.anchor === block.anchor;
-  const count = block.count + (pending ? 1 : 0);
-  const expanded = expandedBubbles.has(block.anchor);
-  if (count > 1) {
-    const bubble = document.createElement('button');
-    bubble.type = 'button';
-    bubble.className = 'note-bubble';
-    bubble.textContent = String(count);
-    bubble.title = `这一块有 ${count} 条批注`;
-    bubble.setAttribute('aria-expanded', String(expanded));
-    bubble.setAttribute('aria-label', `这一块有 ${count} 条批注，${expanded ? '收起' : '展开'}`);
-    bubble.addEventListener('click', () => {
-      if (expanded) expandedBubbles.delete(block.anchor);
-      else expandedBubbles.add(block.anchor);
-      renderNotes();
-    });
-    head.append(bubble);
-  }
-  group.append(head);
-  if (pending || block.count === 1 || expanded) {
-    const list = document.createElement('ul');
-    list.className = 'note-list';
-    if (pending) list.append(draftRow());
-    for (const note of block.notes) list.append(noteRow(note));
-    group.append(list);
-  }
-  return group;
-}
-
 /**
- * 抽屉里的页分组：草稿与已提交并进同一页，页名就是分组标题。
- * 正在写的那条草稿也要有位置——哪怕它还没落盘。
+ * 抽屉里的单子：草稿与已提交并成一条线，顺序跟正文走；正在写的那条也占它的位置。
+ * 每条自带它引用的那句话，所以这里不再有页分组、也不再有块预览与计数气泡。
  */
-function drawerPages(drawer) {
-  const map = new Map();
-  const addBlock = (pageKey, fallback, state, block) => {
-    if (!map.has(pageKey)) {
-      map.set(pageKey, { key: pageKey, ...fallback, blocks: new Map() });
-    }
-    const page = map.get(pageKey);
-    const entry = page.blocks.get(block.anchor) ?? { anchor: block.anchor, count: 0, notes: [] };
-    entry.count += block.count;
-    entry.notes.push(...block.notes.map((note) => ({ ...note, state })));
-    page.blocks.set(block.anchor, entry);
-  };
-  for (const page of drawer.draft.pages) {
-    for (const block of page.blocks) addBlock(page.key, page, 'draft', block);
+function drawerEntries(drawer) {
+  const order = blockOrder();
+  const rows = [];
+  for (const state of ['draft', 'committed']) {
+    for (const note of drawer[state].notes) rows.push({ kind: 'note', state, note });
   }
-  for (const page of drawer.committed.pages) {
-    for (const block of page.blocks) addBlock(page.key, page, 'committed', block);
-  }
-  if (pendingDraft) {
-    const target = snapshot?.blocks?.find((block) => block.anchor === pendingDraft.anchor);
-    const key = target?.page?.key ?? null;
-    if (!map.has(key)) {
-      const page = (snapshot?.pages ?? []).find((item) => item.key === key) ?? null;
-      map.set(key, {
-        key,
-        chapter: page?.chapter ?? target?.page?.chapter ?? 0,
-        index: page?.index ?? target?.page?.index ?? 0,
-        chapterTitle: page?.chapter ?? '',
-        title: page?.title ?? target?.page?.title ?? '未命名页',
-        blocks: new Map(),
-      });
-    }
-    const page = map.get(key);
-    const entry = page.blocks.get(pendingDraft.anchor) ?? { anchor: pendingDraft.anchor, count: 0, notes: [] };
-    page.blocks.set(pendingDraft.anchor, entry);
-  }
-  return [...map.values()]
-    .sort((a, b) => (a.chapter - b.chapter) || (a.index - b.index))
-    .map((page) => ({ ...page, blocks: [...page.blocks.values()] }));
+  if (pendingDraft) rows.push({ kind: 'draft', anchor: pendingDraft.anchor });
+  const position = (row) => order.get(row.anchor ?? row.note.anchor) ?? Number.MAX_SAFE_INTEGER;
+  const createdAt = (row) => (row.kind === 'draft' ? '\uffff' : String(row.note.created_at ?? ''));
+  return rows.sort((left, right) => (position(left) - position(right))
+    || createdAt(left).localeCompare(createdAt(right)));
 }
 
-function notePageSection(page) {
-  const section = document.createElement('section');
-  section.className = 'note-page';
-  const title = document.createElement('p');
-  title.className = 'note-page-title';
-  title.textContent = page.title || '未命名页';
-  section.append(title);
-  for (const block of page.blocks) section.append(noteBlock(block));
-  return section;
+/** 点一条批注：正文滚到那一块、光标放进可编辑块、短暂高亮；抽屉保持打开。 */
+let noteFlashTimer = 0;
+
+function flashBlock(node) {
+  if (!node) return;
+  node.classList.remove('is-note-flash');
+  void node.offsetWidth; // 重新触发同一条动画
+  node.classList.add('is-note-flash');
+  clearTimeout(noteFlashTimer);
+  noteFlashTimer = setTimeout(() => node.classList.remove('is-note-flash'), 1200);
+}
+
+function revealNoteTarget(anchor) {
+  if (!anchor) return;
+  const node = blockByAnchor.get(anchor)?.node ?? null;
+  if (!node) { status('这块已经不在正文里了', true); return; }
+  ensureNotesOpen();
+  // 定位与聚焦复用拖拽模块那套（结构清单的跳转走同一条路）；再让这一块落到顶栏下面。
+  DocDrag.focusAnchor(anchor);
+  const bar = document.querySelector('.topbar');
+  const offset = (bar?.getBoundingClientRect().height ?? 0) + 24;
+  const top = node.getBoundingClientRect().top + window.scrollY - offset;
+  window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+  focusBlock(anchor); // 可编辑块把光标放到块首；没有编辑面的块只高亮
+  flashBlock(node);
 }
 
 function draftCount() {
@@ -1304,7 +1237,7 @@ function renderNotes() {
   if (!list) return;
   const hint = $('#notesHint');
   const notesSubmit = $('#notesSubmit');
-  const drawer = DocNotes.drawer(notesState, { pages: snapshot?.pages ?? [], order: blockOrder() });
+  const drawer = DocNotes.drawer(notesState, { order: blockOrder() });
   // 正在写草稿时重画（别的批注存上了）：把光标还回同一条草稿的同一个位置。
   const focused = document.activeElement;
   const wasEditing = Boolean(focused?.classList?.contains('note-draft-text'));
@@ -1328,7 +1261,12 @@ function renderNotes() {
     empty.textContent = '还没有批注。';
     list.append(empty);
   } else {
-    for (const page of drawerPages(drawer)) list.append(notePageSection(page));
+    const rows = document.createElement('ul');
+    rows.className = 'note-list';
+    for (const row of drawerEntries(drawer)) {
+      rows.append(row.kind === 'draft' ? draftRow() : noteRow(row.note, row.state));
+    }
+    list.append(rows);
   }
 
   if (wasEditing && pendingDraft) {
@@ -1342,7 +1280,7 @@ function renderNotes() {
   const readonly = Boolean(snapshot?.readonly);
   const drafts = draftCount();
   notesSubmit.disabled = readonly || Boolean(notesError) || drafts === 0;
-  notesSubmit.textContent = '提交给模型修改';
+  notesSubmit.textContent = `提交模型 · ${drafts}`;
   if (hint) {
     hint.hidden = !readonly;
     hint.textContent = readonly ? '只读 · 旧 JSON 主稿不能提批注' : '';
@@ -1378,7 +1316,6 @@ function startNoteDraft(anchor) {
     return;
   }
   if (pendingDraft) void saveDraft(pendingDraft);
-  expandedBubbles.delete(anchor);
   pendingDraft = { anchor, text: '' };
   ensureNotesOpen();
   renderNotes();
@@ -1443,7 +1380,7 @@ async function deleteNote(id, button) {
 async function submitNotes() {
   if (snapshot?.readonly) { status('只读 · 旧 JSON 主稿不能提批注', true); return; }
   await flushPendingDraft();
-  const drawer = DocNotes.drawer(notesState, { pages: snapshot?.pages ?? [], order: blockOrder() });
+  const drawer = DocNotes.drawer(notesState, { order: blockOrder() });
   if (!drawer.draft.count) { status('没有草稿可提交', true); return; }
   await flushSaves();
   const button = $('#notesSubmit');
@@ -1491,12 +1428,8 @@ const OPERATION_LABELS = {
 };
 
 // ── 历史批注：模型改到的自动归档；与版本历史同一个面板的两个页签，默认停在批注 ──
-function historyPageLabel(page) {
-  const chapter = page.chapterTitle || '未归章';
-  return `${chapter} · 第 ${page.index} 页 · ${page.title}`;
-}
 
-/** 历史条目只有人当初那句话、写下时间、所在页；快照是给模型回查的，不在列表展开。 */
+/** 历史条目只有人当初那句话与时间；快照是给模型回查的，页名 / 页号也不再重复。 */
 function historyNoteRow(note) {
   const item = document.createElement('li');
   item.className = 'history-note-item';
@@ -1509,10 +1442,7 @@ function historyNoteRow(note) {
   time.className = 'history-note-time';
   time.dateTime = note.created_at ?? '';
   time.textContent = noteTime(note.created_at);
-  const page = document.createElement('span');
-  page.className = 'history-note-page';
-  page.textContent = historyPageLabel(note.page);
-  meta.append(time, page);
+  meta.append(time);
   if (note.model_state === 'untouched') {
     const badge = document.createElement('span');
     badge.className = 'history-note-badge';
@@ -1533,7 +1463,7 @@ function renderHistoryNotes() {
   if (!list) return;
   const note = $('#historyNotesNote');
   list.replaceChildren();
-  const items = DocNotes.history(notesState, { pages: snapshot?.pages ?? [] });
+  const items = DocNotes.history(notesState);
   if (note) {
     note.textContent = items.length
       ? `共 ${items.length} 条 · 新的在前；模型改到的与没动的那条都在这里。`
@@ -2487,7 +2417,7 @@ function renderAll() {
     renderDeferred(node, conflict);
     lockDeferredBlock(node);
   }
-  // 抽屉里的页标题、块预览都来自快照：正文重画后跟着刷新。
+  // 抽屉里「被引用的那句话」来自快照：正文重画后跟着刷新。
   renderNotes();
 }
 

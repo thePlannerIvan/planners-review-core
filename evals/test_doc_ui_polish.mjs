@@ -93,28 +93,26 @@ test('点批注气泡直接进抽屉写草稿：浮层组件连同样式删干�
   assert.match(page, /transport\.addNote\(/, '写完落盘走同一条批注 route');
 });
 
-// ── 抽屉每条只剩正文、时间、删除；页名做分组标题，块只显示开头 ────────────────
-test('抽屉只剩正文、时间、删除三样：页名当分组标题，块只显示那句话的开头', () => {
+// ── 抽屉每条只有引用的话、正文、时间、删除；没有页名、章节名、页号与分组标题 ────
+test('抽屉每条只有引用的话、正文、时间、删除：页名 / 章节名 / 页号与分组标题都删掉', () => {
   const page = read('doc-workbench.js');
   const css = read('doc-workbench.css');
 
   const row = page.match(/function noteRow\(note[\s\S]*?\n}/);
   assert.ok(row, 'noteRow 要能读出来');
+  assert.match(row[0], /note-quote/, '每条带着它引用的那句话');
   assert.match(row[0], /note-text/);
   assert.match(row[0], /note-time/);
   assert.match(row[0], /note-delete/);
   assert.doesNotMatch(row[0], /note-badge|note-reopen|已提交|模型没动这条/, '状态徽标与重新打开都从这一行删掉');
-  assert.doesNotMatch(page, /noteStateSection|note-state-title|note-state/, '「草稿 · 1 / 已提交」这类分组标签删掉');
-  assert.doesNotMatch(page, /未归档/);
-  assert.doesNotMatch(page, /草稿保存在/);
-  assert.doesNotMatch(page, /页已被删除/);
-  const drawerRender = page.match(/function drawerPages[\s\S]*?\nfunction notePageSection/);
-  assert.ok(drawerRender, '抽屉分组要能读出来');
-  assert.doesNotMatch(drawerRender[0], /第 |页 ·/, '抽屉里不再拼「第 N 页 · 页名」');
-  assert.match(css, /\.note-page-title/, '页名是分组标题');
-  assert.doesNotMatch(css, /\.note-state-title/, '分组标签的样式删掉');
-  // 块只显示那句话的开头：预览截断后加省略号。
-  assert.match(page, /slice\(0, \d+\)[\s\S]{0,40}…/, '块预览是截断后的开头');
+  assert.doesNotMatch(row[0], /page\.|chapter|第 |页名/, '这一行不碰页身份');
+  assert.doesNotMatch(page, /drawerPages|notePageSection|note-page-title|blockPreview/,
+    '按页分组那一套整套删掉');
+  assert.doesNotMatch(page, /note-bubble/, '同一句引用不再由计数气泡重复');
+  assert.doesNotMatch(page, /第 \$\{|\$\{page\.index\}/, '渲染层不再拼「第 N 页」');
+  assert.match(css, /\.note-quote\s*\{[^}]*white-space:\s*nowrap/, '引用的话截成一行');
+  assert.match(css, /\.note-quote\s*\{[^}]*text-overflow:\s*ellipsis/, '一行放不下就省略');
+  assert.doesNotMatch(css, /\.note-page-title|\.note-block-preview|\.note-bubble/, '分组标题与计数气泡的样式删干净');
 });
 
 // ── 抓手与气泡按块首行中线对齐 ────────────────────────────────────────────────

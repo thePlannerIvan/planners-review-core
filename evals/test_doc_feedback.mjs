@@ -307,19 +307,20 @@ test('半句选区也吸成整块：页面按命中的块整体提交反馈', as
   assert.deepEqual(feedback.anchorsForRange(null, nodes), [], '没有选区时不凭空产生目标');
 });
 
-// ── 渲染面：三个反馈入口、将改块高亮、锁定提示 ───────────────────────────────
-test('页面有三个反馈入口，提交前高亮将改的块，锁定时提示且不可编辑', () => {
+// ── 渲染面：两处反馈入口（选区 / 整篇）、将改块高亮、锁定提示 ─────────────────
+test('页面只有两处反馈入口：选区与整篇；按页的范围入口删掉，锁定时提示且不可编辑', () => {
   const page = readFileSync(join(core, 'assets', 'workbench', 'doc-workbench.js'), 'utf8');
   const html = readFileSync(join(core, 'assets', 'workbench', 'doc-workbench.html'), 'utf8');
   const css = readFileSync(join(core, 'assets', 'workbench', 'doc-workbench.css'), 'utf8');
 
   assert.match(page, /data-feedback-block/, '块尾要有反馈按钮');
   assert.match(page, /data-feedback-selection/, '选中后要浮出反馈按钮');
-  assert.match(html, /notesOverallPage|notesOverallDoc/, '批注抽屉要有整页 / 整份反馈入口');
+  assert.match(html, /notesOverallDoc/, '批注抽屉要有整篇反馈入口');
+  assert.doesNotMatch(html, /notesOverallPage/, '「反馈这一页」的入口删掉');
   assert.match(page, /DocFeedback\.anchorsForRange/, '选区要经同一份吸附规则换算成块');
   assert.match(page, /is-feedback-target/, '提交前要标出「将改的块」');
-  assert.match(page, /scope = 'page'|scope: 'page'|scope === 'page'/, '整页反馈要按页换算范围');
-  assert.match(page, /scope = 'doc'|scope: 'doc'|scope === 'doc'/, '整份反馈要按整份换算范围');
+  assert.doesNotMatch(page, /scope = 'page'|scope: 'page'|scope === 'page'/, '按页的范围概念删掉');
+  assert.match(page, /scope = 'doc'|scope: 'doc'|scope === 'doc'/, '整篇反馈按整份换算范围');
   assert.match(page, /transport\.feedback\(/, '提交走反馈命令');
   assert.match(page, /transport\.tasks\(\)/, '锁状态要随任务同步');
 
