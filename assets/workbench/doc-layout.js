@@ -19,7 +19,9 @@
 
   // 宽档 = 目录 240 + 纸 760 + 批注 300 + 两条 8px 间隔 = 1316。
   const LAYOUT_WIDE = 1316;
-  const LAYOUT_MEDIUM = 900;
+  // 中档 = 目录 176 + 纸 520 + 批注 240 + 两条 8px 间隔 = 952。
+  // 目录在任何宽度下都带标题：只留一串页号时，每章都从 1 重数，人分不清是哪一页。
+  const LAYOUT_MEDIUM = 952;
   const SCROLL_THRESHOLD = 8;
 
   // 字号只改一个变量：纸宽、左右留白、行宽各有自己的尺度，不跟字号走。
@@ -50,16 +52,9 @@
 }
 
 @container workbench (max-width: ${below(LAYOUT_WIDE)}px) {
-  .toc-panel { flex-basis: 48px; width: 48px; padding: 20px 6px 40px; }
-  .toc-chapter {
-    height: 1px; margin: 10px 6px; padding: 0;
-    overflow: hidden; font-size: 0; background: var(--line);
-  }
-  .toc-page { width: 36px; margin: 0 auto; justify-content: center; padding: 6px 0; }
-  .toc-number { min-width: 0; font-size: 12px; }
-  .toc-title { display: none; }
+  .toc-panel { flex-basis: 176px; width: 176px; padding: 22px 8px 40px 16px; }
   .doc { flex: 1 1 auto; width: auto; max-width: var(--paper-w); min-width: 520px; }
-  .notes-panel { flex-basis: 280px; width: 280px; }
+  .notes-panel { flex-basis: 240px; width: 240px; }
 }
 
 @container workbench (max-width: ${below(LAYOUT_MEDIUM)}px) {
