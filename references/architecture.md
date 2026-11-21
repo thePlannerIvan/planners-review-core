@@ -62,8 +62,6 @@ review-bridge.js ──┘
 
 ## 缝：三样东西跨过去
 
-可选内容壳独立于宿主：`scripts/render-content-review.mjs` + `assets/content-review/` 只拥有阅读、编辑、排序与桥接交互；`scripts/content-review-contract.mjs` 只拥有壳的字段检查、深度哈希与审阅上下文。生产方 adapter 拥有原生内容映射、原文保护、回写和批准语义。接口见 `references/content-review.md`；不替换其他专用审阅面。
-
 | 方向 | 东西 |
 |---|---|
 | Skill → 宿主 | surface 文件、页面与资产（在 `dir` 里） |
@@ -109,6 +107,7 @@ review-bridge.js ──┘
 
 ## 退役
 
+- `content-workbench/1`（2026-11-21 退役）：前代按页指纹的 `render-content-review.mjs` / `content-workbench.mjs` / `content-snapshot.mjs` 已由 `doc-workbench/1`（`planners-doc/2` 通用文字工作台）取代；仅保留 `assets/content-review/marked.umd.js`、旧 JSON 只读挂载 `scripts/lib/doc-legacy.mjs` 与通用 `scripts/review-ui.mjs`。
 - `review-surface/1.0.0`（2026-09-26 退役）：它试图让宿主理解审阅语义（`unit` / `version` / `decisions` / `required_decisions` / `assets`），与"能力、内容、文件结构归 Skill"的裁定相悖。归档在 `_archive/review-surface-1.0.0-retired-2026-09-26/`。
 
 ## 已知缺口（记着，暂时不做）

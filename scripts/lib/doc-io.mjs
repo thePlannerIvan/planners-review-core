@@ -9,8 +9,11 @@
  * （journal / history），也有锁与任务，没有理由让同机其他用户读到。
  */
 import { closeSync, existsSync, fsyncSync, openSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
+
+/** 内容指纹：工作台内核与资产清单共用唯一 sha256 实现。 */
+export const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 
 /** 文档同目录下的工作台旁路目录。 */
 export function stateDirFor(docPath) {

@@ -13,8 +13,7 @@
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { basename, dirname, extname, resolve, sep } from 'node:path';
 import { imageReferences, parseDocument } from './doc-blocks.mjs';
-import { atomicWrite } from './doc-io.mjs';
-import { sha256 } from '../content-review-contract.mjs';
+import { atomicWrite, sha256 } from './doc-io.mjs';
 
 export const ASSET_CONTRACT = 'doc-assets/1';
 

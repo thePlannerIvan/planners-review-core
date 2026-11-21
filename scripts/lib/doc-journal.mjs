@@ -18,9 +18,8 @@ import {
   closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync,
 } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
-import { sha256 } from '../content-review-contract.mjs';
 import { archiveVersion } from './doc-history.mjs';
-import { atomicWrite, stateDirFor } from './doc-io.mjs';
+import { atomicWrite, sha256, stateDirFor } from './doc-io.mjs';
 
 export const JOURNAL_CONTRACT = 'planners-doc-journal/1';
 

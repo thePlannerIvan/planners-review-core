@@ -30,10 +30,9 @@ import {
   MAX_NOTE_TEXT, NOTE_SCOPES, NOTES_CONTRACT, commitDrafts as markDraftsCommitted, createNoteStore, draftNote,
   draftsOf, newBatchId, noteTargetOf, removeNote as dropNote, reopenNote as reopenNoteEntry, settleModelChange,
 } from './doc-notes.mjs';
-import { atomicWrite } from './doc-io.mjs';
+import { atomicWrite, sha256 } from './doc-io.mjs';
 import { buildDiff, readBaseline, structureOf, writeBaseline } from './doc-diff.mjs';
 import { LEGACY_READONLY_MESSAGE, legacySnapshot, readLegacyMaster } from './doc-legacy.mjs';
-import { sha256 } from '../content-review-contract.mjs';
 import DocIdentity from '../../assets/workbench/doc-identity.js';
 
 const { pageKeyOf } = DocIdentity;

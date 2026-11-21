@@ -9,8 +9,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { basename, dirname, join, resolve } from 'node:path';
-import { atomicWrite, stateDirFor } from './doc-io.mjs';
-import { sha256 } from '../content-review-contract.mjs';
+import { atomicWrite, sha256, stateDirFor } from './doc-io.mjs';
 
 export const HISTORY_CONTRACT = 'planners-doc-history/1';
 

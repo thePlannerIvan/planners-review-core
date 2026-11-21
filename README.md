@@ -14,7 +14,7 @@
 
 ### 对普通用户：两件立刻能用上的事
 
-1. **没有装 DSH，其他 Skill 的可视化审阅页也能照常打开**：像 `planners-proposal-system` 的 Storyline 拖曳板、`planners-bypage` 的逐页审阅台、`video-idea-system` 的念稿改字面、`planners-ppt-hell` 的返修工作台、`video-craft` 的成片时间轴审阅，背后全都依靠本底座在**没有 DSH 时本地拉起浏览器宿主**，审完保存再回对话继续即可。
+1. **没有装 DSH，其他 Skill 的可视化审阅页也能照常打开**：像 `planners-proposal` 的 Storyline 工作台、`planners-bypage` 的逐页工作台、`video-idea-system` 的念稿改字面、`planners-ppt-hell` 的返修工作台、`video-craft` 的成片时间轴审阅，背后全都依靠本底座在**没有 DSH 时本地拉起浏览器宿主**，审完保存再回对话继续即可。
 2. **给任意现成 HTML 网页一键加“直接改字 + 圈选批注”**（`open-artifact.mjs`）：手里有一份生成好的网页、报告或原型 HTML，一条命令就能加上批注栏——直接在网页正文改字、点选某个元素、框选一块区域并写批注，完全不用改动原 HTML 代码一字节，改完把批注 JSON 丢给 Agent 返修。
 
 ```text
@@ -24,7 +24,7 @@
 
 ### 哪些 Skill 依赖本底座？
 
-`Planners-Proposal-System` · `planners-bypage` · `planners-ppt-hell` · `video-idea-system` · `video-craft` · `planners-method-wiki` · `editor`（使用上述 Skill 时一般会自动拉取本底座，无需单独操心）。
+`planners-proposal` · `planners-bypage` · `planners-ppt-hell` · `video-idea-system` · `video-craft` · `editor`（使用上述 Skill 时一般会自动拉取本底座，无需单独操心）。
 
 *(定性/定量分析 `planners-quali-box` 与 `planners-quanti-box` 不走审阅面，直接在对话确认方案。)*
 
@@ -137,7 +137,7 @@ echo '{"task_id":"<任务 id>","patches":[{"anchor":"b:7b057d","content":"新的
 1. **准备审阅页面目录**：入口 HTML 推荐保留裸标记 `{{REVIEW_BRIDGE}}` 独占一行（允许省略以兼容普通 HTML 产物——两个宿主都会兜底追加到 `</body>` 前，仅校验器给出 `bridge_placeholder_absent` 警告；不要写进 `<script src>` 或 `<script>` 标签内，免得替换嵌套破损）。也不要在页面目录复制 `review-bridge.js`。
 2. **编写 `review-surface.json`**：遵循 `contracts/review-surface.schema.json`（**7 个必填字段 + 7 个可选字段**，宿主只读契约字段，不解释任何业务审阅语义）：
    - **必填 7 项**：`contract_version`（`"review-surface/2.0.0"`）、`id`（`<skill>/<面>`，同一对话按 `id` 复用/刷新标签）、`title`、`project_root`、`dir`、`entry`、`wake`（`mode`: `queue | steer` + `text`）。
-   - **可选 7 项**：`description`、`feedback`（提交落盘路径，省略则只靠 `wake` 回传）、`draft`（未提交草稿恢复文件）、`watch`（监听元数据变更推 `review/changed`）、`annotate`（`true` 时注入 `assets/annotate/annotate.js` 产 `artifact-annotations/1`）、`command_backend`（`svg-workbench/1`、`content-workbench/1` 或 `doc-workbench/1`）、`capabilities`。
+   - **可选 7 项**：`description`、`feedback`（提交落盘路径，省略则只靠 `wake` 回传）、`draft`（未提交草稿恢复文件）、`watch`（监听元数据变更推 `review/changed`）、`annotate`（`true` 时注入 `assets/annotate/annotate.js` 产 `artifact-annotations/1`）、`command_backend`（`svg-workbench/1` 或 `doc-workbench/1`）、`capabilities`。
 3. **页面调用桥接口**：
    ```js
    const review = await ReviewBridge.connect()
@@ -155,7 +155,7 @@ echo '{"task_id":"<任务 id>","patches":[{"anchor":"b:7b057d","content":"新的
    node scripts/review-host.mjs start "<surface.json>"
    ```
 
-更多规范见：`references/architecture.md`、`references/content-review.md`、`references/annotate.md`、`references/command-transport.md`。
+更多规范见：`references/architecture.md`、`references/annotate.md`、`references/command-transport.md`、`contracts/planners-doc.md`。
 
 ### 环境要求与双向测试
 
@@ -199,7 +199,6 @@ planners-review-core/
 │   ├── validate-doc-assets.mjs         # doc-assets/1 资产清单校验器
 │   ├── review-host.mjs                 # 本地宿主生命周期唯一 CLI
 │   ├── serve-review.mjs                # 无 DSH 插件时的本地浏览器宿主
-│   ├── content-workbench.mjs           # 通用内容/结构审阅工作台后端
 │   ├── doc-workbench.mjs               # 本地页入口：HTTP 路由，块级逻辑在 lib/doc-session
 │   ├── doc-surface.mjs                 # 为工作稿生成侧栏 review-surface 与自包含入口
 │   ├── doc-command.mjs                 # doc-workbench/1 命令后端；同时是模型侧 tasks/claim/patch CLI
@@ -235,6 +234,6 @@ planners-review-core/
 ## 相关项目
 
 - [DSH Review Dock](https://github.com/thePlannerIvan/dsh-review-dock) —— DSH 右侧栏宿主插件（与本底座无缝配合）
-- [Planners Proposal System](https://github.com/thePlannerIvan/Planners-Proposal-System) —— 在线可拖曳 Storyline 共创工作台
+- [Planners Proposal](https://github.com/thePlannerIvan/Planners-Proposal-System) —— 策略共创与 Storyline 文字工作台
 - [Planners Bypage](https://github.com/thePlannerIvan/planners-bypage) —— 逐页 PPT 文案、配图与审阅
 - [Planner's PPT Hell](https://github.com/thePlannerIvan/planners-ppt-hell) —— SVG / PPTX 制作与看图返修工作台

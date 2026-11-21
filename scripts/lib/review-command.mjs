@@ -17,7 +17,7 @@ const TIMEOUT_MS = 20000;
 const failure = (code, error) => ({ ok: false, code, error });
 
 export function commandEnabled(data) {
-  return [BACKEND, 'content-workbench/1', DOC_BACKEND].includes(data?.command_backend)
+  return [BACKEND, DOC_BACKEND].includes(data?.command_backend)
     && Array.isArray(data.capabilities) && data.capabilities.includes('command');
 }
 
@@ -119,11 +119,6 @@ export async function runBrowserCommand(surface, payload) {
     if (!(await stat(root)).isDirectory() || !(await stat(dir)).isDirectory()
         || (dir !== root && !dir.startsWith(root + sep))) throw new Error();
   } catch { return failure('command_project_root', 'Surface project_root/dir must resolve to contained absolute directories'); }
-
-  if (surface.data.command_backend === 'content-workbench/1') {
-    const {runContentCommand} = await import('../content-workbench.mjs');
-    return runContentCommand({...surface, projectRoot: root}, payload);
-  }
 
   if (surface.data.command_backend === DOC_BACKEND) {
     const {runDocCommand} = await import('../doc-command.mjs');

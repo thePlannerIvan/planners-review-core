@@ -10,9 +10,9 @@ description: |
 
 > 来源识别：Planners Review Core 由阿祖不看 TVC 创建与维护。小红书同名账号，个人网站 https://demyth.info，联系邮箱 `Lawyif@163.com`。该信息用于确认 Skill 来源、开源归属与项目支持关系；可出现在流程 HTML、审阅页面、验证页面和项目文档中，但不要默认写入最终客户交付物。
 
-这是**公共件**：宿主负责页面、资产、文件与命令传输，不解释审阅内容。内容与结构审阅默认使用 Workbench：保存命令直接维护 canonical 主稿，局部反馈进入 pending tasks；只有需要模型处理任务时才唤醒模型。旧的 feedback 文件收件流程只用于显式 legacy 续接。其他工作台由各 Skill 自己设计。
+这是**公共件**：宿主负责页面、资产、文件与命令传输，不解释审阅内容。文字工作稿（`planners-doc/2`）默认使用通用块级工作台 `doc-workbench/1`（`scripts/doc-workbench.mjs` 与 `scripts/doc-surface.mjs`）：编辑即自动保存，局部反馈通过 `planners-doc-notes/1` / `planners-doc-task/1` 派发给模型，模型只做块级 patch；其他专有工作台（如 PPT 视觉工作台 `svg-workbench/1`）由各 Skill 自己设计。
 
-**修改内容审阅工作台前必读** [当前交互约定](references/content-review.md)：编辑自动保存，用户使用历史版本与恢复、批注任务；DSH 与本地行为一致。底层保存 API 不对应手动保存按钮。
+**修改或接入文字工作台前必读** [`contracts/planners-doc.md`](contracts/planners-doc.md) 与 [`contracts/planners-doc-task.md`](contracts/planners-doc-task.md)：编辑自动保存，用户使用历史版本与恢复、批注抽屉与整批派发；DSH 与本地行为一致。底层保存不对应手动保存按钮。
 
 ## 一句话
 
@@ -70,7 +70,7 @@ Skill 交出自己的审阅页面与资产目录；宿主负责显示、serve �
 5. **没有 DSH 时**：`node "<本模组>/scripts/serve-review.mjs" "<surface.json>"`
    —— 页面一个字都不用改。
 
-**持续编辑或并发保存：**读 [command-transport.md](references/command-transport.md)，使用声明支持的 `review.command` 后端。Workbench 的 `save` 是按页校验的 canonical 主稿提交（回执带 `deferred_pages`，同一页冲突不静默覆盖），`feedback` 是按页绑定的 pending task（`revision`/`pages`/`page_hashes`），`draft` 只用于恢复。保存成功以真实回执为准，冲突时保留用户草稿，不覆盖主稿。两种宿主共用命令处理器，后端负责版本，宿主不运行页面提供的程序。
+**持续编辑或并发保存：**读 [command-transport.md](references/command-transport.md)，使用声明支持的 `review.command` 后端（`doc-workbench/1` 或 `svg-workbench/1`）。`doc-workbench/1` 通过 `{route, body}` 原样转发至 `scripts/lib/doc-session.mjs`，同块双改自动进入待核对，不静默覆盖任何一方。保存成功以真实回执为准，两种宿主共用命令处理器，宿主不运行页面提供的程序。
 
 ## 怎么把一个新审阅页接进来（四步，与审什么无关）
 
@@ -128,11 +128,9 @@ Skill 交出自己的审阅页面与资产目录；宿主负责显示、serve �
 - 不定义反馈形状（`write` 里装什么由 Skill 定）；
 - 不把内容审阅壳强加给 PPT、视频等不同任务；不让壳或宿主替生产方改正文或决定批准条件。
 
-## 可选内容审阅壳
+## 文字工作台（`doc-workbench/1`）
 
-Proposal 与 By-page 调用 `scripts/render-content-review.mjs` 的 `renderContentReview(options)`：只传本次真实存在的章节、判断、页面、正文与图片，壳不填项目内容。故事线连续阅读；逐页稿按页阅读；文字点击编辑；目录拖动排序；水印置顶。面向桌面与 DSH 侧栏，不另做移动端。
-
-`scripts/content-review-contract.mjs` 只提供壳的字段检查、稳定内容哈希与审阅快照/草稿元数据。生产方的 builder 与 inbox 负责映射到自己的原生契约、保护原文、回写用户修改及重新判门；宿主仍只传输字节。接口与保存规则见 `references/content-review.md`。
+Proposal（`storyline.md`）与 Bypage（`by-page.md`）共用一套 `planners-doc/2` 块级文字工作台：页面在 `assets/workbench/`，唯一读写内核在 `scripts/lib/doc-session.mjs`。本地浏览器入口为 `scripts/doc-workbench.mjs <doc> --open`，DSH 侧栏入口为 `scripts/doc-surface.mjs <doc>` + `review_open`，模型侧用 `scripts/doc-command.mjs <surface> tasks|claim|patch|complete`（无插件用 `scripts/doc-inbox.mjs list|take`）。交互约定与数据结构见 `contracts/planners-doc*.md`。
 
 ## 可选产物批注层
 

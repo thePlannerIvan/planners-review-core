@@ -1334,8 +1334,7 @@ test('sha256 与原子写只有一份实现：资产模块复用内核的内容�
 
   assert.doesNotMatch(assetsSource, /createHash\(/, '资产清单不许自带第二份 sha256');
   assert.doesNotMatch(assetsSource, /writeAtomicFile/, '旧名不许再留一份原子写');
-  assert.match(assetsSource, /from '\.\/doc-io\.mjs'/, '原子写引用唯一实现');
-  assert.match(assetsSource, /from '\.\.\/content-review-contract\.mjs'/, '内容哈希引用唯一实现');
+  assert.match(assetsSource, /from '\.\/doc-io\.mjs'/, '原子写与内容哈希引用唯一实现');
   assert.doesNotMatch(journalSource, /function atomicWrite/, '原子写只在 doc-io 里定义');
   assert.match(journalSource, /from '\.\/doc-io\.mjs'/);
   assert.match(ioSource, /export function atomicWrite/);

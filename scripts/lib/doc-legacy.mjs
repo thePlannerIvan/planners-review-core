@@ -10,7 +10,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { extname } from 'node:path';
-import { sha256 } from '../content-review-contract.mjs';
+import { sha256 } from './doc-io.mjs';
 import DocIdentity from '../../assets/workbench/doc-identity.js';
 
 const { pageKeyOf } = DocIdentity;

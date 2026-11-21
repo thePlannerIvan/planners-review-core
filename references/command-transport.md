@@ -22,7 +22,7 @@ backend identifier does not enable command. The validator rejects unknown
 backend identifiers. DSH also requires a Core bridge and shared runner that
 both provide command; older installations do not advertise it.
 
-Allowlisted backends today are `svg-workbench/1`, `content-workbench/1` and
+Allowlisted backends today are `svg-workbench/1` and
 `doc-workbench/1` (the block-level writing workbench). `doc-workbench/1` is a
 Node backend in this Core: `runBrowserCommand` dispatches to
 `scripts/doc-command.mjs`, which resolves the document from a `binding.json`
@@ -52,9 +52,7 @@ that one route table (`DOC_ROUTES`) and identity set (`DOC_IDENTITY_ROUTES`);
 `review-command.mjs` imports the identity set, so the transport never keeps a
 second list of action names.
 
-The backend implementation is fixed by the declared backend identifier. For
-`content-workbench/1`, Core resolves its Node adapter from trusted runtime
-mounts; producer-specific backends follow the same allowlisted lookup rule.
+The backend implementation is fixed by the declared backend identifier.
 The runner never resolves an executable relative to the surface/project or
 accepts one in the request.
 
