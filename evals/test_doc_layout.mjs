@@ -69,15 +69,15 @@ function layoutDocument(width = 1360) {
 }
 
 // ── 三档按容器宽度分，不看视口 ────────────────────────────────────────────────
-test('布局档位按容器宽度分三档：≥1316 / 900–1316 / <900', async () => {
+test('布局档位按容器宽度分三档：≥1316 / 952–1316 / <952', async () => {
   const { layoutMode, LAYOUT_WIDE, LAYOUT_MEDIUM } = await layoutModule();
   assert.equal(LAYOUT_WIDE, 1316, '常驻三栏的宽度是算出来的：240 + 760 + 300 + 2×8');
-  assert.equal(LAYOUT_MEDIUM, 900);
+  assert.equal(LAYOUT_MEDIUM, 952, '中档是 176 + 520 + 240 + 2×8');
   assert.equal(layoutMode(1360), 'wide');
   assert.equal(layoutMode(1316), 'wide', '1316 正好放得下 240 + 760 + 300 与两条 8px 间隔');
   assert.equal(layoutMode(1315), 'medium', '差一像素就降一档');
-  assert.equal(layoutMode(900), 'medium');
-  assert.equal(layoutMode(899), 'narrow', '900 以下批注改滑出层');
+  assert.equal(layoutMode(952), 'medium');
+  assert.equal(layoutMode(951), 'narrow', '952 以下批注改滑出层');
   assert.equal(layoutMode(640), 'narrow');
 });
 
@@ -324,12 +324,12 @@ test('三栏断点只有一个定义：doc-layout 生成 @container，CSS 里不
   assert.match(generated, /\.notes-panel\s*\{[^}]*300px/, '宽档批注 300');
   assert.match(generated, new RegExp(`@container workbench \\(max-width: ${LAYOUT_WIDE - 0.02}px\\)`),
     '中档从宽档差一像素开始');
-  assert.match(generated, /\.toc-panel\s*\{[^}]*48px/, '中档目录折成 48 图标条');
+  assert.match(generated, /\.toc-panel\s*\{[^}]*176px/, '中档目录 176，标题照旧显示');
   assert.match(generated, /\.doc\s*\{[^}]*min-width:\s*520px/, '纸不低于 520');
-  assert.match(generated, /\.notes-panel\s*\{[^}]*280px/, '中档批注 280');
-  assert.match(generated, /\.toc-title\s*\{\s*display:\s*none/, '图标条只留页号');
+  assert.match(generated, /\.notes-panel\s*\{[^}]*240px/, '中档批注 240');
+  assert.doesNotMatch(generated, /\.toc-title\s*\{\s*display:\s*none/, '目录在任何档位都不许只剩页号');
   assert.match(generated, new RegExp(`@container workbench \\(max-width: ${LAYOUT_MEDIUM - 0.02}px\\)`),
-    '窄档从 900 以下开始');
+    '窄档从 952 以下开始');
   assert.match(generated, /\.notes-panel:not\(\.is-overlay\)\s*\{\s*display:\s*none/, '窄档不再给批注留列');
 
   const drawer = ruleOf(css, '.notes-panel.is-overlay {');
@@ -398,13 +398,13 @@ test('三栏宽度用真实渲染量：1316 是 240 + 760 + 300 + 两条 8px 间
 
   const medium = await measure(1315);
   assert.equal(medium.layout, 'medium', '1315 差一像素就降一档');
-  assert.equal(medium.toc.width, 48, '中档目录折成 48 图标条');
-  assert.equal(medium.notes.width, 280, '中档批注 280');
+  assert.equal(medium.toc.width, 176, '中档目录 176');
+  assert.equal(medium.notes.width, 240, '中档批注 240');
   assert.ok(medium.doc.width >= 520, `中档纸不低于 520，实际 ${medium.doc.width}`);
 
-  const narrow = await measure(899);
-  assert.equal(narrow.layout, 'narrow', '900 以下批注改滑出层');
-  assert.equal(narrow.toc.width, 48, '窄档目录仍是 48 图标条');
+  const narrow = await measure(951);
+  assert.equal(narrow.layout, 'narrow', '952 以下批注改滑出层');
+  assert.equal(narrow.toc.width, 176, '窄档目录仍是 176，标题不放');
 });
 
 // ── 悬停：不铺灰底，只亮两枚同一套的图标 ────────────────────────────────────

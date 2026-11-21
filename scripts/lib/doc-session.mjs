@@ -1086,13 +1086,20 @@ function addNotes(docPath, payload) {
 }
 
 /** 单条删除：只删草稿。已提交的批注在模型手里，删掉它等于把意见吞掉。 */
-function deleteNote(docPath, payload) {
+function deleteNote(docPath, payload, board) {
   if (!payload || typeof payload !== 'object') fail('note_request', '请求体必须是 JSON 对象');
   if (typeof payload.id !== 'string' || !payload.id) fail('note_id', '需要批注 id');
   return withWriteLock(docPath, () => {
     const store = createNoteStore(docPath);
     const state = store.load();
-    const removed = dropNote(state.notes, payload.id);
+    // 只有真的在模型手里的批次才拦人：pending / claimed 的任务算在飞。
+    // 昨天提交、模型一直没动的批次不算，否则人会卡在「不能提交也不能删」。
+    board?.refresh?.();
+    const live = new Set((board?.list?.() ?? [])
+      .filter((task) => task.status === 'pending' || task.status === 'claimed')
+      .map((task) => task.batch)
+      .filter(Boolean));
+    const removed = dropNote(state.notes, payload.id, (note) => note.batch !== null && live.has(note.batch));
     store.save(state);
     return { ok: true, contract: NOTES_CONTRACT, removed, notes: mergeArchived(store, state.notes) };
   });
@@ -1320,7 +1327,7 @@ export async function createDocSession({ docPath, faults = null, persistent = tr
     submitFeedback: (payload) => guarded(() => submitFeedback(file, payload, board, conflicts)),
     notes: () => (legacy ? { ok: true, contract: NOTES_CONTRACT, notes: [] } : listNotes(file)),
     addNote: (payload) => guarded(() => addNotes(file, payload)),
-    deleteNote: (payload) => guarded(() => deleteNote(file, payload)),
+    deleteNote: (payload) => guarded(() => deleteNote(file, payload, board)),
     submitNotes: (payload) => guarded(() => submitNotes(file, payload, board)),
     // 模型取稿时刷新结构 diff 的基准；旧 JSON 主稿只读，没有基准可记。
     takeBaseline: () => (legacy ? null : takeBaseline(file)),

@@ -280,10 +280,24 @@ export function reopenNote(notes, id) {
   return note;
 }
 
-export function removeNote(notes, id) {
+/**
+ * 删一条批注。
+ *
+ * 草稿随时能删。已提交的也能删，但只在**模型没在它身上干活**的时候：没被领取的批次、
+ * 或者模型已经明确回过「没动这条」。否则人会卡在中间——批注既不能提交（已不是草稿），
+ * 又不能删（被这句「正在模型手里」挡着），而模型可能早就没动静了。
+ *
+ * @param notes - 批注列表，原地修改。
+ * @param id - 批注 id。
+ * @param isInFlight - 判断这条批注对应的批次是否正被模型处理；不传则按「没在飞」处理。
+ */
+export function removeNote(notes, id, isInFlight = () => false) {
   const index = notes.findIndex((note) => note.id === id);
   if (index < 0) fail('note_missing', `找不到批注 ${id}；可能已被删除，刷新后再试`);
-  if (notes[index].state !== 'draft') fail('note_state', '已提交的批注不能删；它正在模型手里');
+  const note = notes[index];
+  if (note.state !== 'draft' && note.model_state !== 'untouched' && isInFlight(note)) {
+    fail('note_state', '这条批注正在模型手里；等它处理完就能收回');
+  }
   const [removed] = notes.splice(index, 1);
   return removed;
 }
