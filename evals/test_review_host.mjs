@@ -125,6 +125,19 @@ try {
     const lines = raw.split('\n').filter((one) => one.trim());
     falsy('没有哪一行单独是合法 JSON', lines.some((one) => { try { JSON.parse(one); return true; } catch { return false; } }));
     eq('但整体能解析出带 url 的那份自证', startupReport(raw).url, state.url);
+
+    // 模拟云盘同步替换底层节点（unlink + 重建同路径文件）：退出诊断仍按路径追加进来
+    const original = readFileSync(state.log, 'utf8');
+    rmSync(state.log, { force: true });
+    writeFileSync(state.log, original, 'utf8');
+    truthy('stopHost 干净退出', await stopHost(state));
+    const afterStop = readFileSync(state.log, 'utf8');
+    truthy('日志文件节点被替换后，退出纯文本诊断仍按路径追加进来',
+      afterStop.length > original.length && /SIGTERM|signal|shutdown/i.test(afterStop.slice(original.length)));
+    eq('追加退出诊断后启动自证仍能完整解析', startupReport(afterStop)?.url, state.url);
+    const afterLines = afterStop.split('\n').filter((one) => one.trim());
+    falsy('加入退出诊断后依然没有任何单行是合法 JSON',
+      afterLines.some((one) => { try { JSON.parse(one); return true; } catch { return false; } }));
   }
 
   console.log('开浏览器：一件事一套行为（Python 走 CLI、Node 直接调，两边一致）');

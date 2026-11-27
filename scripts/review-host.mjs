@@ -283,7 +283,7 @@ export async function startHost(surface, port = 0) {
   let child;
   try {
     child = spawn(process.execPath,
-      [SERVE_SCRIPT, paths.surface, '--port', String(port), '--no-open'],
+      [SERVE_SCRIPT, paths.surface, '--port', String(port), '--no-open', '--log', log],
       { detached: true, stdio: ['ignore', fd, fd] });
   } finally {
     closeSync(fd);                                           // 子进程已拿到它自己那份

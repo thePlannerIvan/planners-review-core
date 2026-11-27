@@ -143,3 +143,12 @@
 - **证据**：`evals/test_doc_assets.mjs` 的「位图与 SVG 都能就地加载」一条（CSP 头 + `evil.html` 404）与锁定替换一条。
 - **状态**：已落地。
 - **module**：`scripts/doc-workbench.mjs`（`/asset`、`/api/asset/replace`）+ `assets/workbench/doc-images.js`
+
+## 14. Range 请求整文件 `readFileSync` 会打爆内存，日志只靠继承句柄会被云盘同步截断
+
+- **现象**：无插件本地审阅宿主在浏览器连续回放长音频、频繁切镜或拖动进度条时，播放一两分钟即无声退出，且 `review_host.log` 里只剩启动 JSON，看不到任何错误或退出原因。
+- **原因**：① 每次非 HTML 的 `Range` 请求都调用 `readFileSync(target)` 把整份数十 MB 媒体读进内存再 `subarray`，高频 seek 时造成内存尖峰与 GC 压力，且异步请求回调没有顶层异常隔离，云盘瞬时替换或畸形 URI 会直接以未捕获异常杀死进程；② 宿主日志仅靠启动时继承的 stdout/stderr 文件描述符（inode），OneDrive 等云盘同步替换文件后会换成新 inode，进程手里旧 fd 写入的内容与退出线索全部消失在已解链的旧节点上。
+- **行为修正**：① 非 HTML 资源一律先 `statSync`，对 0 字节文件与 `HEAD` 不创建读取流，对 `GET` 使用 `createReadStream(target, opts)` 并等待 `'open'` 事件后再发响应头（首字节前读盘失败可干净返回 500），在 `res.close`/`res.error` 时立即销毁流、静默忽略正常断连码（`EPIPE`/`ECONNRESET`/`ERR_STREAM_PREMATURE_CLOSE`）；② 请求主回调外包裹统一 `try/catch`（畸形 URI 回 400），并注册 `unhandledRejection`/`uncaughtException`；③ 由 `review-host.mjs` 传入 `--log <path>`，所有诊断与退出原因改用 `appendFileSync(logPath, ...)` 按路径重新打开追加**纯文本**时间戳行（绝不输出单行合法 JSON，以免破坏既有逐行非 JSON 与跨行启动自证解析契约）。
+- **证据**：`evals/run.mjs` 的 0 字节文件、畸形 URI 存活与连续 16 次中途断连 Range 回归，以及 `evals/test_review_host.mjs` 的日志文件节点替换（unlink + 重建）后退出诊断留存用例。
+- **状态**：已落地。
+- **module**：`scripts/serve-review.mjs` + `scripts/review-host.mjs`

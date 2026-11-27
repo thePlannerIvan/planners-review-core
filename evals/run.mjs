@@ -4,7 +4,7 @@
  * 用法：node evals/run.mjs
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -285,6 +285,110 @@ try {
     const head = await fetch(`${base}/clip.mp4`, { method: 'HEAD' });
     if (head.status === 200 && head.headers.get('accept-ranges') === 'bytes') ok('HEAD 也带 accept-ranges（浏览器先探这个）');
     else bad(`HEAD 不对：${head.status}`);
+
+    // 0 字节文件：GET 200 空、HEAD 200、任何 Range → 416 bytes */0
+    writeFileSync(join(reviewDir, 'empty.wav'), Buffer.alloc(0));
+    const emptyGet = await fetch(`${base}/empty.wav`);
+    const emptyBody = Buffer.from(await emptyGet.arrayBuffer());
+    if (emptyGet.status === 200 && emptyBody.length === 0
+        && emptyGet.headers.get('content-length') === '0'
+        && emptyGet.headers.get('accept-ranges') === 'bytes'
+        && emptyGet.headers.get('cache-control') === 'no-store') {
+      ok('0 字节文件 GET → 200 空响应且带 accept-ranges + no-store');
+    } else {
+      bad(`0 字节文件 GET 不对：${emptyGet.status} / ${emptyBody.length} B / len=${emptyGet.headers.get('content-length')}`);
+    }
+    const emptyHead = await fetch(`${base}/empty.wav`, { method: 'HEAD' });
+    if (emptyHead.status === 200 && emptyHead.headers.get('content-length') === '0') {
+      ok('0 字节文件 HEAD → 200 + content-length: 0');
+    } else {
+      bad(`0 字节文件 HEAD 不对：${emptyHead.status} / len=${emptyHead.headers.get('content-length')}`);
+    }
+    const emptyRange = await fetch(`${base}/empty.wav`, { headers: { range: 'bytes=0-10' } });
+    if (emptyRange.status === 416 && emptyRange.headers.get('content-range') === 'bytes */0') {
+      ok('0 字节文件带 Range → 416 + bytes */0');
+    } else {
+      bad(`0 字节文件 Range 不对：${emptyRange.status} / ${emptyRange.headers.get('content-range')}`);
+    }
+
+    // 畸形 URI 编码 → 400，且宿主继续存活
+    const malformed = await fetch(`${base}/%E0%A4%A`);
+    const afterMalformed = await fetch(`${base}/`);
+    if (malformed.status === 400 && afterMalformed.status === 200) {
+      ok('畸形 URI（/%E0%A4%A）→ 400，且后续 GET / 仍回 200');
+    } else {
+      bad(`畸形 URI 处理不对：${malformed.status} / 后续 ${afterMalformed.status}`);
+    }
+
+    // 多 MB 文件连续中途强行断连 Range 请求（24 × 4 MB = 96 MB 开区间，每次只读 1 KB 即断开）
+    // → RSS 不随累计请求量线性暴涨，且宿主存活、继续回 200
+    {
+      const { request: httpRequest } = await import('node:http');
+      const readProcessRssKb = (pid) => {
+        if (!pid) return null;
+        try {
+          const out = spawnSync('ps', ['-o', 'rss=', '-p', String(pid)], { encoding: 'utf8' });
+          if (out.status === 0) {
+            const kb = Number.parseInt((out.stdout || '').trim(), 10);
+            if (Number.isFinite(kb) && kb > 0) return kb;
+          }
+        } catch { /* ignore */ }
+        return null;
+      };
+      const multiMb = Buffer.alloc(4 * 1024 * 1024, 0x5a);
+      writeFileSync(join(reviewDir, 'large.bin'), multiMb);
+      const targetUrl = new URL(`${base}/large.bin`);
+      const rssBeforeKb = readProcessRssKb(child.pid);
+      for (let i = 0; i < 24; i += 1) {
+        await new Promise((done) => {
+          let received = 0;
+          const req = httpRequest(targetUrl, { headers: { range: 'bytes=0-' } }, (res) => {
+            res.on('data', (chunk) => {
+              received += chunk.length;
+              if (received >= 1024) {
+                req.destroy();
+                done();
+              }
+            });
+            res.on('error', () => done());
+            res.on('end', () => done());
+          });
+          req.on('error', () => done());
+          req.end();
+        });
+      }
+      const rssAfterKb = readProcessRssKb(child.pid);
+      const rssDeltaKb = (rssBeforeKb !== null && rssAfterKb !== null) ? (rssAfterKb - rssBeforeKb) : null;
+      const rssOk = rssDeltaKb === null || rssDeltaKb < 64 * 1024;
+      const afterAborts = await fetch(`${base}/large.bin`, { headers: { range: 'bytes=0-1023' } });
+      const afterAbortsBody = Buffer.from(await afterAborts.arrayBuffer());
+      const fullAfter = await fetch(`${base}/`);
+      if (afterAborts.status === 206 && afterAbortsBody.length === 1024 && fullAfter.status === 200 && rssOk) {
+        const rssNote = rssDeltaKb === null ? 'RSS 不可测已跳过' : `RSS 增量 ${(rssDeltaKb / 1024).toFixed(1)} MB < 64 MB`;
+        ok(`连续 24 次中途强行断连 4 MB Range（bytes=0- 只读 1 KB）→ 宿主存活、回 200（${rssNote}）`);
+      } else {
+        bad(`中途断连后服务或内存异常：range=${afterAborts.status} (${afterAbortsBody.length} B) / root=${fullAfter.status} / rssDeltaKb=${rssDeltaKb}`);
+      }
+    }
+
+    // 读盘打开前失败（mode 0o000）→ 干净回 500，进程不崩溃，恢复后可继续服务
+    if (typeof process.getuid === 'function' && process.getuid() !== 0) {
+      const unreadable = join(reviewDir, 'unreadable.bin');
+      writeFileSync(unreadable, Buffer.from('secret-bytes'));
+      chmodSync(unreadable, 0o000);
+      try {
+        const errRes = await fetch(`${base}/unreadable.bin`);
+        chmodSync(unreadable, 0o644);
+        const afterErr = await fetch(`${base}/index.html`);
+        if (errRes.status === 500 && afterErr.status === 200) {
+          ok('读盘打开前失败（mode 0o000）→ 500，宿主不崩溃且后续 GET /index.html 仍回 200');
+        } else {
+          bad(`0o000 读盘失败处理不对：err=${errRes.status} / 后续=${afterErr.status}`);
+        }
+      } finally {
+        try { chmodSync(unreadable, 0o644); } catch { /* ignore */ }
+      }
+    }
 
     // .mov 那一族：宿主原先没有 → application/octet-stream → <video> 放不出来
     writeFileSync(join(reviewDir, 'take.mov'), Buffer.from('MOVMOV'));

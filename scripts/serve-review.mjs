@@ -2,7 +2,7 @@
 /**
  * 没有插件时的审阅宿主（review-surface/2.0.0）。
  *
- * 用法：node serve-review.mjs <review-surface.json> [--port 0] [--no-open] [--idle-hours 4]
+ * 用法：node serve-review.mjs <review-surface.json> [--port 0] [--no-open] [--idle-hours 4] [--log <path>]
  *
  * 做四件事，与 DSH 插件那边**同构**：serve `dir`、写 feedback、收 wake、报版本令牌。
  * 区别只有一个：这里没有 Agent 可以唤醒 —— 人回对话说一声。所以 wake 落一行日志并打印提示。
@@ -10,7 +10,7 @@
  * 页面完全不用改：它引用的 review-bridge.js 会自动发现"没有父窗口"，切到 fetch 通道。
  */
 import { createHash, randomUUID } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, createReadStream, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
@@ -25,10 +25,31 @@ const flag = (name, fallback) => {
   const i = argv.indexOf(name);
   return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : fallback;
 };
-const surfaceArg = argv.find((a) => !a.startsWith('--') && !/^\d+$/.test(a));
+const VALUE_FLAGS = new Set(['--port', '--idle-hours', '--log']);
+const surfaceArg = argv.find((a, i) => !a.startsWith('--') && !/^\d+$/.test(a) && (i === 0 || !VALUE_FLAGS.has(argv[i - 1])));
 if (!surfaceArg) {
-  console.error('用法：node serve-review.mjs <review-surface.json> [--port 0] [--no-open] [--idle-hours 4]');
+  console.error('用法：node serve-review.mjs <review-surface.json> [--port 0] [--no-open] [--idle-hours 4] [--log <path>]');
   process.exit(2);
+}
+const logArg = flag('--log', null);
+const LOG_PATH = logArg ? resolve(logArg) : null;
+
+function formatDetail(detail) {
+  if (detail === undefined || detail === null) return '';
+  const raw = detail instanceof Error
+    ? (detail.stack || detail.message || String(detail))
+    : String(detail);
+  return raw.replace(/\s*\r?\n\s*/g, ' | ').trim();
+}
+
+/** 按路径重新打开并追加纯文本诊断行（抗云盘替换日志文件 inode，且绝不输出单行合法 JSON）。 */
+function appendDiag(event, detail) {
+  const msg = formatDetail(detail);
+  const line = `[${new Date().toISOString()}] [diag] ${event}${msg ? ': ' + msg : ''}\n`;
+  try {
+    if (LOG_PATH) appendFileSync(LOG_PATH, line, 'utf8');
+    else process.stderr.write(line);
+  } catch { /* 诊断落盘失败不拖垮主流程 */ }
 }
 const surfacePath = resolve(surfaceArg);
 if (!existsSync(surfacePath)) { console.error(`找不到 surface：${surfacePath}`); process.exit(2); }
@@ -146,184 +167,304 @@ const readBody = (req) => new Promise((done, fail) => {
 });
 
 const json = (res, code, value) => {
+  if (res.headersSent || res.destroyed) return;
   const body = JSON.stringify(value);
   res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
   res.end(body);
 };
 
+const EXPECTED_ABORT_CODES = new Set(['EPIPE', 'ECONNRESET', 'ERR_STREAM_PREMATURE_CLOSE']);
+
+function send416(res, type, size) {
+  res.writeHead(416, {
+    'content-type': type,
+    'content-range': `bytes */${size}`,
+    'accept-ranges': 'bytes',
+    'cache-control': 'no-store',
+  });
+  res.end();
+}
+
+function sendStreamOrRequestError(res, error, tag, context = '') {
+  if (EXPECTED_ABORT_CODES.has(error?.code)) {
+    if (!res.destroyed) res.destroy();
+    return;
+  }
+  const detail = context ? `${context} -> ${formatDetail(error)}` : formatDetail(error);
+  appendDiag(tag, detail);
+  if (!res.headersSent && !res.destroyed) {
+    json(res, 500, { ok: false, error: error?.message || 'Internal server error' });
+  } else if (!res.destroyed) {
+    res.destroy();
+  }
+}
+
+/**
+ * 流式发送非 HTML 静态与媒体资源：
+ * 直接处理 HEAD 与 0 字节响应；其余先等 `'open'` 拿到文件描述符再写响应头
+ * （首字节前读盘失败可干净回 500），客户端提前断开或响应出错时立即销毁文件流，
+ * 避免句柄泄漏与整文件入内存。
+ */
+function streamFile(req, res, target, statusCode, headers, streamOpts = null) {
+  if (req.method === 'HEAD' || headers['content-length'] === 0) {
+    res.writeHead(statusCode, headers);
+    res.end();
+    return;
+  }
+  const stream = streamOpts ? createReadStream(target, streamOpts) : createReadStream(target);
+  let opened = false;
+  const destroyStream = () => {
+    if (!stream.destroyed) stream.destroy();
+  };
+  res.once('close', destroyStream);
+  res.once('error', (err) => {
+    if (!EXPECTED_ABORT_CODES.has(err?.code)) {
+      appendDiag('res_error', `${req.method} ${req.url} -> ${formatDetail(err)}`);
+    }
+    destroyStream();
+  });
+  stream.once('open', () => {
+    opened = true;
+    if (res.destroyed || res.writableEnded) {
+      destroyStream();
+      return;
+    }
+    res.writeHead(statusCode, headers);
+    stream.pipe(res);
+  });
+  stream.on('error', (err) => {
+    destroyStream();
+    if (opened && !res.destroyed) {
+      appendDiag('stream_error', `${req.method} ${req.url} -> ${formatDetail(err)}`);
+      res.destroy();
+      return;
+    }
+    sendStreamOrRequestError(res, err, 'stream_error', `${req.method} ${req.url}`);
+  });
+}
+
 let lastTouch = Date.now();
 const server = createServer(async (req, res) => {
-  lastTouch = Date.now();
-  const url = req.url || '/';
+  try {
+    lastTouch = Date.now();
+    const url = req.url || '/';
 
-  if (url.startsWith('/__review/')) {
-    if (url.split('?')[0] === '/__review/command') {
-      if (req.method !== 'POST') return json(res, 405, { ok: false, code: 'command_method', error: 'Use POST for commands' });
-      const allowedOrigin = `http://127.0.0.1:${server.address().port}`;
-      if (req.headers.host !== `127.0.0.1:${server.address().port}`
-          || (req.headers.origin !== undefined && req.headers.origin !== allowedOrigin)
-          || req.headers['sec-fetch-site'] === 'cross-site') {
-        return json(res, 403, { ok: false, code: 'command_origin', error: 'Cross-origin commands are not allowed' });
-      }
-      if (!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type'] || '')) {
-        return json(res, 415, { ok: false, code: 'command_content_type', error: 'Command requires application/json' });
-      }
-      try {
-        return json(res, 200, await runBrowserCommand(COMMAND_SURFACE, JSON.parse(await readBody(req))));
-      } catch (error) { return json(res, 400, { ok: false, code: 'command_request', error: error.message }); }
-    }
-    if (url.startsWith('/__review/version')) return json(res, 200, { token: versionToken() });
-    if (url.startsWith('/__review/shutdown')) { json(res, 200, { ok: true }); return setTimeout(() => process.exit(0), 50); }
-    if (url.startsWith('/__review/write') && req.method === 'POST') {
-      if (FEEDBACK === null) return json(res, 409, { ok: false, error: '这个面没有 feedback 文件（surface 里没写 feedback）' });
-      try {
-        const payload = JSON.parse(await readBody(req));
-        mkdirSync(dirname(FEEDBACK), { recursive: true });
-        // 接入日志（append-only）：**先记这一行，再写整份状态**。状态那一笔写失败、
-        // 或写完之后被别的进程盖掉时，人的字还在这一行里。Skill 侧读它
-        // （`review_feedback.unrecorded_writes`）。记不上也不拦提交。
+    if (url.startsWith('/__review/')) {
+      if (url.split('?')[0] === '/__review/command') {
+        if (req.method !== 'POST') return json(res, 405, { ok: false, code: 'command_method', error: 'Use POST for commands' });
+        const allowedOrigin = `http://127.0.0.1:${server.address().port}`;
+        if (req.headers.host !== `127.0.0.1:${server.address().port}`
+            || (req.headers.origin !== undefined && req.headers.origin !== allowedOrigin)
+            || req.headers['sec-fetch-site'] === 'cross-site') {
+          return json(res, 403, { ok: false, code: 'command_origin', error: 'Cross-origin commands are not allowed' });
+        }
+        if (!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type'] || '')) {
+          return json(res, 415, { ok: false, code: 'command_content_type', error: 'Command requires application/json' });
+        }
         try {
-          appendFileSync(join(dirname(FEEDBACK), 'wake-log.jsonl'), JSON.stringify({
-            at: new Date().toISOString(), kind: 'write', id: randomUUID(),
-            review_id: String(payload?.review_id ?? ''),
-            submitted_at: String(payload?.provenance?.submitted_at ?? ''),
-            unit: null,
-            overall_feedback: String(payload?.overall_feedback ?? ''),
-            pages: payload?.pages ?? {},
-          }) + '\n', 'utf8');
-        } catch { /* 兜底，不是主路径 */ }
-        writeFileSync(FEEDBACK, JSON.stringify(payload, null, 2) + '\n', 'utf8');
-        console.log(`反馈已写入 ${FEEDBACK}`);
-        return json(res, 200, { ok: true, path: FEEDBACK, persisted: true });
-      } catch (error) { return json(res, 400, { ok: false, error: error.message }); }
-    }
-    if (url.split('?')[0] === '/__review/draft' && req.method === 'GET') {
-      // 读回草稿：刷新 / 重开之后，未提交的批注还在。读不到就是 null，不是错误。
-      if (DRAFT === null) return json(res, 200, { draft: null, note: '这个面没有声明 draft' });
-      try {
-        return json(res, 200, { draft: JSON.parse(readFileSync(DRAFT, 'utf8')) });
-      } catch {
-        return json(res, 200, { draft: null });
+          return json(res, 200, await runBrowserCommand(COMMAND_SURFACE, JSON.parse(await readBody(req))));
+        } catch (error) { return json(res, 400, { ok: false, code: 'command_request', error: error.message }); }
       }
+      if (url.startsWith('/__review/version')) return json(res, 200, { token: versionToken() });
+      if (url.startsWith('/__review/shutdown')) {
+        appendDiag('shutdown', 'requested via /__review/shutdown');
+        json(res, 200, { ok: true });
+        return setTimeout(() => process.exit(0), 50);
+      }
+      if (url.startsWith('/__review/write') && req.method === 'POST') {
+        if (FEEDBACK === null) return json(res, 409, { ok: false, error: '这个面没有 feedback 文件（surface 里没写 feedback）' });
+        try {
+          const payload = JSON.parse(await readBody(req));
+          mkdirSync(dirname(FEEDBACK), { recursive: true });
+          // 接入日志（append-only）：**先记这一行，再写整份状态**。状态那一笔写失败、
+          // 或写完之后被别的进程盖掉时，人的字还在这一行里。Skill 侧读它
+          // （`review_feedback.unrecorded_writes`）。记不上也不拦提交。
+          try {
+            appendFileSync(join(dirname(FEEDBACK), 'wake-log.jsonl'), JSON.stringify({
+              at: new Date().toISOString(), kind: 'write', id: randomUUID(),
+              review_id: String(payload?.review_id ?? ''),
+              submitted_at: String(payload?.provenance?.submitted_at ?? ''),
+              unit: null,
+              overall_feedback: String(payload?.overall_feedback ?? ''),
+              pages: payload?.pages ?? {},
+            }) + '\n', 'utf8');
+          } catch { /* 兜底，不是主路径 */ }
+          writeFileSync(FEEDBACK, JSON.stringify(payload, null, 2) + '\n', 'utf8');
+          console.log(`反馈已写入 ${FEEDBACK}`);
+          return json(res, 200, { ok: true, path: FEEDBACK, persisted: true });
+        } catch (error) { return json(res, 400, { ok: false, error: error.message }); }
+      }
+      if (url.split('?')[0] === '/__review/draft' && req.method === 'GET') {
+        // 读回草稿：刷新 / 重开之后，未提交的批注还在。读不到就是 null，不是错误。
+        if (DRAFT === null) return json(res, 200, { draft: null, note: '这个面没有声明 draft' });
+        try {
+          return json(res, 200, { draft: JSON.parse(readFileSync(DRAFT, 'utf8')) });
+        } catch {
+          return json(res, 200, { draft: null });
+        }
+      }
+      if (url.startsWith('/__review/draft') && req.method === 'POST') {
+        if (DRAFT === null) return json(res, 409, { ok: false, error: '这个面没有 draft 文件（surface 里没写 draft）' });
+        try {
+          const payload = JSON.parse(await readBody(req));
+          mkdirSync(dirname(DRAFT), { recursive: true });
+          writeFileSync(DRAFT, JSON.stringify(payload, null, 2) + '\n', 'utf8');
+          return json(res, 200, { ok: true, path: DRAFT });
+        } catch (error) { return json(res, 400, { ok: false, error: error.message }); }
+      }
+      if (url.startsWith('/__review/capabilities')) {
+        // `capabilities` 的含义是「**这个面现在真正能用的**」= 宿主支持 ∩ surface 声明。
+        // 只报宿主支持什么（或只报 surface 要什么）都会让页面摆出一个必然失败的控件 ——
+        // 两个宿主以前对同一个字段各说一套，已统一。
+        return json(res, 200, { capabilities: HOST_CAPABILITIES.filter((c) => DECLARED_CAPABILITIES.includes(c)) });
+      }
+      if (url.startsWith('/__review/bridge.js')) {
+        const bridge = readFileSync(join(HERE, '..', 'assets', 'review-bridge.js'));
+        res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'content-length': bridge.length, 'cache-control': 'no-store' });
+        return res.end(bridge);
+      }
+      if (url.startsWith('/__review/upload') && req.method === 'POST') {
+        const rel = new URL(url, 'http://127.0.0.1').searchParams.get('rel') || '';
+        const target = resolve(normalize(join(ROOT, rel)));
+        if (target === ROOT || !target.startsWith(ROOT + sep)) return json(res, 403, { ok: false, error: '上传目标落在 dir 之外' });
+        if (existsSync(target) && realpathSync(target) !== target) return json(res, 403, { ok: false, error: '上传目标是符号链接' });
+        try {
+          const bytes = await readRaw(req);
+          mkdirSync(dirname(target), { recursive: true });
+          writeFileSync(target, bytes);
+          return json(res, 200, { ok: true, path: target, sha256: createHash('sha256').update(bytes).digest('hex') });
+        } catch (error) { return json(res, 400, { ok: false, error: error.message }); }
+      }
+      if (url.startsWith('/__review/wake') && req.method === 'POST') {
+        try {
+          const payload = JSON.parse((await readBody(req)) || '{}');
+          // 页面可以用整句覆盖（例如"整套提交"要说的不是"只重出这一页"）
+          const template = payload.text ? String(payload.text) : String(doc.wake.text);
+          const text = template.replace('{unit}', String(payload.unit ?? ''));
+          appendFileSync(WAKE_LOG, JSON.stringify({ at: new Date().toISOString(), kind: 'wake', unit: payload.unit ?? null, text }) + '\n', 'utf8');
+          console.log(`\n>>> 这一页定了（${payload.unit ?? '未指名'}）：${text}\n>>> 没有插件可唤醒，请回到对话说一声「已完成」。\n`);
+          return json(res, 200, { ok: true, woke: false, note: '没有插件：请回到对话告诉模型', log: WAKE_LOG });
+        } catch (error) { return json(res, 400, { ok: false, error: error.message }); }
+      }
+      return json(res, 404, { ok: false, error: 'unknown review endpoint' });
     }
-    if (url.startsWith('/__review/draft') && req.method === 'POST') {
-      if (DRAFT === null) return json(res, 409, { ok: false, error: '这个面没有 draft 文件（surface 里没写 draft）' });
-      try {
-        const payload = JSON.parse(await readBody(req));
-        mkdirSync(dirname(DRAFT), { recursive: true });
-        writeFileSync(DRAFT, JSON.stringify(payload, null, 2) + '\n', 'utf8');
-        return json(res, 200, { ok: true, path: DRAFT });
-      } catch (error) { return json(res, 400, { ok: false, error: error.message }); }
-    }
-    if (url.startsWith('/__review/capabilities')) {
-      // `capabilities` 的含义是「**这个面现在真正能用的**」= 宿主支持 ∩ surface 声明。
-      // 只报宿主支持什么（或只报 surface 要什么）都会让页面摆出一个必然失败的控件 ——
-      // 两个宿主以前对同一个字段各说一套，已统一。
-      return json(res, 200, { capabilities: HOST_CAPABILITIES.filter((c) => DECLARED_CAPABILITIES.includes(c)) });
-    }
-    if (url.startsWith('/__review/bridge.js')) {
-      const bridge = readFileSync(join(HERE, '..', 'assets', 'review-bridge.js'));
-      res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'content-length': bridge.length, 'cache-control': 'no-store' });
-      return res.end(bridge);
-    }
-    if (url.startsWith('/__review/upload') && req.method === 'POST') {
-      const rel = new URL(url, 'http://127.0.0.1').searchParams.get('rel') || '';
-      const target = resolve(normalize(join(ROOT, rel)));
-      if (target === ROOT || !target.startsWith(ROOT + sep)) return json(res, 403, { ok: false, error: '上传目标落在 dir 之外' });
-      if (existsSync(target) && realpathSync(target) !== target) return json(res, 403, { ok: false, error: '上传目标是符号链接' });
-      try {
-        const bytes = await readRaw(req);
-        mkdirSync(dirname(target), { recursive: true });
-        writeFileSync(target, bytes);
-        return json(res, 200, { ok: true, path: target, sha256: createHash('sha256').update(bytes).digest('hex') });
-      } catch (error) { return json(res, 400, { ok: false, error: error.message }); }
-    }
-    if (url.startsWith('/__review/wake') && req.method === 'POST') {
-      try {
-        const payload = JSON.parse((await readBody(req)) || '{}');
-        // 页面可以用整句覆盖（例如"整套提交"要说的不是"只重出这一页"）
-        const template = payload.text ? String(payload.text) : String(doc.wake.text);
-        const text = template.replace('{unit}', String(payload.unit ?? ''));
-        appendFileSync(WAKE_LOG, JSON.stringify({ at: new Date().toISOString(), kind: 'wake', unit: payload.unit ?? null, text }) + '\n', 'utf8');
-        console.log(`\n>>> 这一页定了（${payload.unit ?? '未指名'}）：${text}\n>>> 没有插件可唤醒，请回到对话说一声「已完成」。\n`);
-        return json(res, 200, { ok: true, woke: false, note: '没有插件：请回到对话告诉模型', log: WAKE_LOG });
-      } catch (error) { return json(res, 400, { ok: false, error: error.message }); }
-    }
-    return json(res, 404, { ok: false, error: 'unknown review endpoint' });
-  }
 
-  if (req.method !== 'GET' && req.method !== 'HEAD') return json(res, 405, { ok: false, error: 'method not allowed' });
-  const target = resolveInRoot(req.url === '/' ? `/${ENTRY}` : url);
-  if (target === null || !statSync(target).isFile()) { res.writeHead(404); res.end('not found'); return; }
-  let bytes = readFileSync(target);
-  const type = MIME[extname(target).toLowerCase()] ?? 'application/octet-stream';
-  if (type.startsWith('text/html')) {
-    // 桥由宿主注入：页面里那个注入点在这一步被换掉
-    // 规范写法是**裸标记独占一行**；另两种旧写法（`<script src="{{…}}">` 与
-    // `<script>{{…}}</script>`）在生产里出现过，所以把**整个元素**一并换掉 —— 换成什么由宿主
-    // 决定，但必须是一段完整合法的标签，不能把标记留在一个被撑破的标签里。
-    const block = '<script>window.__REVIEW_BASE__="/"</script>\n<script src="/__review/bridge.js"></script>';
-    let html = injectBlock(bytes.toString('utf8'), '{{REVIEW_BRIDGE}}', block);
-    if (ANNOTATE) {
-      const annotateSource = readFileSync(join(HERE, '..', 'assets', 'annotate', 'annotate.js'), 'utf8')
-        .replaceAll('</script', '<\\/script');
-      html = injectBlock(html, '{{REVIEW_ANNOTATE}}', '<script>\n' + annotateSource + '\n</script>');
+    if (req.method !== 'GET' && req.method !== 'HEAD') return json(res, 405, { ok: false, error: 'method not allowed' });
+    const target = resolveInRoot(req.url === '/' ? `/${ENTRY}` : url);
+    if (target === null) { res.writeHead(404); res.end('not found'); return; }
+    let st;
+    try {
+      st = statSync(target);
+    } catch (err) {
+      if (err?.code === 'ENOENT' || err?.code === 'ENOTDIR') {
+        res.writeHead(404);
+        res.end('not found');
+        return;
+      }
+      throw err;
     }
-    bytes = Buffer.from(html, 'utf8');
-  }
-  const size = bytes.length;
-  const rangeHeader = String(req.headers.range ?? '').trim();
-  // 注入了桥的 HTML **不认** Range：字节偏移对应的是磁盘上那一份，切一半会把注入点切坏。
-  // 浏览器导航取页面本来也不发 Range。
-  const single = type.startsWith('text/html') ? null : /^bytes=(\d*)-(\d*)$/.exec(rangeHeader);
-  if (single) {
-    // 单区间。多区间（`bytes=0-9,20-29` → multipart/byteranges）**故意不支持**：
-    // <video> seek 只用单区间，而 multipart 写错会静默截断 —— 见 evals 里那条"多区间回整份是有意的"。
-    let start;
-    let end;
-    if (single[1] === '' && single[2] !== '') {
-      start = Math.max(0, size - Number(single[2]));        // `bytes=-N` → 最后 N 字节
-      end = size - 1;
-    } else {
-      start = single[1] === '' ? 0 : Number(single[1]);
-      end = single[2] === '' ? size - 1 : Number(single[2]);
-    }
-    if (!Number.isFinite(start) || !Number.isFinite(end) || start >= size || start > end) {
-      // 不可满足：**必须**回 416 + `bytes */<total>`，浏览器据此知道真实长度并放弃
-      res.writeHead(416, {
+    if (!st.isFile()) { res.writeHead(404); res.end('not found'); return; }
+    const type = MIME[extname(target).toLowerCase()] ?? 'application/octet-stream';
+    if (type.startsWith('text/html')) {
+      // 桥由宿主注入：页面里那个注入点在这一步被换掉
+      // 规范写法是**裸标记独占一行**；另两种旧写法（`<script src="{{…}}">` 与
+      // `<script>{{…}}</script>`）在生产里出现过，所以把**整个元素**一并换掉 —— 换成什么由宿主
+      // 决定，但必须是一段完整合法的标签，不能把标记留在一个被撑破的标签里。
+      // 注入了桥的 HTML **不认** Range：字节偏移对应的是磁盘上那一份，切一半会把注入点切坏。
+      // 浏览器导航取页面本来也不发 Range。
+      const block = '<script>window.__REVIEW_BASE__="/"</script>\n<script src="/__review/bridge.js"></script>';
+      let html = injectBlock(readFileSync(target, 'utf8'), '{{REVIEW_BRIDGE}}', block);
+      if (ANNOTATE) {
+        const annotateSource = readFileSync(join(HERE, '..', 'assets', 'annotate', 'annotate.js'), 'utf8')
+          .replaceAll('</script', '<\\/script');
+        html = injectBlock(html, '{{REVIEW_ANNOTATE}}', '<script>\n' + annotateSource + '\n</script>');
+      }
+      const bytes = Buffer.from(html, 'utf8');
+      res.writeHead(200, {
         'content-type': type,
-        'content-range': `bytes */${size}`,
+        'content-length': bytes.length,
         'accept-ranges': 'bytes',
         'cache-control': 'no-store',
       });
-      res.end();
+      res.end(req.method === 'HEAD' ? undefined : bytes);
       return;
     }
-    const last = Math.min(end, size - 1);
-    const slice = bytes.subarray(start, last + 1);
-    res.writeHead(206, {
+
+    const size = st.size;
+    const rangeHeader = String(req.headers.range ?? '').trim();
+    if (size === 0) {
+      if (rangeHeader) {
+        send416(res, type, 0);
+        return;
+      }
+      streamFile(req, res, target, 200, {
+        'content-type': type,
+        'content-length': 0,
+        'accept-ranges': 'bytes',
+        'cache-control': 'no-store',
+      });
+      return;
+    }
+
+    const single = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader);
+    if (single && (single[1] !== '' || single[2] !== '')) {
+      // 单区间。多区间（`bytes=0-9,20-29` → multipart/byteranges）**故意不支持**：
+      // <video> seek 只用单区间，而 multipart 写错会静默截断 —— 见 evals 里那条"多区间回整份是有意的"。
+      let start;
+      let end;
+      if (single[1] === '' && single[2] !== '') {
+        start = Math.max(0, size - Number(single[2]));        // `bytes=-N` → 最后 N 字节
+        end = size - 1;
+      } else {
+        start = single[1] === '' ? 0 : Number(single[1]);
+        end = single[2] === '' ? size - 1 : Number(single[2]);
+      }
+      if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || start >= size || start > end) {
+        // 不可满足：**必须**回 416 + `bytes */<total>`，浏览器据此知道真实长度并放弃
+        send416(res, type, size);
+        return;
+      }
+      const last = Math.min(end, size - 1);
+      streamFile(req, res, target, 206, {
+        'content-type': type,
+        'content-length': last - start + 1,                 // **实发字节数**，不是文件大小
+        'content-range': `bytes ${start}-${last}/${size}`,
+        'accept-ranges': 'bytes',
+        'cache-control': 'no-store',                         // 素材是**原地改写**的：路径不变内容变，缓存会骗人
+      }, { start, end: last });
+      return;
+    }
+
+    streamFile(req, res, target, 200, {
       'content-type': type,
-      'content-length': slice.length,                      // **实发字节数**，不是文件大小
-      'content-range': `bytes ${start}-${last}/${size}`,
-      'accept-ranges': 'bytes',
-      'cache-control': 'no-store',                         // 素材是**原地改写**的：路径不变内容变，缓存会骗人
+      'content-length': size,
+      'accept-ranges': 'bytes',          // 整份也要声明：否则浏览器不知道这个资源能分段取
+      'cache-control': 'no-store',
     });
-    res.end(req.method === 'HEAD' ? undefined : slice);
-    return;
+  } catch (error) {
+    if (error instanceof URIError) {
+      json(res, 400, { ok: false, error: 'Malformed URI' });
+      return;
+    }
+    sendStreamOrRequestError(res, error, 'req_error', `${req.method} ${req.url}`);
   }
-  res.writeHead(200, {
-    'content-type': type,
-    'content-length': size,
-    'accept-ranges': 'bytes',          // 整份也要声明：否则浏览器不知道这个资源能分段取
-    'cache-control': 'no-store',
-  });
-  res.end(req.method === 'HEAD' ? undefined : bytes);
 });
+
+let shuttingDown = false;
+function shutdownWithReason(event, detail, exitCode = 0) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  appendDiag(event, detail);
+  server.close(() => process.exit(exitCode));
+  server.closeAllConnections?.();
+  const force = setTimeout(() => process.exit(exitCode), 500);
+  force.unref?.();
+}
 
 const idleTimer = setInterval(() => {
   if (Date.now() - lastTouch > idleMs) {
     console.log(`空闲超过 ${idleMs / 3600000} 小时，关闭审阅服务。`);
-    server.close(() => process.exit(0));
+    shutdownWithReason('idle_timeout', `idle > ${idleMs}ms`);
   }
 }, 60000);
 idleTimer.unref?.();
@@ -345,6 +486,14 @@ server.listen(portArg, '127.0.0.1', () => {
   }, null, 2));
 });
 
-for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.on(signal, () => server.close(() => process.exit(0)));
+process.on('unhandledRejection', (reason) => {
+  appendDiag('unhandledRejection', reason);
+});
+process.on('uncaughtException', (error) => {
+  appendDiag('uncaughtException', error);
+  process.exit(1);
+});
+
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+  process.on(signal, () => shutdownWithReason('signal', signal));
 }
